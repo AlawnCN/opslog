@@ -77,10 +77,12 @@ jobs:
         include:
           - runner: macos-14
             arch: arm64
-            expected_uname: arm64
-          - runner: macos-13
+            target: aarch64-apple-darwin
+            expected_mach_o: arm64
+          - runner: macos-14
             arch: x64
-            expected_uname: x86_64
+            target: x86_64-apple-darwin
+            expected_mach_o: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
 
@@ -88,9 +90,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Confirm target architecture
+      - name: Confirm Apple Silicon build host
         shell: bash
-        run: test "$(uname -m)" = "${{ matrix.expected_uname }}"
+        run: test "$(uname -m)" = "arm64"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -101,22 +103,29 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build macOS application and disk image
-        run: npm run desktop:macos
+        run: npm run desktop:macos -- --target ${{ matrix.target }}
 
       - name: Create macOS portable archive
         shell: bash
         run: |
           package_version="$(node -p "require('./package.json').version")"
+          bundle_root="src-tauri/target/${{ matrix.target }}/release/bundle"
           mkdir -p release
-          dmg="$(find src-tauri/target/release/bundle/dmg -type f -name '*.dmg' -print -quit)"
+          dmg="$(find "$bundle_root/dmg" -type f -name '*.dmg' -print -quit)"
           test -n "$dmg"
-          test -d src-tauri/target/release/bundle/macos/OpsLog.app
+          app_path="$bundle_root/macos/OpsLog.app"
+          test -d "$app_path"
+          executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
+          file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
           cp "$dmg" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.dmg"
-          ditto -c -k --sequesterRsrc --keepParent src-tauri/target/release/bundle/macos/OpsLog.app "release/OpsLog_${package_version}_macos_${{ matrix.arch }}_portable.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}_portable.zip"
 
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4
