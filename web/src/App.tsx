@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { desktopMode, downloadTransactionLog, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, loadTrace, searchLogs } from "./api";
+import { desktopMode, downloadTransactionLog, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, loadTrace, readTransactionLog, searchLogs } from "./api";
 import { DataTable } from "./components/DataTable";
 import { FilterPanel } from "./components/FilterPanel";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import { TraceDrawer } from "./components/TraceDrawer";
+import { TransactionLogDrawer } from "./components/TransactionLogDrawer";
 import { nairobiLocal, toUtcIso } from "./time";
 import type { Environment, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
 
@@ -38,6 +39,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
   const [trace, setTrace] = useState<{ id: string; rows: Record<string, unknown>[]; loading: boolean }>();
+  const [transactionLog, setTransactionLog] = useState<{ id: string; content: string; loading: boolean }>();
   const controller = useRef<AbortController | undefined>(undefined);
 
   const environment = environments.find((item) => item.name === environmentName);
@@ -148,6 +150,19 @@ export default function App() {
     }
     catch (error) { setNotice({ tone: "error", text: errorMessage(error) }); }
   };
+  const openTransactionLog = async (row: Record<string, unknown>) => {
+    if (!request) return;
+    const id = String(row["ecp.txn.id"] ?? "");
+    if (!id) return;
+    setTransactionLog({ id, content: "", loading: true });
+    try {
+      const content = await readTransactionLog(environmentName, id, request.startTime, request.endTime);
+      setTransactionLog({ id, content, loading: false });
+    } catch (error) {
+      setTransactionLog(undefined);
+      setNotice({ tone: "error", text: errorMessage(error) });
+    }
+  };
   const openTrace = async (row: Record<string, unknown>) => {
     if (!request) return;
     const id = String(row["ecp.txn.trace"] ?? row["trace.id"] ?? "");
@@ -163,9 +178,10 @@ export default function App() {
     <main>
       <FilterPanel kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
-      <DataTable kind={kind} result={result} loading={loading} onTransactionLog={downloadTrc} onTrace={openTrace} />
+      <DataTable kind={kind} result={result} loading={loading} onTransactionLog={downloadTrc} onReadTransactionLog={openTransactionLog} onTrace={openTrace} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <select value={pageSize} disabled={loading} onChange={(event) => changePageSize(Number(event.target.value))}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size} 条</option>)}</select></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}
     </main>
     <TraceDrawer traceId={trace?.id} rows={trace?.rows ?? []} loading={trace?.loading ?? false} onClose={() => setTrace(undefined)} />
+    <TransactionLogDrawer logId={transactionLog?.id} content={transactionLog?.content ?? ""} loading={transactionLog?.loading ?? false} onClose={() => setTransactionLog(undefined)} />
   </div>;
 }

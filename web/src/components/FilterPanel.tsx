@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Environment, LogKind, SearchFilters } from "../types";
 import { DownloadIcon, SearchIcon } from "./Icons";
 
@@ -18,6 +19,8 @@ const Field = ({ label, children, wide = false }: { label: string; children: Rea
 );
 
 export const FilterPanel = ({ kind, filters, environment, loading, selectedRangeDays, onChange, onSearch, onExport, onRange }: FilterPanelProps) => {
+  const [collapsed, setCollapsed] = useState(false);
+
   const input = (field: keyof SearchFilters, placeholder: string, type = "text") => (
     <input
       type={type}
@@ -30,6 +33,7 @@ export const FilterPanel = ({ kind, filters, environment, loading, selectedRange
   const indexes = environment
     ? [environment.txnlstIndex, environment.txntrcIndex, environment.applogIndex, environment.apmIndex]
     : [];
+  const toggleCollapsed = () => setCollapsed((current) => !current);
 
   return (
     <section className="filter-panel">
@@ -60,30 +64,37 @@ export const FilterPanel = ({ kind, filters, environment, loading, selectedRange
           </div>
         </div>
       </div>
-      <div className="filter-grid">
-        {kind === "transaction" && <>
-          <Field label="日志 ID">{input("txnId", "支持片段匹配")}</Field>
-          <Field label="Trace ID">{input("traceId", "链路标识")}</Field>
-          <Field label="流水号">{input("txnNo", "ecp.txn.no")}</Field>
-          <Field label="业务 Key">{input("business", "ecp.txn.business")}</Field>
-          <Field label="交易码">{input("service", "ecp.txn.service")}</Field>
-          <Field label="节点">{input("node", "ecp.txn.node")}</Field>
-          <Field label="错误码">{input("messageCode", "message.code")}</Field>
-          <Field label="错误信息">{input("messageInfo", "message.info")}</Field>
-          <Field label="交易状态"><select value={filters.status} onChange={(event) => onChange("status", event.target.value)}><option value="ALL">全部状态</option><option value="SUCCESS">成功</option><option value="FAIL">失败</option></select></Field>
-          <Field label="最小耗时（ms）">{input("minDurationMs", "例如 1000", "number")}</Field>
-        </>}
+      <div className={`filter-conditions${collapsed ? " is-collapsed" : ""}`}>
+        <div className="filter-grid">
+          {kind === "transaction" && <>
+            <Field label="日志 ID">{input("txnId", "支持片段匹配")}</Field>
+            <Field label="Trace ID">{input("traceId", "链路标识")}</Field>
+            <Field label="流水号">{input("txnNo", "ecp.txn.no")}</Field>
+            <Field label="业务 Key">{input("business", "ecp.txn.business")}</Field>
+            <Field label="交易码">{input("service", "ecp.txn.service")}</Field>
+            <Field label="节点">{input("node", "ecp.txn.node")}</Field>
+            <Field label="错误码">{input("messageCode", "message.code")}</Field>
+            <Field label="错误信息">{input("messageInfo", "message.info")}</Field>
+            <Field label="交易状态"><select value={filters.status} onChange={(event) => onChange("status", event.target.value)}><option value="ALL">全部状态</option><option value="SUCCESS">成功</option><option value="FAIL">失败</option></select></Field>
+            <Field label="最小耗时（ms）">{input("minDurationMs", "例如 1000", "number")}</Field>
+          </>}
 
-        {(kind === "application" || kind === "ecp" || kind === "generic") && <>
-          {kind === "generic" && <Field label="日志索引"><select value={filters.index} onChange={(event) => onChange("index", event.target.value)}>{indexes.map((item) => <option key={item}>{item}</option>)}</select></Field>}
-          <Field label="应用名">{input("application", "ecp.log.application")}</Field>
-          {kind !== "generic" && <Field label="日志级别">{input("level", "ERROR / WARN / INFO")}</Field>}
-          {kind === "ecp" && <Field label="日志文件">{input("file", "ecp.log.file")}</Field>}
-          <Field label="关键词" wide>{input("keyword", "跨 message、thread、trace 等规范字段检索")}</Field>
-        </>}
+          {(kind === "application" || kind === "ecp" || kind === "generic") && <>
+            {kind === "generic" && <Field label="日志索引"><select value={filters.index} onChange={(event) => onChange("index", event.target.value)}>{indexes.map((item) => <option key={item}>{item}</option>)}</select></Field>}
+            <Field label="应用名">{input("application", "ecp.log.application")}</Field>
+            {kind !== "generic" && <Field label="日志级别">{input("level", "ERROR / WARN / INFO")}</Field>}
+            {kind === "ecp" && <Field label="日志文件">{input("file", "ecp.log.file")}</Field>}
+            <Field label="关键词" wide>{input("keyword", "跨 message、thread、trace 等规范字段检索")}</Field>
+          </>}
+        </div>
       </div>
       <div className="filter-actions">
         <div className="index-hint"><i /> INDEX <code>{kind === "transaction" ? environment?.txnlstIndex : kind === "generic" ? filters.index : environment?.applogIndex}</code></div>
+        <button type="button" className={`filter-collapse-toggle${collapsed ? " is-collapsed" : ""}`} aria-expanded={!collapsed} aria-label={collapsed ? "展开筛选条件" : "收起筛选条件"} title={collapsed ? "展开筛选条件" : "收起筛选条件"} onClick={toggleCollapsed}>
+          <svg viewBox="0 0 24 14" aria-hidden="true">
+            <path d="m4 10 8-7 8 7" />
+          </svg>
+        </button>
         <div><button className="secondary" onClick={onExport} disabled={loading}><DownloadIcon />导出 CSV</button><button className="primary" onClick={onSearch} disabled={loading}><SearchIcon />{loading ? "查询中…" : "执行查询"}</button></div>
       </div>
     </section>

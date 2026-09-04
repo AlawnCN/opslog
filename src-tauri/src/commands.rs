@@ -155,6 +155,15 @@ pub async fn download_transaction_log(
 }
 
 #[tauri::command]
+pub async fn read_transaction_log(app: AppHandle, input: DownloadInput) -> Result<String, String> {
+    validate_download(&input)?;
+    let environment = environment_store::find(&app, &input.environment).await?;
+    let query = build_trc_query(&environment, &input.id, &input.start_time, &input.end_time)?;
+    let result = run_esql(&environment, &query, 300).await?;
+    Ok(export_files::trc(&result.rows))
+}
+
+#[tauri::command]
 pub async fn load_trace(
     app: AppHandle,
     input: DownloadInput,

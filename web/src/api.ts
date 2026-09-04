@@ -91,6 +91,24 @@ export const downloadTransactionLog = (
   return download("/api/transaction-log", input);
 };
 
+export const readTransactionLog = async (
+  environment: string,
+  id: string,
+  startTime: string,
+  endTime: string
+): Promise<string> => {
+  const input = { environment, id, startTime, endTime };
+  if (desktopMode) return desktopInvoke<string>("read_transaction_log", { input });
+  const response = await fetch("/api/transaction-log/content", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) return parseError(response);
+  const data = await response.json() as { content?: unknown };
+  return typeof data.content === "string" ? data.content : "";
+};
+
 export const loadTrace = async (
   environment: string,
   id: string,

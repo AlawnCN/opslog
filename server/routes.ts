@@ -130,6 +130,17 @@ apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
     .send(trcText(result.rows));
 }));
 
+apiRouter.post("/transaction-log/content", asyncRoute(async (request, response) => {
+  const input = downloadSchema.parse(request.body);
+  const environment = await findEnvironment(input.environment);
+  const result = await runEsql(
+    environment,
+    buildTrcQuery(environment, input.id, input.startTime, input.endTime),
+    300_000
+  );
+  response.json({ id: input.id, content: trcText(result.rows) });
+}));
+
 apiRouter.post("/trace", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);

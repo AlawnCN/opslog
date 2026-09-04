@@ -4,7 +4,7 @@ import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-pre
 import { displayNairobiTime } from "../time";
 import type { LogKind, SearchResponse } from "../types";
 import { ColumnSelector } from "./ColumnSelector";
-import { DownloadIcon, TraceIcon } from "./Icons";
+import { DownloadIcon, TextReaderIcon, TraceIcon } from "./Icons";
 
 const LABELS: Record<string, string> = {
   "ecp.txn.timestamp": "时间",
@@ -47,10 +47,11 @@ interface DataTableProps {
   result?: SearchResponse;
   loading: boolean;
   onTransactionLog: (row: Record<string, unknown>) => Promise<void>;
+  onReadTransactionLog: (row: Record<string, unknown>) => void;
   onTrace: (row: Record<string, unknown>) => void;
 }
 
-export const DataTable = ({ kind, result, loading, onTransactionLog, onTrace }: DataTableProps) => {
+export const DataTable = ({ kind, result, loading, onTransactionLog, onReadTransactionLog, onTrace }: DataTableProps) => {
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
   const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
   const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
@@ -136,7 +137,7 @@ export const DataTable = ({ kind, result, loading, onTransactionLog, onTrace }: 
                   const tone = column === "ecp.txn.message.code" ? resultTone(row) : "";
                   return <td key={column} style={widthStyle(column)} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
                 })}
-                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="查看 Trace" aria-label="查看 Trace" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
+                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="在线浏览交易日志" aria-label="在线浏览交易日志" onClick={(event) => { event.stopPropagation(); onReadTransactionLog(row); }}><TextReaderIcon /></button><button title="查看 Trace" aria-label="查看 Trace" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
               </tr>;
             })}
           </tbody>
