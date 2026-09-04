@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { useColumnPreferences } from "../column-preferences";
+import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
 import { displayNairobiTime } from "../time";
 import type { LogKind, SearchResponse } from "../types";
 import { ColumnSelector } from "./ColumnSelector";
@@ -51,10 +52,48 @@ interface DataTableProps {
 
 export const DataTable = ({ kind, result, loading, onTransactionLog, onTrace }: DataTableProps) => {
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
+  const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
+  const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
   const columns = result?.columns ?? [];
   const rows = result?.rows ?? [];
   const columnPreferences = useColumnPreferences(kind, columns);
+  const columnWidths = useColumnWidthPreferences(kind, columns);
   const visibleColumns = columnPreferences.visible;
+
+  useEffect(() => () => document.body.classList.remove("is-resizing-columns"), []);
+
+  const widthOf = (column: string): number => draggingColumn?.column === column ? draggingColumn.width : columnWidths.widthOf(column);
+  const widthStyle = (column: string): CSSProperties => {
+    const width = widthOf(column);
+    return { width, minWidth: width, maxWidth: width };
+  };
+
+  const startResize = (event: PointerEvent<HTMLButtonElement>, column: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startWidth = columnWidths.widthOf(column);
+    resizeSession.current = { column, startX: event.clientX, startWidth, width: startWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.classList.add("is-resizing-columns");
+    setDraggingColumn({ column, width: startWidth });
+  };
+
+  const resize = (event: PointerEvent<HTMLButtonElement>) => {
+    const session = resizeSession.current;
+    if (!session) return;
+    const width = Math.max(MIN_COLUMN_WIDTH, Math.min(720, session.startWidth + event.clientX - session.startX));
+    session.width = width;
+    setDraggingColumn({ column: session.column, width });
+  };
+
+  const finishResize = () => {
+    const session = resizeSession.current;
+    if (!session) return;
+    columnWidths.setWidth(session.column, session.width);
+    resizeSession.current = undefined;
+    document.body.classList.remove("is-resizing-columns");
+    setDraggingColumn(undefined);
+  };
 
   const downloadTransactionLog = async (row: Record<string, unknown>, key: string) => {
     if (downloadingRows.has(key)) return;
@@ -86,7 +125,7 @@ export const DataTable = ({ kind, result, loading, onTransactionLog, onTrace }: 
       <div className="table-shell" aria-busy={loading}>
         {loading && <div className="loading-line" />}
         <table className={kind === "transaction" ? "has-row-actions" : undefined}>
-          <thead><tr>{visibleColumns.map((column) => <th key={column}>{LABELS[column] ?? column}</th>)}{kind === "transaction" && <th>快捷操作</th>}</tr></thead>
+          <thead><tr>{visibleColumns.map((column) => <th key={column} className={draggingColumn?.column === column ? "is-resizing" : undefined} style={widthStyle(column)}><span className="column-label">{LABELS[column] ?? column}</span><button className="column-resizer" type="button" title="拖拽调整列宽；双击恢复默认宽度" aria-label={`调整 ${LABELS[column] ?? column} 列宽`} onPointerDown={(event) => startResize(event, column)} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onDoubleClick={() => columnWidths.resetWidth(column)} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); columnWidths.setWidth(column, columnWidths.widthOf(column) + (event.key === "ArrowLeft" ? -20 : 20)); } }} /></th>)}{kind === "transaction" && <th>快捷操作</th>}</tr></thead>
           <tbody>
             {rows.map((row, position) => {
               const rowKey = `${text(row["ecp.txn.id"])}-${position}`;
@@ -95,7 +134,7 @@ export const DataTable = ({ kind, result, loading, onTransactionLog, onTrace }: 
                 {visibleColumns.map((column) => {
                   const value = timestampFields.has(column) ? displayNairobiTime(row[column]) : text(row[column]);
                   const tone = column === "ecp.txn.message.code" ? resultTone(row) : "";
-                  return <td key={column} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
+                  return <td key={column} style={widthStyle(column)} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
                 })}
                 {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="查看 Trace" aria-label="查看 Trace" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
               </tr>;

@@ -61,17 +61,65 @@ pub async fn save(
     extension: &str,
     contents: &[u8],
 ) -> Result<DownloadResult, String> {
+    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ");
+    save_named(&format!("{prefix}-{timestamp}"), extension, contents).await
+}
+
+pub async fn save_named(
+    name: &str,
+    extension: &str,
+    contents: &[u8],
+) -> Result<DownloadResult, String> {
     let directory = dirs::download_dir()
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| "无法定位系统下载目录".to_string())?;
-    let timestamp = Utc::now().format("%Y%m%dT%H%M%S%3fZ");
-    let path: PathBuf = directory.join(format!("{prefix}-{timestamp}.{extension}"));
+    let stem = safe_file_stem(name);
+    let path = available_path(&directory, &stem, extension).await?;
     tokio::fs::write(&path, contents)
         .await
         .map_err(|error| format!("无法保存文件 {}：{error}", path.display()))?;
     Ok(DownloadResult {
         path: path.to_string_lossy().into_owned(),
     })
+}
+
+fn safe_file_stem(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| match character {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\0'..='\u{1f}' => '_',
+            _ => character,
+        })
+        .collect();
+    let stem = sanitized
+        .trim()
+        .trim_matches('.')
+        .chars()
+        .take(180)
+        .collect::<String>();
+    if stem.is_empty() || matches!(stem.to_ascii_uppercase().as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        "opslog-download".to_string()
+    } else {
+        stem
+    }
+}
+
+async fn available_path(directory: &std::path::Path, stem: &str, extension: &str) -> Result<PathBuf, String> {
+    for suffix in 0..10_000 {
+        let name = if suffix == 0 {
+            format!("{stem}.{extension}")
+        } else {
+            format!("{stem} ({suffix}).{extension}")
+        };
+        let path = directory.join(name);
+        if !tokio::fs::try_exists(&path)
+            .await
+            .map_err(|error| format!("无法检查下载目录 {}：{error}", directory.display()))?
+        {
+            return Ok(path);
+        }
+    }
+    Err("下载目录中存在过多同名文件，请清理后重试".to_string())
 }
 
 #[cfg(test)]
@@ -89,5 +137,11 @@ mod tests {
             csv(&columns, &rows),
             "\u{feff}\"message\"\r\n\"a,\"\"b\"\"\""
         );
+    }
+
+    #[test]
+    fn uses_log_id_as_safe_file_stem() {
+        assert_eq!(safe_file_stem("channelPostingapc.p_0_123"), "channelPostingapc.p_0_123");
+        assert_eq!(safe_file_stem("../unsafe/log"), "_unsafe_log");
     }
 }

@@ -151,7 +151,7 @@ pub async fn download_transaction_log(
     let query = build_trc_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     let result = run_esql(&environment, &query, 300).await?;
     let contents = export_files::trc(&result.rows);
-    export_files::save("transaction-log", "trc", contents.as_bytes()).await
+    export_files::save_named(&input.id, "trc", contents.as_bytes()).await
 }
 
 #[tauri::command]

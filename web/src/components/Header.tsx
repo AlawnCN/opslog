@@ -46,7 +46,7 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           <i />
           {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
-        <div className="version-chip">{desktopMode ? "APP · 3.0.6" : "WEB · 3.0.6"}</div>
+        <div className="version-chip">{desktopMode ? "APP · 3.0.7" : "WEB · 3.0.7"}</div>
       </div>
     </header>
   );

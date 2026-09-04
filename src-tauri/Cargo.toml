@@ -1,6 +1,6 @@
 [package]
 name = "opslog"
-version = "3.0.6"
+version = "3.0.7"
 description = "Portable M5/Faulu log query console"
 authors = ["MuRong Technology"]
 license = "Proprietary"

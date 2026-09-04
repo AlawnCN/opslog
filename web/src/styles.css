@@ -148,9 +148,14 @@ h1, h2 { margin: 3px 0 0; font-size: 18px; font-weight: 600; letter-spacing: .02
 .loading-line { position: sticky; z-index: 4; top: 0; height: 2px; width: 35%; background: var(--cyan); animation: scan 1.2s infinite ease-in-out; }
 @keyframes scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(390%); } }
 table { width: max-content; min-width: 100%; border-collapse: collapse; table-layout: fixed; }
-th { position: sticky; top: 0; z-index: 2; background: #0b1c2d; color: #65849c; font: 9px ui-monospace, monospace; letter-spacing: .05em; text-align: left; padding: 9px 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 112px; }
-th:nth-child(2), td:nth-child(2), th:has(+ th:nth-last-child(1)) { min-width: 260px; }
-td { max-width: 300px; height: 36px; padding: 0 10px; border-right: 1px solid #102c42; border-bottom: 1px solid #10283c; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+th { position: sticky; top: 0; z-index: 2; box-sizing: border-box; background: #0b1c2d; color: #65849c; font: 9px ui-monospace, monospace; letter-spacing: .05em; text-align: left; padding: 9px 10px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+td { box-sizing: border-box; height: 36px; padding: 0 10px; border-right: 1px solid #102c42; border-bottom: 1px solid #10283c; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.column-label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.column-resizer { position: absolute; z-index: 6; top: 0; right: -4px; bottom: 0; width: 9px; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; }
+.column-resizer::after { content: ""; position: absolute; top: 24%; bottom: 24%; left: 4px; width: 1px; background: transparent; transition: background .15s, box-shadow .15s; }
+th:hover .column-resizer::after, th.is-resizing .column-resizer::after, .column-resizer:focus-visible::after { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.column-resizer:focus-visible { outline: 1px solid var(--cyan); outline-offset: -1px; }
+body.is-resizing-columns, body.is-resizing-columns * { cursor: col-resize !important; user-select: none !important; }
 tbody tr { user-select: text; } tbody tr:hover { background: #0d2940; }
 td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #aac2d4; }
 td.success { color: var(--green); } td.error { color: var(--red); } td.neutral { color: var(--muted); }

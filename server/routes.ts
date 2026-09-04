@@ -57,6 +57,15 @@ const asyncRoute = (
 const filename = (prefix: string): string =>
   `${prefix}-${new Date().toISOString().replaceAll(":", "").replaceAll(".", "-")}`;
 
+export const transactionLogFilename = (id: string): string => {
+  const safeId = id
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .trim()
+    .replace(/^[. ]+|[. ]+$/g, "")
+    .slice(0, 180);
+  return `${safeId || "transaction-log"}.trc`;
+};
+
 const trcText = (rows: Record<string, unknown>[]): string => rows.map((row) => {
   const timestamp = row["ecp.log.timestamp"] ?? "";
   const application = row["ecp.log.application"] ?? "";
@@ -117,7 +126,7 @@ apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
   response
     .status(200)
     .setHeader("Content-Type", "text/plain; charset=utf-8")
-    .setHeader("Content-Disposition", `attachment; filename="${filename("transaction-log")}.trc"`)
+    .setHeader("Content-Disposition", `attachment; filename="${transactionLogFilename(input.id)}"`)
     .send(trcText(result.rows));
 }));
 
