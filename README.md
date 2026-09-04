@@ -57,14 +57,23 @@ npm run desktop:macos
 - `src-tauri/target/release/bundle/macos/OpsLog.app`
 - `src-tauri/target/release/bundle/dmg/OpsLog_3.0.6_aarch64.dmg`
 
-Windows 绿色包（在 Windows x64 构建机执行）：
+Windows x64（在 Windows x64 构建机执行）：
 
 ```powershell
 npm install
-npm run desktop:windows
+npm run desktop:windows:setup
 ```
 
-生成免安装运行文件 `src-tauri/target/release/opslog.exe`。正式 Release 会将它和不含真实账号的配置示例、使用说明压缩为 `OpsLog_<版本>_windows_x64_portable.zip`；解压后直接运行 `OpsLog.exe` 即可。目标电脑需有 Microsoft WebView2 Runtime（Windows 10/11 通常已自带）。
+生成 NSIS 安装程序和 `src-tauri/target/release/opslog.exe`。正式 Release 同时提供 `OpsLog_<版本>_windows_x64_setup.exe` 与 `OpsLog_<版本>_windows_x64_portable.zip`；绿色包解压后直接运行 `OpsLog.exe`。目标电脑需有 Microsoft WebView2 Runtime（Windows 10/11 通常已自带）。
+
+每个 GitHub 版本标签自动生成以下完整交付矩阵：
+
+- Windows x64：NSIS 安装版与绿色 ZIP。
+- macOS Apple Silicon（arm64）：DMG 与便携 `.app` ZIP。
+- macOS Intel（x64）：DMG 与便携 `.app` ZIP。
+- `SHA256SUMS`：全部包的完整性校验清单。
+
+Windows ARM64 本轮暂由 Windows x64 包通过系统的 x64 仿真层运行；待引入受支持的 ARM64 Windows 构建与签名环境后，再增加原生 ARM64 包。
 
 对外分发前建议分别配置 Apple Developer ID 和 Windows Authenticode 代码签名，避免系统显示“未知开发者”。内部测试可直接使用未公证/未签名构建。
 
