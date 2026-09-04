@@ -30,7 +30,14 @@ export const TraceDrawer = ({ traceId, rows, loading, onClose }: { traceId?: str
     <aside className="drawer trace-drawer" onMouseDown={(event) => event.stopPropagation()}>
       <div className="drawer-heading"><div><span className="eyebrow">DISTRIBUTED TRACE</span><h2>调用链路</h2><code>{traceId}</code></div><button onClick={onClose}><CloseIcon /></button></div>
       <div className="trace-summary"><div><span>SPAN 数量</span><strong>{rows.length}</strong></div><div><span>最长耗时</span><strong>{maximum.toFixed(2)} ms</strong></div></div>
-      {loading && <div className="trace-loading">正在组装调用链路…</div>}
+      {loading && <div className="trace-loading trace-loading-active" role="status" aria-live="polite">
+        <div className="trace-loading-visual" aria-hidden="true">
+          <span className="trace-loading-link trace-loading-link-first" /><span className="trace-loading-link trace-loading-link-second" />
+          <i className="trace-loading-node trace-loading-node-source" /><i className="trace-loading-node trace-loading-node-core" /><i className="trace-loading-node trace-loading-node-target" />
+        </div>
+        <strong>正在组装调用链路…</strong>
+        <span>正在聚合 Trace Span 与耗时信息</span>
+      </div>}
       {!loading && rows.length === 0 && <div className="trace-loading">APM 索引中未找到该 Trace。</div>}
       <div className="trace-list">
         {rows.map((row, index) => {
