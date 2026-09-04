@@ -161,7 +161,14 @@ jobs:
         shell: bash
         run: |
           sha256sum release/*.zip release/*.dmg release/*.exe > release/SHA256SUMS
-          gh release create "${GITHUB_REF_NAME}" release/*.zip release/*.dmg release/*.exe release/SHA256SUMS \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "OpsLog ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+          assets=(release/*.zip release/*.dmg release/*.exe release/SHA256SUMS)
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "OpsLog ${GITHUB_REF_NAME#v}" \
+              --generate-notes
+          fi
