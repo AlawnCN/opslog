@@ -1,0 +1,37 @@
+node_modules/
+dist-web/
+dist-server/
+src-tauri/target/
+release/
+.DS_Store
+npm-debug.log*
+*.csv
+*.trc
+
+# Runtime credentials and environment-specific settings. Keep only the
+# redacted example configuration under version control.
+opslog-envs.json
+opslog-envs.*.json
+!opslog-envs.example.json
+.env
+.env.*
+!.env.example
+
+# Original reference binaries and locally generated install artifacts.
+opslog-*.jar
+*.dmg
+*.msi
+*.exe
+*.zip
+*.app
+
+# Tauri-generated metadata and platform-specific editor files.
+src-tauri/gen/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/Square*.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/64x64.png
+src-tauri/icons/icon.png
+.idea/
+.vscode/

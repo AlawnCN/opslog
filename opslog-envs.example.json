@@ -1,0 +1,13 @@
+[
+  {
+    "name": "faulu-m5-prd",
+    "kibanaUrl": "https://kibana.example.internal",
+    "username": "replace-me",
+    "password": "replace-me",
+    "txnlstIndex": "logs-ecp.txn.lst.pr*",
+    "txntrcIndex": "logs-ecp.txn.trc.pr*",
+    "applogIndex": "logs-ecp.app.pr*",
+    "apmIndex": "traces-apm*",
+    "allowInsecureTls": false
+  }
+]

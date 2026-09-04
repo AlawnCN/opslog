@@ -1,0 +1,29 @@
+[package]
+name = "opslog"
+version = "3.0.6"
+description = "Portable M5/Faulu log query console"
+authors = ["MuRong Technology"]
+license = "Proprietary"
+edition = "2024"
+rust-version = "1.85"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "opslog_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+futures-util = "0.3"
+log = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+tokio = { version = "1", features = ["fs"] }
