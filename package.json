@@ -12,8 +12,8 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:macos": "tauri build --bundles app,dmg",
-    "desktop:windows": "tauri build --bundles nsis",
-    "desktop:portable": "tauri build --no-bundle",
+    "desktop:windows": "tauri build --no-bundle",
+    "desktop:portable": "npm run desktop:windows",
     "desktop:info": "tauri info",
     "test": "npm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"

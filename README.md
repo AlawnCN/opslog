@@ -57,14 +57,14 @@ npm run desktop:macos
 - `src-tauri/target/release/bundle/macos/OpsLog.app`
 - `src-tauri/target/release/bundle/dmg/OpsLog_3.0.6_aarch64.dmg`
 
-Windows（在 Windows x64 构建机执行）：
+Windows 绿色包（在 Windows x64 构建机执行）：
 
 ```powershell
 npm install
 npm run desktop:windows
 ```
 
-生成 NSIS 安装程序。若需要免安装单文件版本，可执行 `npm run desktop:portable`，然后分发 `src-tauri/target/release/opslog.exe`；目标电脑需有 Microsoft WebView2 Runtime（Windows 10/11 通常已自带）。
+生成免安装运行文件 `src-tauri/target/release/opslog.exe`。正式 Release 会将它和不含真实账号的配置示例、使用说明压缩为 `OpsLog_<版本>_windows_x64_portable.zip`；解压后直接运行 `OpsLog.exe` 即可。目标电脑需有 Microsoft WebView2 Runtime（Windows 10/11 通常已自带）。
 
 对外分发前建议分别配置 Apple Developer ID 和 Windows Authenticode 代码签名，避免系统显示“未知开发者”。内部测试可直接使用未公证/未签名构建。
 
