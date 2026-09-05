@@ -1,6 +1,6 @@
 [package]
 name = "opslog"
-version = "3.0.8"
+version = "3.0.9"
 description = "Portable M5/Faulu log query console"
 authors = ["MuRong Technology"]
 license = "Proprietary"
@@ -21,7 +21,7 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 futures-util = "0.3"
 log = "0.4"
-reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream", "gzip", "brotli", "deflate"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.11.3", features = [] }

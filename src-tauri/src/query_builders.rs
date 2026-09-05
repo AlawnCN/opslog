@@ -34,6 +34,35 @@ fn add_like(conditions: &mut Vec<String>, field: &str, value: Option<&str>) {
     }
 }
 
+fn add_exact_or_like(
+    conditions: &mut Vec<String>,
+    field: &str,
+    value: Option<&str>,
+    looks_complete: fn(&str) -> bool,
+) {
+    let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
+        return;
+    };
+    let value = value.trim();
+    if looks_complete(value) {
+        conditions.push(format!("{field} == \"{}\"", literal(value)));
+        return;
+    }
+    conditions.push(format!("{field} LIKE \"*{}*\"", literal(value)));
+}
+
+fn full_transaction_id(value: &str) -> bool {
+    let normalized = value.to_ascii_lowercase();
+    value.len() >= 24
+        && [".p_", ".u_", ".s_", ".d_"]
+            .iter()
+            .any(|marker| normalized.contains(marker))
+}
+
+fn full_trace_id(value: &str) -> bool {
+    (16..=64).contains(&value.len()) && value.chars().all(|character| character.is_ascii_hexdigit())
+}
+
 fn resolve_index<'a>(
     input: &'a SearchInput,
     environment: &'a EnvironmentConfig,
@@ -64,8 +93,18 @@ fn transaction_conditions(input: &SearchInput) -> Vec<String> {
     // UAT leaves ecp.txn.timestamp empty on part of the transaction stream.
     // The legacy Java client filters this log type by the canonical ingest time.
     let mut conditions = vec![time_range("@timestamp", input)];
-    add_like(&mut conditions, "ecp.txn.id", input.txn_id.as_deref());
-    add_like(&mut conditions, "ecp.txn.trace", input.trace_id.as_deref());
+    add_exact_or_like(
+        &mut conditions,
+        "ecp.txn.id",
+        input.txn_id.as_deref(),
+        full_transaction_id,
+    );
+    add_exact_or_like(
+        &mut conditions,
+        "ecp.txn.trace",
+        input.trace_id.as_deref(),
+        full_trace_id,
+    );
     add_like(&mut conditions, "ecp.txn.no", input.txn_no.as_deref());
     add_like(
         &mut conditions,
@@ -165,13 +204,13 @@ pub fn build_search_query(
     let keep = display_fields(input.kind).join(", ");
     if input.kind == LogKind::Transaction {
         return Ok(format!(
-            "FROM {source} | WHERE {} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | SORT @timestamp DESC | KEEP {keep} | LIMIT {limit}",
+            "FROM {source} | WHERE {} | SORT @timestamp DESC | LIMIT {limit} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | KEEP {keep}",
             conditions.join(" AND ")
         ));
     }
 
     Ok(format!(
-        "FROM {source} | WHERE {} | KEEP {keep} | SORT {timestamp} DESC | LIMIT {limit}",
+        "FROM {source} | WHERE {} | SORT {timestamp} DESC | LIMIT {limit} | KEEP {keep}",
         conditions.join(" AND ")
     ))
 }
@@ -184,7 +223,7 @@ pub fn build_trc_query(
 ) -> Result<String, String> {
     let source = index(&environment.txntrc_index)?;
     Ok(format!(
-        "FROM {source} | WHERE @timestamp >= \"{}\" AND @timestamp < \"{}\" AND ecp.log.id == \"{}\" | KEEP ecp.log.timestamp, ecp.log.application, ecp.log.level, message | SORT ecp.log.timestamp ASC | LIMIT 20000",
+        "FROM {source} | WHERE @timestamp >= \"{}\" AND @timestamp < \"{}\" AND ecp.log.id == \"{}\" | SORT ecp.log.timestamp ASC | LIMIT 20000 | KEEP ecp.log.timestamp, ecp.log.application, ecp.log.level, message",
         literal(start_time),
         literal(end_time),
         literal(log_id)
@@ -199,7 +238,7 @@ pub fn build_trace_query(
 ) -> Result<String, String> {
     let source = index(environment.apm_index.as_deref().unwrap_or("traces-apm*"))?;
     Ok(format!(
-        "FROM {source} | WHERE trace.id == \"{}\" AND @timestamp >= \"{}\" AND @timestamp < \"{}\" | SORT @timestamp ASC | LIMIT 20000",
+        "FROM {source} | WHERE trace.id == \"{}\" AND @timestamp >= \"{}\" AND @timestamp < \"{}\" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*",
         literal(trace_id),
         literal(start_time),
         literal(end_time)
@@ -257,10 +296,25 @@ mod tests {
         assert!(query.contains("ecp.txn.id LIKE \"*approve-\\\"credit*\""));
         assert!(query.contains("RIGHT(ecp.txn.message.code, 5) != \"00000\""));
         assert!(query.contains("TO_INTEGER(ecp.txn.duration) >= 120"));
-        assert!(query.ends_with("LIMIT 100"));
         assert!(query.contains("@timestamp >= \"2026-09-01T00:00:00.000Z\""));
         assert!(query.contains("EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp)"));
-        assert!(query.contains("SORT @timestamp DESC | KEEP"));
+        assert!(query.contains("SORT @timestamp DESC | LIMIT 100 | EVAL"));
+        assert!(query.contains("| KEEP ecp.txn.timestamp"));
+    }
+
+    #[test]
+    fn uses_exact_matching_for_complete_identifiers() {
+        let mut input = input();
+        input.txn_id = Some("approve-trsFundTransferbui.u_0_7809041716470000000003".into());
+        input.trace_id = Some("92d406f1f29331e8d0f273ef9faebc35".into());
+
+        let query = build_search_query(&input, &environment(), false).unwrap();
+        assert!(
+            query.contains(
+                "ecp.txn.id == \"approve-trsFundTransferbui.u_0_7809041716470000000003\""
+            )
+        );
+        assert!(query.contains("ecp.txn.trace == \"92d406f1f29331e8d0f273ef9faebc35\""));
     }
 
     #[test]
@@ -272,5 +326,19 @@ mod tests {
             build_search_query(&input, &environment(), false).unwrap_err(),
             "该索引未在当前环境中配置"
         );
+    }
+
+    #[test]
+    fn limits_trace_payload_to_rendered_fields() {
+        let query = build_trace_query(
+            &environment(),
+            "92d406f1f29331e8d0f273ef9faebc35",
+            "2026-09-01T00:00:00.000Z",
+            "2026-09-02T00:00:00.000Z",
+        )
+        .unwrap();
+        assert!(query.contains(
+            "LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*"
+        ));
     }
 }

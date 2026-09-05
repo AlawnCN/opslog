@@ -90,6 +90,13 @@ pub struct DownloadInput {
     pub end_time: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTransactionLogInput {
+    pub id: String,
+    pub content: String,
+}
+
 #[derive(Debug)]
 pub struct QueryResult {
     pub columns: Vec<String>,

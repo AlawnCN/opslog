@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { useColumnPreferences } from "../column-preferences";
 import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
+import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "../loading-feedback";
 import { displayNairobiTime } from "../time";
 import type { LogKind, SearchResponse } from "../types";
 import { ColumnSelector } from "./ColumnSelector";
@@ -46,12 +47,13 @@ interface DataTableProps {
   kind: LogKind;
   result?: SearchResponse;
   loading: boolean;
+  queryPerformance?: { durationMs: number; cached: boolean };
   onTransactionLog: (row: Record<string, unknown>) => Promise<void>;
   onReadTransactionLog: (row: Record<string, unknown>) => void;
   onTrace: (row: Record<string, unknown>) => void;
 }
 
-export const DataTable = ({ kind, result, loading, onTransactionLog, onReadTransactionLog, onTrace }: DataTableProps) => {
+export const DataTable = ({ kind, result, loading, queryPerformance, onTransactionLog, onReadTransactionLog, onTrace }: DataTableProps) => {
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
   const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
   const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
@@ -99,9 +101,11 @@ export const DataTable = ({ kind, result, loading, onTransactionLog, onReadTrans
   const downloadTransactionLog = async (row: Record<string, unknown>, key: string) => {
     if (downloadingRows.has(key)) return;
     setDownloadingRows((current) => new Set(current).add(key));
+    const startedAt = performance.now();
     try {
       await onTransactionLog(row);
     } finally {
+      await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.transactionLogDownload);
       setDownloadingRows((current) => {
         const next = new Set(current);
         next.delete(key);
@@ -117,10 +121,16 @@ export const DataTable = ({ kind, result, loading, onTransactionLog, onReadTrans
   return (
     <section className="results-panel">
       <div className="results-heading">
-        <div><span className="eyebrow">SEARCH RESULTS</span><strong>{loading ? "正在从日志集群读取…" : `本页 ${rows.length} 条记录`}</strong></div>
+        <div className="results-heading-copy">
+          <span className="eyebrow">SEARCH RESULTS</span>
+          <div className="results-heading-main">
+            <strong>{loading ? "正在从日志集群读取…" : `本页 ${rows.length} 条记录`}</strong>
+            {!loading && queryPerformance && <span className={`query-metric${queryPerformance.cached ? " is-cached" : ""}`} title={queryPerformance.cached ? "本次结果来自当前会话缓存" : "包含 Kibana 查询和 VPN 传输时间"}>{queryPerformance.cached ? "已缓存" : `查询 ${(queryPerformance.durationMs / 1000).toFixed(2)} 秒`}</span>}
+          </div>
+        </div>
         <div className="results-tools">
           <div className="legend"><span className="ok">成功</span><span className="bad">失败</span></div>
-          <ColumnSelector columns={columnPreferences.options} selected={columnPreferences.selected} labels={LABELS} onToggle={columnPreferences.toggle} onMove={columnPreferences.move} onSelectAll={columnPreferences.selectAll} onReset={columnPreferences.reset} />
+          <ColumnSelector columns={columnPreferences.options} selected={columnPreferences.selected} labels={LABELS} onToggle={columnPreferences.toggle} onReorder={columnPreferences.reorder} onSelectAll={columnPreferences.selectAll} onReset={columnPreferences.reset} />
         </div>
       </div>
       <div className="table-shell" aria-busy={loading}>

@@ -20,6 +20,20 @@ const addLike = (conditions: string[], field: string, value?: string): void => {
   if (value?.trim()) conditions.push(`${field} LIKE "*${literal(value)}*"`);
 };
 
+const addExactOrLike = (
+  conditions: string[],
+  field: string,
+  value: string | undefined,
+  looksComplete: (candidate: string) => boolean
+): void => {
+  if (!value?.trim()) return;
+  const normalized = literal(value);
+  conditions.push(looksComplete(value.trim()) ? `${field} == "${normalized}"` : `${field} LIKE "*${normalized}*"`);
+};
+
+const fullTransactionId = (value: string): boolean => value.length >= 24 && /\.[puds]_\d+_/i.test(value);
+const fullTraceId = (value: string): boolean => /^[a-f\d]{16,64}$/i.test(value);
+
 const resolveIndex = (input: SearchInput, environment: EnvironmentConfig): string => {
   if (input.kind === "transaction") return index(environment.txnlstIndex);
   if (input.kind === "application" || input.kind === "ecp") return index(environment.applogIndex);
@@ -39,8 +53,8 @@ const buildTransactionConditions = (input: SearchInput): string[] => {
   // UAT writes the ingestion time reliably, but leaves ecp.txn.timestamp empty on
   // some transaction documents. The Java client has always used @timestamp here.
   const conditions = [timeRange("@timestamp", input)];
-  addLike(conditions, "ecp.txn.id", input.txnId);
-  addLike(conditions, "ecp.txn.trace", input.traceId);
+  addExactOrLike(conditions, "ecp.txn.id", input.txnId, fullTransactionId);
+  addExactOrLike(conditions, "ecp.txn.trace", input.traceId, fullTraceId);
   addLike(conditions, "ecp.txn.no", input.txnNo);
   addLike(conditions, "ecp.txn.business", input.business);
   addLike(conditions, "ecp.txn.service", input.service);
@@ -91,10 +105,10 @@ export const buildSearchQuery = (
   if (input.kind === "transaction") {
     // Keep the familiar business-time column populated when legacy UAT records
     // contain only the canonical ingest timestamp.
-    return `FROM ${source} | WHERE ${conditions.join(" AND ")} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | SORT @timestamp DESC | KEEP ${keep} | LIMIT ${limit}`;
+    return `FROM ${source} | WHERE ${conditions.join(" AND ")} | SORT @timestamp DESC | LIMIT ${limit} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | KEEP ${keep}`;
   }
 
-  return `FROM ${source} | WHERE ${conditions.join(" AND ")} | KEEP ${keep} | SORT ${timestamp} DESC | LIMIT ${limit}`;
+  return `FROM ${source} | WHERE ${conditions.join(" AND ")} | SORT ${timestamp} DESC | LIMIT ${limit} | KEEP ${keep}`;
 };
 
 export const buildTrcQuery = (
@@ -104,7 +118,7 @@ export const buildTrcQuery = (
   endTime: string
 ): string => {
   const source = index(environment.txntrcIndex);
-  return `FROM ${source} | WHERE @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" AND ecp.log.id == "${literal(logId)}" | KEEP ecp.log.timestamp, ecp.log.application, ecp.log.level, message | SORT ecp.log.timestamp ASC | LIMIT 20000`;
+  return `FROM ${source} | WHERE @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" AND ecp.log.id == "${literal(logId)}" | SORT ecp.log.timestamp ASC | LIMIT 20000 | KEEP ecp.log.timestamp, ecp.log.application, ecp.log.level, message`;
 };
 
 export const buildTraceQuery = (
@@ -114,7 +128,7 @@ export const buildTraceQuery = (
   endTime: string
 ): string => {
   const source = index(environment.apmIndex ?? "traces-apm*");
-  return `FROM ${source} | WHERE trace.id == "${literal(traceId)}" AND @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" | SORT @timestamp ASC | LIMIT 20000`;
+  return `FROM ${source} | WHERE trace.id == "${literal(traceId)}" AND @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*`;
 };
 
 export const pageRows = <T>(rows: T[], page: number, pageSize: number): T[] => {

@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import type { Environment } from "../types";
 import { ImportIcon, PulseIcon } from "./Icons";
 
@@ -14,6 +15,7 @@ interface HeaderProps {
 export const Header = ({ environments, selected, onSelect, loading, desktopMode, onImportConfig }: HeaderProps) => {
   const environment = environments.find((item) => item.name === selected);
   const configInput = useRef<HTMLInputElement>(null);
+  const macDesktop = desktopMode && navigator.userAgent.includes("Macintosh");
 
   const selectConfig = async (files: FileList | null) => {
     const file = files?.[0];
@@ -22,8 +24,14 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
     if (configInput.current) configInput.current.value = "";
   };
 
+  const startWindowDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!macDesktop || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("button, input, select, option, label")) return;
+    void getCurrentWindow().startDragging().catch(() => undefined);
+  };
+
   return (
-    <header className="topbar">
+    <header className={`topbar${macDesktop ? " is-macos-overlay" : ""}`} onPointerDown={startWindowDrag}>
       <div className="brand">
         <div className="brand-mark"><PulseIcon /></div>
         <div>
@@ -46,7 +54,7 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           <i />
           {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
-        <div className="version-chip">{desktopMode ? "APP · 3.0.8" : "WEB · 3.0.8"}</div>
+        <div className="version-chip">{desktopMode ? "APP · 3.0.9" : "WEB · 3.0.9"}</div>
       </div>
     </header>
   );

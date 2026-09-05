@@ -53,12 +53,13 @@ export const useColumnPreferences = (kind: LogKind, available: string[]) => {
     update([...selected, column]);
   };
 
-  const move = (column: string, direction: -1 | 1) => {
-    const currentIndex = selected.indexOf(column);
-    const targetIndex = currentIndex + direction;
-    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= selected.length) return;
-    const next = [...selected];
-    [next[currentIndex], next[targetIndex]] = [next[targetIndex]!, next[currentIndex]!];
+  const reorder = (source: string, target: string, after: boolean) => {
+    const sourceIndex = selected.indexOf(source);
+    const targetIndex = selected.indexOf(target);
+    if (sourceIndex < 0 || targetIndex < 0 || source === target) return;
+    const next = selected.filter((column) => column !== source);
+    const insertAt = next.indexOf(target) + (after ? 1 : 0);
+    next.splice(insertAt, 0, source);
     update(next);
   };
 
@@ -67,7 +68,7 @@ export const useColumnPreferences = (kind: LogKind, available: string[]) => {
     options,
     selected: selectedSet,
     toggle,
-    move,
+    reorder,
     selectAll: () => update(available),
     reset: () => update(available)
   };

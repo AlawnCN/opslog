@@ -67,12 +67,23 @@ const download = async (url: string, request: unknown): Promise<string | undefin
   const blob = await response.blob();
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const name = disposition.match(/filename="([^"]+)"/)?.[1] ?? "opslog-download";
+  saveBrowserBlob(blob, name);
+  return undefined;
+};
+
+const saveBrowserBlob = (blob: Blob, name: string): void => {
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(blob);
   anchor.download = name;
+  document.body.append(anchor);
   anchor.click();
+  anchor.remove();
   setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
-  return undefined;
+};
+
+const transactionLogFilename = (id: string): string => {
+  const safeId = id.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim().replace(/^[. ]+|[. ]+$/g, "").slice(0, 180);
+  return `${safeId || "transaction-log"}.trc`;
 };
 
 export const exportLogs = async (request: SearchRequest): Promise<string | undefined> => {
@@ -107,6 +118,12 @@ export const readTransactionLog = async (
   if (!response.ok) return parseError(response);
   const data = await response.json() as { content?: unknown };
   return typeof data.content === "string" ? data.content : "";
+};
+
+export const saveTransactionLogContent = async (id: string, content: string): Promise<string | undefined> => {
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_transaction_log", { input: { id, content } })).path;
+  saveBrowserBlob(new Blob([content], { type: "text/plain;charset=utf-8" }), transactionLogFilename(id));
+  return undefined;
 };
 
 export const loadTrace = async (

@@ -97,14 +97,23 @@ fn safe_file_stem(value: &str) -> String {
         .chars()
         .take(180)
         .collect::<String>();
-    if stem.is_empty() || matches!(stem.to_ascii_uppercase().as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+    if stem.is_empty()
+        || matches!(
+            stem.to_ascii_uppercase().as_str(),
+            "CON" | "PRN" | "AUX" | "NUL"
+        )
+    {
         "opslog-download".to_string()
     } else {
         stem
     }
 }
 
-async fn available_path(directory: &std::path::Path, stem: &str, extension: &str) -> Result<PathBuf, String> {
+async fn available_path(
+    directory: &std::path::Path,
+    stem: &str,
+    extension: &str,
+) -> Result<PathBuf, String> {
     for suffix in 0..10_000 {
         let name = if suffix == 0 {
             format!("{stem}.{extension}")
@@ -141,7 +150,10 @@ mod tests {
 
     #[test]
     fn uses_log_id_as_safe_file_stem() {
-        assert_eq!(safe_file_stem("channelPostingapc.p_0_123"), "channelPostingapc.p_0_123");
+        assert_eq!(
+            safe_file_stem("channelPostingapc.p_0_123"),
+            "channelPostingapc.p_0_123"
+        );
         assert_eq!(safe_file_stem("../unsafe/log"), "_unsafe_log");
     }
 }

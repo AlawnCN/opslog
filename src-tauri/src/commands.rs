@@ -3,7 +3,8 @@ use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::domain::{
-    DownloadInput, DownloadResult, PublicEnvironment, SearchInput, SearchResponse, display_fields,
+    DownloadInput, DownloadResult, PublicEnvironment, SaveTransactionLogInput, SearchInput,
+    SearchResponse, display_fields,
 };
 use crate::environment_store;
 use crate::export_files;
@@ -11,6 +12,7 @@ use crate::kibana_client::run_esql;
 use crate::query_builders::{build_search_query, build_trace_query, build_trc_query};
 
 const MAX_RANGE_DAYS: i64 = 31;
+const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
 
 fn parse_range(start: &str, end: &str, enforce_maximum: bool) -> Result<(), String> {
     let start =
@@ -161,6 +163,19 @@ pub async fn read_transaction_log(app: AppHandle, input: DownloadInput) -> Resul
     let query = build_trc_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     let result = run_esql(&environment, &query, 300).await?;
     Ok(export_files::trc(&result.rows))
+}
+
+#[tauri::command]
+pub async fn save_transaction_log(
+    input: SaveTransactionLogInput,
+) -> Result<DownloadResult, String> {
+    if input.id.trim().is_empty() || input.id.chars().count() > 500 {
+        return Err("日志 ID 不合法".to_string());
+    }
+    if input.content.len() > MAX_TRANSACTION_LOG_BYTES {
+        return Err("日志内容超过 64 MB 安全上限".to_string());
+    }
+    export_files::save_named(&input.id, "trc", input.content.as_bytes()).await
 }
 
 #[tauri::command]

@@ -23,13 +23,22 @@ const classify = (row: Record<string, unknown>): string => {
   return "transaction";
 };
 
-export const TraceDrawer = ({ traceId, rows, loading, onClose }: { traceId?: string; rows: Record<string, unknown>[]; loading: boolean; onClose: () => void }) => {
+interface TraceDrawerProps {
+  traceId?: string;
+  rows: Record<string, unknown>[];
+  loading: boolean;
+  remoteDurationMs?: number;
+  cached?: boolean;
+  onClose: () => void;
+}
+
+export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, onClose }: TraceDrawerProps) => {
   if (!traceId) return null;
-  const maximum = Math.max(...rows.map(duration), 1);
+  const maximum = rows.reduce((current, row) => Math.max(current, duration(row)), 1);
   return <div className="drawer-backdrop" onMouseDown={onClose}>
     <aside className="drawer trace-drawer" onMouseDown={(event) => event.stopPropagation()}>
       <div className="drawer-heading"><div><span className="eyebrow">DISTRIBUTED TRACE</span><h2>调用链路</h2><code>{traceId}</code></div><button onClick={onClose}><CloseIcon /></button></div>
-      <div className="trace-summary"><div><span>SPAN 数量</span><strong>{rows.length}</strong></div><div><span>最长耗时</span><strong>{maximum.toFixed(2)} ms</strong></div></div>
+      <div className="trace-summary"><div><span>SPAN 数量</span><strong>{rows.length}</strong></div><div><span>最长耗时</span><strong>{maximum.toFixed(2)} ms</strong></div><div><span>数据来源</span><strong className="trace-source">{loading ? "读取中" : cached ? "会话缓存" : `${((remoteDurationMs ?? 0) / 1000).toFixed(2)} s`}</strong></div></div>
       {loading && <div className="trace-loading trace-loading-active" role="status" aria-live="polite">
         <div className="trace-loading-visual" aria-hidden="true">
           <span className="trace-loading-link trace-loading-link-first" /><span className="trace-loading-link trace-loading-link-second" />

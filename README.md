@@ -55,7 +55,7 @@ npm run desktop:macos
 生成 `.app` 和 `.dmg`。当前机器生成的位置：
 
 - `src-tauri/target/release/bundle/macos/OpsLog.app`
-- `src-tauri/target/release/bundle/dmg/OpsLog_3.0.8_aarch64.dmg`
+- `src-tauri/target/release/bundle/dmg/OpsLog_3.0.9_aarch64.dmg`
 
 Windows x64（在 Windows x64 构建机执行）：
 

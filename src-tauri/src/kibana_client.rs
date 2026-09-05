@@ -1,12 +1,37 @@
 use std::{error::Error as StdError, time::Duration};
 
 use futures_util::StreamExt;
+use reqwest::Client;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{Map, Value, json};
+use tokio::sync::OnceCell;
 
 use crate::domain::{EnvironmentConfig, QueryResult};
 
 const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+static SECURE_CLIENT: OnceCell<Client> = OnceCell::const_new();
+static INSECURE_CLIENT: OnceCell<Client> = OnceCell::const_new();
+
+fn build_client(allow_insecure_tls: bool) -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_secs(300))
+        .pool_idle_timeout(Duration::from_secs(120))
+        .pool_max_idle_per_host(8)
+        .tcp_keepalive(Duration::from_secs(30))
+        .danger_accept_invalid_certs(allow_insecure_tls)
+        .build()
+        .map_err(|error| format!("无法初始化 Kibana 客户端：{error}"))
+}
+
+async fn shared_client(allow_insecure_tls: bool) -> Result<&'static Client, String> {
+    let cell = if allow_insecure_tls {
+        &INSECURE_CLIENT
+    } else {
+        &SECURE_CLIENT
+    };
+    cell.get_or_try_init(|| async { build_client(allow_insecure_tls) })
+        .await
+}
 
 fn request_error(error: &reqwest::Error) -> String {
     let mut messages = vec![error.to_string()];
@@ -85,17 +110,14 @@ pub async fn run_esql(
     query: &str,
     timeout_seconds: u64,
 ) -> Result<QueryResult, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(timeout_seconds))
-        .danger_accept_invalid_certs(environment.allow_insecure_tls.unwrap_or(false))
-        .build()
-        .map_err(|error| format!("无法初始化 Kibana 客户端：{error}"))?;
+    let client = shared_client(environment.allow_insecure_tls.unwrap_or(false)).await?;
     let url = format!(
         "{}/internal/search/esql",
         environment.kibana_url.trim_end_matches('/')
     );
     let response = client
         .post(url)
+        .timeout(Duration::from_secs(timeout_seconds))
         .basic_auth(&environment.username, Some(&environment.password))
         .header(CONTENT_TYPE, "application/json")
         .header("kbn-xsrf", "reporting")

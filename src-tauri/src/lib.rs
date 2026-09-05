@@ -25,6 +25,7 @@ pub fn run() {
             commands::export_logs,
             commands::download_transaction_log,
             commands::read_transaction_log,
+            commands::save_transaction_log,
             commands::load_trace,
         ])
         .run(tauri::generate_context!())
