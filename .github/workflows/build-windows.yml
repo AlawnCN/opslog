@@ -14,6 +14,9 @@ jobs:
     name: Windows x64 packages
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     steps:
       - name: Check out source
@@ -36,8 +39,18 @@ jobs:
           npm run typecheck
           npm test
 
+      - name: Verify updater signing configuration
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw "GitHub Secret TAURI_SIGNING_PRIVATE_KEY is required"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+            throw "GitHub Secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required"
+          }
+
       - name: Build Windows installer and application
-        run: npm run desktop:windows:setup
+        run: npm run desktop:windows:setup -- --config src-tauri/tauri.release.conf.json
 
       - name: Create Windows release packages
         shell: pwsh
@@ -52,12 +65,17 @@ jobs:
           if ($null -eq $installer) {
             throw "NSIS installer was not found"
           }
+          $installerSignature = "$($installer.FullName).sig"
+          if (!(Test-Path $installerSignature)) {
+            throw "Signed updater artifact was not found: $installerSignature"
+          }
           New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
           Copy-Item $executable "$portableRoot/OpsLog.exe"
           Copy-Item opslog-envs.example.json "$portableRoot/opslog-envs.example.json"
           Copy-Item README.md "$portableRoot/README.md"
           Compress-Archive -Path $portableRoot -DestinationPath "release/OpsLog_${packageVersion}_windows_x64_portable.zip" -Force
           Copy-Item $installer.FullName "release/OpsLog_${packageVersion}_windows_x64_setup.exe"
+          Copy-Item $installerSignature "release/OpsLog_${packageVersion}_windows_x64_setup.exe.sig"
 
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
@@ -66,6 +84,7 @@ jobs:
           path: |
             release/*_windows_x64_portable.zip
             release/*_windows_x64_setup.exe
+            release/*_windows_x64_setup.exe.sig
           if-no-files-found: error
           retention-days: 7
 
@@ -85,6 +104,9 @@ jobs:
             expected_mach_o: x86_64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
     steps:
       - name: Check out source
@@ -109,8 +131,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify updater signing configuration
+        shell: bash
+        run: |
+          test -n "$TAURI_SIGNING_PRIVATE_KEY" || { echo "GitHub Secret TAURI_SIGNING_PRIVATE_KEY is required" >&2; exit 1; }
+          test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" || { echo "GitHub Secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required" >&2; exit 1; }
+
       - name: Build macOS application and disk image
-        run: npm run desktop:macos -- --target ${{ matrix.target }}
+        run: npm run desktop:macos -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
       - name: Create macOS portable archive
         shell: bash
@@ -124,8 +152,13 @@ jobs:
           test -d "$app_path"
           executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
           file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
+          updater_archive="$(find "$bundle_root/macos" -type f -name '*.app.tar.gz' -print -quit)"
+          test -n "$updater_archive"
+          test -f "$updater_archive.sig"
           cp "$dmg" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.dmg"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}_portable.zip"
+          cp "$updater_archive" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz"
+          cp "$updater_archive.sig" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz.sig"
 
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4
@@ -134,6 +167,8 @@ jobs:
           path: |
             release/*_macos_${{ matrix.arch }}.dmg
             release/*_macos_${{ matrix.arch }}_portable.zip
+            release/*_macos_${{ matrix.arch }}.app.tar.gz
+            release/*_macos_${{ matrix.arch }}.app.tar.gz.sig
           if-no-files-found: error
           retention-days: 7
 
@@ -148,6 +183,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
       - name: Download all release packages
         uses: actions/download-artifact@v4
         with:
@@ -160,8 +198,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          sha256sum release/*.zip release/*.dmg release/*.exe > release/SHA256SUMS
-          assets=(release/*.zip release/*.dmg release/*.exe release/SHA256SUMS)
+          node scripts/generate-update-manifest.mjs release "${GITHUB_REF_NAME#v}" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          find release -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS
+          assets=(release/*)
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" \
               --repo "${GITHUB_REPOSITORY}" \

@@ -10,9 +10,12 @@ interface HeaderProps {
   loading: boolean;
   desktopMode: boolean;
   onImportConfig: (file: File) => Promise<void>;
+  updateAvailable: boolean;
+  updateBusy: boolean;
+  onCheckForUpdates: () => void;
 }
 
-export const Header = ({ environments, selected, onSelect, loading, desktopMode, onImportConfig }: HeaderProps) => {
+export const Header = ({ environments, selected, onSelect, loading, desktopMode, onImportConfig, updateAvailable, updateBusy, onCheckForUpdates }: HeaderProps) => {
   const environment = environments.find((item) => item.name === selected);
   const configInput = useRef<HTMLInputElement>(null);
   const macDesktop = desktopMode && navigator.userAgent.includes("Macintosh");
@@ -54,7 +57,9 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           <i />
           {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
-        <div className="version-chip">{desktopMode ? "APP · 3.0.9" : "WEB · 3.0.9"}</div>
+        {desktopMode
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.10<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.10</div>}
       </div>
     </header>
   );

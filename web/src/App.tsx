@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, searchLogs } from "./api";
 import { initialFilters, initialPageSize, PAGE_SIZE_KEY, PAGE_SIZES } from "./app-defaults";
 import { DataTable } from "./components/DataTable";
@@ -6,10 +6,12 @@ import { FilterPanel } from "./components/FilterPanel";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import { TraceDrawer } from "./components/TraceDrawer";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
 import { nairobiLocal, toUtcIso } from "./time";
 import type { Environment, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
+import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
 
 const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawer")
@@ -32,6 +34,17 @@ export default function App() {
   const sessionCache = useRef(new OpsLogSessionCache());
 
   const environment = environments.find((item) => item.name === environmentName);
+  const notifyCurrentVersion = useCallback(() => {
+    setNotice({ tone: "info", text: "当前已是最新版本。" });
+  }, []);
+  const notifyUpdateError = useCallback((message: string) => {
+    setNotice({ tone: "error", text: `检查更新失败：${message}` });
+  }, []);
+  const appUpdater = useAppUpdater({
+    enabled: desktopMode,
+    onCurrent: notifyCurrentVersion,
+    onError: notifyUpdateError
+  });
 
   const reloadEnvironments = async () => {
     try {
@@ -160,7 +173,7 @@ export default function App() {
     finally { setLoading(false); }
   };
   return <div className="app-shell">
-    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} onImportConfig={importConfig} />
+    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} onImportConfig={importConfig} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} />
     <main>
       <FilterPanel kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true)} onExport={exportCurrent} onRange={setRange} />
@@ -170,5 +183,6 @@ export default function App() {
     </main>
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} />
     {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
+    <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />
   </div>;
 }

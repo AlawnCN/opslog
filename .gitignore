@@ -16,6 +16,9 @@ opslog-envs.*.json
 .env
 .env.*
 !.env.example
+.secrets/
+src-tauri/*.key
+src-tauri/*.key.pub
 
 # Original reference binaries and locally generated install artifacts.
 opslog-*.jar
