@@ -81,16 +81,13 @@ Windows ARM64 本轮暂由 Windows x64 包通过系统的 x64 仿真层运行；
 
 ### macOS 未公证包的首次启动
 
-当前 Release 未使用 Apple Developer ID 签名和公证；只应从本项目的 GitHub Release 下载，并先对照同一 Release 的 `SHA256SUMS` 确认完整性。将应用拖入“应用程序”目录后，如果 macOS 拦截启动，可在终端执行以下命令为本机创建临时的 ad-hoc 签名：
+当前 Release 未使用 Apple Developer ID 签名和公证；只应从本项目的 GitHub Release 下载，并先对照同一 Release 的 `SHA256SUMS` 确认完整性。将应用拖入“应用程序”目录后，如果 macOS 拦截启动，通常只需在终端执行：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/OpsLog.app
-codesign --force --deep --sign - /Applications/OpsLog.app
-codesign --verify --deep --strict --verbose=2 /Applications/OpsLog.app
-open /Applications/OpsLog.app
 ```
 
-上述操作不等同于 Apple Developer ID 签名或公证，不能替代企业正式分发签名；若仍被系统拦截，请在“系统设置 → 隐私与安全性”中确认后打开。
+该命令只移除下载文件的隔离属性，不会把应用伪装成已由 Apple 签名或公证。若仍提示“无法验证开发者”，请右键应用选择“打开”，或在“系统设置 → 隐私与安全性”中点击“仍要打开”。若仍无法启动，请重新下载并校验 `SHA256SUMS`；不要通过 ad-hoc 重签名来规避问题。
 
 ## 自动更新与签名
 
