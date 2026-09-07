@@ -56,7 +56,7 @@ npm run desktop:macos
 生成 `.app` 和 `.dmg`。当前机器生成的位置：
 
 - `src-tauri/target/release/bundle/macos/OpsLog.app`
-- `src-tauri/target/release/bundle/dmg/OpsLog_3.0.10_aarch64.dmg`
+- `src-tauri/target/release/bundle/dmg/OpsLog_<版本>_aarch64.dmg`
 
 Windows x64（在 Windows x64 构建机执行）：
 
@@ -78,6 +78,19 @@ npm run desktop:windows:setup
 Windows ARM64 本轮暂由 Windows x64 包通过系统的 x64 仿真层运行；待引入受支持的 ARM64 Windows 构建与签名环境后，再增加原生 ARM64 包。
 
 对外分发前建议分别配置 Apple Developer ID 和 Windows Authenticode 代码签名，避免系统显示“未知开发者”。内部测试可直接使用未公证/未签名构建。
+
+### macOS 未公证包的首次启动
+
+当前 Release 未使用 Apple Developer ID 签名和公证；只应从本项目的 GitHub Release 下载，并先对照同一 Release 的 `SHA256SUMS` 确认完整性。将应用拖入“应用程序”目录后，如果 macOS 拦截启动，可在终端执行以下命令为本机创建临时的 ad-hoc 签名：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OpsLog.app
+codesign --force --deep --sign - /Applications/OpsLog.app
+codesign --verify --deep --strict --verbose=2 /Applications/OpsLog.app
+open /Applications/OpsLog.app
+```
+
+上述操作不等同于 Apple Developer ID 签名或公证，不能替代企业正式分发签名；若仍被系统拦截，请在“系统设置 → 隐私与安全性”中确认后打开。
 
 ## 自动更新与签名
 

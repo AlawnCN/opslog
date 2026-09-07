@@ -1,7 +1,9 @@
-import { codeFolding, foldAll, foldGutter, foldKeymap, foldService, unfoldAll } from "@codemirror/language";
+import { codeFolding, foldAll, foldedRanges, foldGutter, foldKeymap, foldService, unfoldAll, unfoldEffect } from "@codemirror/language";
 import { EditorState, StateEffect, StateField, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { logHighlightClassName } from "../log-highlight-presentation";
+import type { LogReaderFoldMode } from "../log-reader-preferences";
 import type { LogHighlight, TransactionLogAnalysis } from "../transaction-log-analysis";
 import type { LogLineStyle } from "../transaction-log-model";
 import { createLogFoldPlaceholder, type LogFoldPlaceholderData } from "./LogFoldPlaceholder";
@@ -9,6 +11,7 @@ import { createLogFoldPlaceholder, type LogFoldPlaceholderData } from "./LogFold
 export interface StructuredLogViewerHandle {
   foldAll: () => void;
   unfoldAll: () => void;
+  jumpTo: (position: number) => void;
 }
 
 interface StructuredLogViewerProps {
@@ -18,10 +21,12 @@ interface StructuredLogViewerProps {
   activeMatch: number;
   queryLength: number;
   wrapLines: boolean;
+  foldMode: LogReaderFoldMode;
 }
 
 const setSemanticDecorations = StateEffect.define<DecorationSet>();
 const setSearchDecorations = StateEffect.define<DecorationSet>();
+const setOutlineTargetDecoration = StateEffect.define<DecorationSet>();
 
 const semanticDecorationState = StateField.define<DecorationSet>({
   create: () => Decoration.none,
@@ -43,14 +48,22 @@ const searchDecorationState = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field)
 });
 
-const classForHighlight = (highlight: LogHighlight) => `cm-log-${highlight.kind}`;
+const outlineTargetDecorationState = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (decorations, transaction) => {
+    let next = decorations.map(transaction.changes);
+    for (const effect of transaction.effects) if (effect.is(setOutlineTargetDecoration)) next = effect.value;
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field)
+});
 
 const createSemanticDecorations = (
   highlights: LogHighlight[],
   lineStyles: LogLineStyle[]
 ): DecorationSet => {
   const ranges: Array<Range<Decoration>> = highlights.map(({ from, to, kind }) =>
-    Decoration.mark({ class: classForHighlight({ from, to, kind }) }).range(from, to)
+    Decoration.mark({ class: logHighlightClassName(kind) }).range(from, to)
   );
   lineStyles.forEach(({ at, tone }) => ranges.push(Decoration.line({ class: `cm-log-service-band-${tone}` }).range(at)));
   return Decoration.set(ranges, true);
@@ -80,14 +93,33 @@ const logTheme = EditorView.theme({
 }, { dark: true });
 
 export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, StructuredLogViewerProps>(({
-  analysis, content, matches, activeMatch, queryLength, wrapLines
+  analysis, content, matches, activeMatch, queryLength, wrapLines, foldMode
 }, forwardedRef) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const outlineTargetTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useImperativeHandle(forwardedRef, () => ({
     foldAll: () => { if (viewRef.current) foldAll(viewRef.current); },
-    unfoldAll: () => { if (viewRef.current) unfoldAll(viewRef.current); }
+    unfoldAll: () => { if (viewRef.current) unfoldAll(viewRef.current); },
+    jumpTo: (position: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const unfoldEffects: Array<StateEffect<unknown>> = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
+        if (position >= from && position <= to) unfoldEffects.push(unfoldEffect.of({ from, to }));
+      });
+      const line = view.state.doc.lineAt(position);
+      const target = Decoration.set([Decoration.line({ class: "cm-log-outline-target" }).range(line.from)]);
+      view.dispatch({
+        selection: { anchor: position },
+        effects: [...unfoldEffects, setOutlineTargetDecoration.of(target), EditorView.scrollIntoView(position, { y: "center" })]
+      });
+      if (outlineTargetTimerRef.current) clearTimeout(outlineTargetTimerRef.current);
+      outlineTargetTimerRef.current = setTimeout(() => {
+        viewRef.current?.dispatch({ effects: setOutlineTargetDecoration.of(Decoration.none) });
+      }, 1800);
+    }
   }), []);
 
   useEffect(() => {
@@ -113,6 +145,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
       }),
       semanticDecorationState,
       searchDecorationState,
+      outlineTargetDecorationState,
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
       EditorView.contentAttributes.of({ "aria-label": "结构化交易日志内容" }),
@@ -125,7 +158,12 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
       setSemanticDecorations.of(createSemanticDecorations(analysis.highlights, analysis.lineStyles)),
       setSearchDecorations.of(createSearchDecorations(matches, activeMatch, queryLength))
     ] });
-    return () => { view.destroy(); viewRef.current = null; };
+    if (foldMode === "folded") foldAll(view);
+    return () => {
+      if (outlineTargetTimerRef.current) clearTimeout(outlineTargetTimerRef.current);
+      view.destroy();
+      viewRef.current = null;
+    };
   }, [analysis, content, wrapLines]);
 
   useEffect(() => {

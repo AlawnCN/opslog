@@ -1,6 +1,9 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
 import { analyzeTransactionLog, findLogMatchesInLowercase, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-analysis";
+import type { LogOutlineCategory } from "../transaction-log-model";
 import { CloseIcon, SearchIcon } from "./Icons";
+import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 
 const READER_WIDTH_KEY = "opslog.transaction-log-reader.width-ratio.v1";
@@ -34,13 +37,16 @@ interface TransactionLogDrawerProps {
 export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs, cached, onClose }: TransactionLogDrawerProps) => {
   const [keyword, setKeyword] = useState("");
   const [activeMatch, setActiveMatch] = useState(0);
-  const [wrapLines, setWrapLines] = useState(false);
+  const [readerPreferences, setReaderPreferences] = useState(readLogReaderPreferences);
   const [widthRatio, setWidthRatio] = useState(readReaderWidthRatio);
   const [isResizing, setIsResizing] = useState(false);
+  const [outlineCategory, setOutlineCategory] = useState<LogOutlineCategory>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
+  const logReaderBodyRef = useRef<HTMLDivElement>(null);
   const resizeStart = useRef<{ pointerX: number; width: number } | null>(null);
   const widthRatioRef = useRef(widthRatio);
   const deferredKeyword = useDeferredValue(keyword);
+  const wrapLines = readerPreferences.wrapLines;
   const query = deferredKeyword.trim();
   const searchableContent = useMemo(() => content.toLocaleLowerCase(), [content]);
   const analyzed = useMemo(() => {
@@ -54,6 +60,7 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
 
   useEffect(() => {
     setKeyword("");
+    setOutlineCategory(undefined);
   }, [logId]);
 
   useEffect(() => {
@@ -129,6 +136,29 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
     }
   };
 
+  const toggleOutline = (category: LogOutlineCategory) => {
+    setOutlineCategory((current) => current === category ? undefined : category);
+  };
+
+  const updateReaderPreferences = (change: Partial<LogReaderPreferences>) => {
+    setReaderPreferences((current) => {
+      const next = { ...current, ...change };
+      storeLogReaderPreferences(next);
+      return next;
+    });
+  };
+
+  const applyFoldMode = (foldMode: LogReaderPreferences["foldMode"]) => {
+    updateReaderPreferences({ foldMode });
+    if (foldMode === "folded") viewerRef.current?.foldAll();
+    else viewerRef.current?.unfoldAll();
+  };
+
+  const jumpFromOutline = (position: number) => {
+    setOutlineCategory(undefined);
+    viewerRef.current?.jumpTo(position);
+  };
+
   if (!logId) return null;
   return <div className="drawer-backdrop" onMouseDown={onClose}>
     <aside className="drawer log-reader-drawer" style={{ width: `${widthRatio * 100}vw` }} onMouseDown={(event) => event.stopPropagation()}>
@@ -138,23 +168,38 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
         <label className="log-reader-search"><SearchIcon /><input autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder="查询日志内容" aria-label="查询日志内容" /></label>
         {query && <span className={matches.length ? "match-count" : "match-count no-match"}>{matches.length ? `${visibleActiveMatch + 1} / ${matches.length === MAX_LOG_SEARCH_MATCHES ? `${MAX_LOG_SEARCH_MATCHES}+` : matches.length}` : "未找到匹配内容"}</span>}
         <div className="match-navigation"><button disabled={!matches.length} title="上一个命中（Shift + Enter）" onClick={() => moveMatch(-1)}>上一个</button><button disabled={!matches.length} title="下一个命中（Enter）" onClick={() => moveMatch(1)}>下一个</button></div>
-        <label className="wrap-toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => setWrapLines(event.target.checked)} />自动换行</label>
+        <label className="wrap-toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => updateReaderPreferences({ wrapLines: event.target.checked })} />自动换行</label>
         {keyword && <button className="clear-reader-search" onClick={() => setKeyword("")}>清除</button>}
       </div>
-      {!loading && content && <div className="log-reader-insights" aria-label="日志分析摘要">
-        <span className="reader-performance" title="远程时间包含 Kibana 查询、VPN 传输和正文接收">{cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
-        <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
-        <span title="不同底色表示不同微服务区段，入口行可单独折叠"><b>{analysis.stats.services}</b> 微服务</span>
-        <span><b>{analysis.stats.calls}</b> 调用标记</span>
-        <span><b>{analysis.stats.sql}</b> SQL</span>
-        <span className={analysis.stats.failedResults ? "has-errors" : undefined} title="只统计响应、结果或错误上下文中的非成功消息码"><b>{analysis.stats.failedResults}</b> 失败线索</span>
-        <span className={analysis.stats.exceptions ? "has-errors" : undefined}><b>{analysis.stats.exceptions}</b> ERROR/异常</span>
-        <span><b>{analysis.stats.structured}</b> 结构块</span>
-        <div className="log-reader-fold-actions"><button onClick={() => viewerRef.current?.foldAll()}>全部折叠</button><button onClick={() => viewerRef.current?.unfoldAll()}>全部展开</button></div>
+      {!loading && content && <div className="log-reader-insights-shell" onPointerDown={(event) => event.stopPropagation()}>
+        <div className="log-reader-insights" aria-label="日志分析摘要">
+          <span className="reader-performance" title="远程时间包含 Kibana 查询、VPN 传输和正文接收">{cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
+          <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
+          <button type="button" data-log-outline-trigger className={outlineCategory === "service" ? "is-active" : undefined} title="查看微服务入口 Outline" onClick={() => toggleOutline("service")}><b>{analysis.stats.services}</b> 微服务</button>
+          <button type="button" data-log-outline-trigger className={outlineCategory === "call" ? "is-active" : undefined} title="查看调用标记 Outline" onClick={() => toggleOutline("call")}><b>{analysis.stats.calls}</b> 调用标记</button>
+          <button type="button" data-log-outline-trigger className={outlineCategory === "sql" ? "is-active" : undefined} title="查看 SQL Outline" onClick={() => toggleOutline("sql")}><b>{analysis.stats.sql}</b> SQL</button>
+          <button type="button" data-log-outline-trigger className={`${analysis.stats.failedResults ? "has-errors" : ""}${outlineCategory === "failed-result" ? " is-active" : ""}`} title="查看失败线索 Outline" onClick={() => toggleOutline("failed-result")}><b>{analysis.stats.failedResults}</b> 失败线索</button>
+          <button type="button" data-log-outline-trigger className={`${analysis.stats.exceptions ? "has-errors" : ""}${outlineCategory === "exception" ? " is-active" : ""}`} title="查看异常 Outline" onClick={() => toggleOutline("exception")}><b>{analysis.stats.exceptions}</b> ERROR/异常</button>
+          <button type="button" data-log-outline-trigger className={outlineCategory === "structured" ? "is-active" : undefined} title="查看结构块 Outline" onClick={() => toggleOutline("structured")}><b>{analysis.stats.structured}</b> 结构块</button>
+          <div className="log-reader-fold-actions"><button title="折叠全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("folded")}>全部折叠</button><button title="展开全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("expanded")}>全部展开</button></div>
+        </div>
       </div>}
       {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在从交易日志索引加载文本内容</span></div>}
       {!loading && !content && <div className="log-reader-status">当前时间范围内未找到日志内容。</div>}
-      {!loading && content && <div className="log-reader-body"><StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} queryLength={query.length} wrapLines={wrapLines} /></div>}
+      {!loading && content && <div className="log-reader-body" ref={logReaderBodyRef}>
+        <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} queryLength={query.length} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} />
+        {outlineCategory && <LogOutlinePopover
+          boundsRef={logReaderBodyRef}
+          category={outlineCategory}
+          items={analysis.outline[outlineCategory]}
+          content={content}
+          highlights={analysis.highlights}
+          wrapLines={readerPreferences.outlineWrapLines}
+          onClose={() => setOutlineCategory(undefined)}
+          onJump={jumpFromOutline}
+          onWrapLinesChange={(outlineWrapLines) => updateReaderPreferences({ outlineWrapLines })}
+        />}
+      </div>}
     </aside>
   </div>;
 };

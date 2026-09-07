@@ -19,6 +19,11 @@ export type LogHighlightKind =
   | "json-literal"
   | "json-punctuation"
   | "xml-tag"
+  | "xml-name"
+  | "xml-attribute"
+  | "xml-string"
+  | "xml-punctuation"
+  | "xml-comment"
   | "exception"
   | "service-entry"
   | "service-name";
@@ -41,10 +46,22 @@ export interface LogFoldBlock {
   kind: "json" | "xml" | "java" | "stack" | "service";
 }
 
+export type LogOutlineCategory = "service" | "call" | "sql" | "failed-result" | "exception" | "structured";
+
+export interface LogOutlineItem {
+  line: number;
+  from: number;
+  to: number;
+  detail?: string;
+}
+
+export type LogOutline = Record<LogOutlineCategory, LogOutlineItem[]>;
+
 export interface TransactionLogAnalysis {
   highlights: LogHighlight[];
   lineStyles: LogLineStyle[];
   folds: LogFoldBlock[];
+  outline: LogOutline;
   stats: {
     lines: number;
     calls: number;

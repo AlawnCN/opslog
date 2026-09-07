@@ -1,6 +1,7 @@
-import type { LogFoldBlock, LogHighlight, LogLineStyle, TransactionLogAnalysis } from "./transaction-log-model";
+import type { LogFoldBlock, LogHighlight, LogLineStyle, LogOutline, LogOutlineCategory, TransactionLogAnalysis } from "./transaction-log-model";
 import { highlightSql } from "./transaction-log-sql";
-import { addRegexHighlights, findStructuredRange, highlightJson, highlightSemanticFields, highlightXml, parseLogHeader } from "./transaction-log-syntax";
+import { findStructuredRange, highlightJson, highlightXml } from "./transaction-log-structured";
+import { addRegexHighlights, highlightSemanticFields, parseLogHeader } from "./transaction-log-syntax";
 
 export type { LogHighlight, TransactionLogAnalysis } from "./transaction-log-model";
 export const MAX_LOG_SEARCH_MATCHES = 5_000;
@@ -12,6 +13,24 @@ interface OpenServiceSection {
 }
 
 const SERVICE_ENTRY = /=+>\s*container:\[([^\]]+)](?:\s+appName:\[([^\]]+)])?/i;
+
+const createEmptyOutline = (): LogOutline => ({
+  service: [],
+  call: [],
+  sql: [],
+  "failed-result": [],
+  exception: [],
+  structured: []
+});
+
+const addOutlineItem = (
+  outline: LogOutline,
+  category: LogOutlineCategory,
+  line: number,
+  from: number,
+  to: number,
+  detail?: string
+) => outline[category].push({ line, from, to, detail });
 
 const addInnerFold = (folds: LogFoldBlock[], block: LogFoldBlock) => {
   if (block.to - block.from < 100 || block.from >= block.to) return;
@@ -58,8 +77,9 @@ export const findLogMatches = (content: string, query: string): number[] =>
 
 export const analyzeTransactionLog = (content: string): TransactionLogAnalysis => {
   const emptyStats = { lines: 0, calls: 0, services: 0, sql: 0, failedResults: 0, exceptions: 0, structured: 0 };
-  if (!content) return { highlights: [], lineStyles: [], folds: [], stats: emptyStats };
+  if (!content) return { highlights: [], lineStyles: [], folds: [], outline: createEmptyOutline(), stats: emptyStats };
   const highlights: LogHighlight[] = [], lineStyles: LogLineStyle[] = [], folds: LogFoldBlock[] = [];
+  const outline = createEmptyOutline();
   const serviceTones = new Map<string, number>();
   let activeService: OpenServiceSection | undefined;
   let structuredUntil = 0;
@@ -67,6 +87,7 @@ export const analyzeTransactionLog = (content: string): TransactionLogAnalysis =
   for (let lineFrom = 0; lineFrom <= content.length;) {
     const newline = content.indexOf("\n", lineFrom), lineTo = newline < 0 ? content.length : newline;
     const line = content.slice(lineFrom, lineTo), header = parseLogHeader(line);
+    const lineNumber = lines + 1;
     const payloadFrom = header?.payloadFrom ?? 0, payload = line.slice(payloadFrom), payloadBase = lineFrom + payloadFrom;
     let exceptional = addHeaderHighlights(lineFrom, header, highlights);
     const serviceEntry = SERVICE_ENTRY.exec(payload);
@@ -81,21 +102,29 @@ export const analyzeTransactionLog = (content: string): TransactionLogAnalysis =
         const relative = serviceEntry[0].indexOf(name as string);
         highlights.push({ from: markerFrom + relative, to: markerFrom + relative + (name as string).length, kind: "service-name" });
       });
+      addOutlineItem(outline, "service", lineNumber, lineFrom, lineTo, serviceName);
     }
     if (activeService) lineStyles.push({ at: lineFrom, tone: activeService.tone });
     if (/\b(?:Exception|Caused by:|Stack:|ERROR\s+CODE)\b/.test(payload)) {
       addRegexHighlights(payload, payloadBase, /\b(?:[\w.$]+Exception|Caused by:|Stack:|ERROR\s+CODE)\b/g, "exception", highlights);
       exceptional = true;
     }
-    if (/(?:txncod|txnCode|service|container)\s*[:=]/i.test(payload)) calls += 1;
+    if (/(?:txncod|txnCode|service|container)\s*[:=]/i.test(payload)) {
+      calls += 1;
+      addOutlineItem(outline, "call", lineNumber, lineFrom, lineTo);
+    }
     const sqlMarker = /(?:execute\s+sql|sql)\s*[:=]\s*\[?/i.exec(payload);
     if (sqlMarker) {
       const sqlFrom = payloadBase + sqlMarker.index + sqlMarker[0].length, sqlText = line.slice(sqlFrom - lineFrom);
       sql += 1;
       highlightSql(sqlText, sqlFrom, highlights);
+      addOutlineItem(outline, "sql", lineNumber, lineFrom, lineTo);
     }
     const resultContext = /(?:response|result|exception|error|failed|rspRoot|responseBO)/i.test(payload);
-    if (highlightSemanticFields(payload, payloadBase, resultContext, highlights)) failedResults += 1;
+    if (highlightSemanticFields(payload, payloadBase, resultContext, highlights)) {
+      failedResults += 1;
+      addOutlineItem(outline, "failed-result", lineNumber, lineFrom, lineTo);
+    }
     const structure = lineFrom >= structuredUntil
       ? findStructuredRange(content, line, lineFrom, lineTo, payloadFrom)
       : undefined;
@@ -105,6 +134,7 @@ export const analyzeTransactionLog = (content: string): TransactionLogAnalysis =
       if (structure.kind === "json") highlightJson(content, structure.start, structure.end, highlights);
       else if (structure.kind === "xml") highlightXml(content, structure.start, structure.end, highlights);
       addInnerFold(folds, { lineFrom, from: structure.start, to: structure.end, kind: structure.kind });
+      addOutlineItem(outline, "structured", lineNumber, lineFrom, lineTo, structure.kind.toUpperCase());
     }
     if (/\b(?:Stack:|Caused by:)\b/.test(payload)) {
       let stackEnd = newline < 0 ? lineTo : newline + 1;
@@ -115,11 +145,14 @@ export const analyzeTransactionLog = (content: string): TransactionLogAnalysis =
       }
       addInnerFold(folds, { lineFrom, from: payloadBase, to: stackEnd, kind: "stack" });
     }
-    if (exceptional) exceptions += 1;
+    if (exceptional) {
+      exceptions += 1;
+      addOutlineItem(outline, "exception", lineNumber, lineFrom, lineTo);
+    }
     lines += 1;
     if (newline < 0) break;
     lineFrom = newline + 1;
   }
   closeServiceSection(activeService, content.length, folds);
-  return { highlights, lineStyles, folds, stats: { lines, calls, services: serviceTones.size, sql, failedResults, exceptions, structured } };
+  return { highlights, lineStyles, folds, outline, stats: { lines, calls, services: serviceTones.size, sql, failedResults, exceptions, structured } };
 };
