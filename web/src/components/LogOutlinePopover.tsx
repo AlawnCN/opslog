@@ -100,19 +100,14 @@ export const LogOutlinePopover = ({
   }, [boundsRef]);
 
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
     const closeOutside = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node) || hostRef.current?.contains(target)) return;
       if (target instanceof Element && target.closest("[data-log-outline-trigger]")) return;
       onClose();
     };
-    window.addEventListener("keydown", closeOnEscape);
     window.addEventListener("pointerdown", closeOutside);
     return () => {
-      window.removeEventListener("keydown", closeOnEscape);
       window.removeEventListener("pointerdown", closeOutside);
     };
   }, [onClose]);

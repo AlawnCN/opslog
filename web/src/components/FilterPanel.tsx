@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Environment, LogKind, SearchFilters } from "../types";
 import { DownloadIcon, SearchIcon } from "./Icons";
 
@@ -18,11 +18,27 @@ const Field = ({ label, children, wide = false }: { label: string; children: Rea
   <label className={`filter-field ${wide ? "wide" : ""}`}><span>{label}</span>{children}</label>
 );
 
-export const FilterPanel = ({ kind, filters, environment, loading, selectedRangeDays, onChange, onSearch, onExport, onRange }: FilterPanelProps) => {
+export interface FilterPanelHandle {
+  focusQuery: () => void;
+}
+
+export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ kind, filters, environment, loading, selectedRangeDays, onChange, onSearch, onExport, onRange }, ref) => {
   const [collapsed, setCollapsed] = useState(false);
+  const queryInputRef = useRef<HTMLInputElement>(null);
+
+  useImperativeHandle(ref, () => ({
+    focusQuery: () => {
+      setCollapsed(false);
+      window.requestAnimationFrame(() => {
+        queryInputRef.current?.focus();
+        queryInputRef.current?.select();
+      });
+    }
+  }), []);
 
   const input = (field: keyof SearchFilters, placeholder: string, type = "text") => (
     <input
+      ref={(kind === "transaction" && field === "txnId") || (kind !== "transaction" && field === "keyword") ? queryInputRef : undefined}
       type={type}
       value={filters[field]}
       placeholder={placeholder}
@@ -36,7 +52,7 @@ export const FilterPanel = ({ kind, filters, environment, loading, selectedRange
   const toggleCollapsed = () => setCollapsed((current) => !current);
 
   return (
-    <section className="filter-panel">
+    <form className="filter-panel" onSubmit={(event) => { event.preventDefault(); if (!loading) onSearch(); }}>
       <div className="filter-heading">
         <div className="filter-heading-title"><span className="eyebrow">QUERY PARAMETERS</span><h1>{kind === "transaction" ? "交易日志检索" : kind === "application" ? "应用服务日志" : kind === "ecp" ? "ECP 服务日志" : "通用日志检索"}</h1></div>
         <i className="filter-heading-divider" aria-hidden="true" />
@@ -95,8 +111,10 @@ export const FilterPanel = ({ kind, filters, environment, loading, selectedRange
             <path d="m4 10 8-7 8 7" />
           </svg>
         </button>
-        <div><button className="secondary" onClick={onExport} disabled={loading}><DownloadIcon />导出 CSV</button><button className="primary" onClick={onSearch} disabled={loading}><SearchIcon />{loading ? "查询中…" : "执行查询"}</button></div>
+        <div><button type="button" className="secondary" onClick={onExport} disabled={loading}><DownloadIcon />导出 CSV</button><button type="submit" className="primary" title="执行查询（Enter）" disabled={loading}><SearchIcon />{loading ? "查询中…" : "执行查询"}</button></div>
       </div>
-    </section>
+    </form>
   );
-};
+});
+
+FilterPanel.displayName = "FilterPanel";

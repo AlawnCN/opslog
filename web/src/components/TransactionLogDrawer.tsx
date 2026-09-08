@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
 import { analyzeTransactionLog, findLogMatchesInLowercase, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-analysis";
 import type { LogOutlineCategory } from "../transaction-log-model";
@@ -34,7 +34,12 @@ interface TransactionLogDrawerProps {
   onClose: () => void;
 }
 
-export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs, cached, onClose }: TransactionLogDrawerProps) => {
+export interface TransactionLogDrawerHandle {
+  closeTopLayer: () => void;
+  focusSearch: () => void;
+}
+
+export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, TransactionLogDrawerProps>(({ logId, content, loading, remoteDurationMs, cached, onClose }, ref) => {
   const [keyword, setKeyword] = useState("");
   const [activeMatch, setActiveMatch] = useState(0);
   const [readerPreferences, setReaderPreferences] = useState(readLogReaderPreferences);
@@ -42,6 +47,7 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
   const [isResizing, setIsResizing] = useState(false);
   const [outlineCategory, setOutlineCategory] = useState<LogOutlineCategory>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const logReaderBodyRef = useRef<HTMLDivElement>(null);
   const resizeStart = useRef<{ pointerX: number; width: number } | null>(null);
   const widthRatioRef = useRef(widthRatio);
@@ -57,6 +63,20 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
   const analysis = analyzed.value;
   const matches = useMemo(() => findLogMatchesInLowercase(searchableContent, query), [query, searchableContent]);
   const visibleActiveMatch = matches.length ? Math.min(activeMatch, matches.length - 1) : 0;
+
+  useImperativeHandle(ref, () => ({
+    closeTopLayer: () => {
+      if (outlineCategory) {
+        setOutlineCategory(undefined);
+        return;
+      }
+      onClose();
+    },
+    focusSearch: () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+  }), [onClose, outlineCategory]);
 
   useEffect(() => {
     setKeyword("");
@@ -165,7 +185,7 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
       <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />
       <div className="drawer-heading"><div><span className="eyebrow">TRANSACTION LOG</span><h2>日志阅读器</h2><code>{logId}</code></div><button title="关闭阅读器" aria-label="关闭阅读器" onClick={onClose}><CloseIcon /></button></div>
       <div className="log-reader-controls">
-        <label className="log-reader-search"><SearchIcon /><input autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder="查询日志内容" aria-label="查询日志内容" /></label>
+        <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder="查询日志内容" aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" /></label>
         {query && <span className={matches.length ? "match-count" : "match-count no-match"}>{matches.length ? `${visibleActiveMatch + 1} / ${matches.length === MAX_LOG_SEARCH_MATCHES ? `${MAX_LOG_SEARCH_MATCHES}+` : matches.length}` : "未找到匹配内容"}</span>}
         <div className="match-navigation"><button disabled={!matches.length} title="上一个命中（Shift + Enter）" onClick={() => moveMatch(-1)}>上一个</button><button disabled={!matches.length} title="下一个命中（Enter）" onClick={() => moveMatch(1)}>下一个</button></div>
         <label className="wrap-toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => updateReaderPreferences({ wrapLines: event.target.checked })} />自动换行</label>
@@ -202,4 +222,6 @@ export const TransactionLogDrawer = ({ logId, content, loading, remoteDurationMs
       </div>}
     </aside>
   </div>;
-};
+});
+
+TransactionLogDrawer.displayName = "TransactionLogDrawer";
