@@ -1,4 +1,11 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { errorMessage, saveCustomLogMarkerExport } from "../api";
+import {
+  customLogMarkerExportName,
+  MAX_CUSTOM_LOG_MARKER_IMPORT_BYTES,
+  mergeCustomLogMarkerImport,
+  serializeCustomLogMarkers
+} from "../custom-log-marker-transfer";
 import {
   cloneCustomLogMarker,
   combineCustomLogMarkers,
@@ -45,12 +52,19 @@ interface MarkerMenuState {
   markerId?: string;
 }
 
+interface MarkerTransferNotice {
+  tone: "info" | "error";
+  text: string;
+}
+
 export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, CustomLogMarkerShelfProps>(({
   markers, activeMarkerId, widthRatio, onChange, onOpen
 }, ref) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dragRef = useRef<MarkerDrag | undefined>(undefined);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const markersRef = useRef(markers);
   const onChangeRef = useRef(onChange);
   const suppressClickRef = useRef(false);
@@ -59,6 +73,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
   const [editing, setEditing] = useState<MarkerEditorState>();
   const [menu, setMenu] = useState<MarkerMenuState>();
   const [drag, setDrag] = useState<MarkerDrag>();
+  const [transferNotice, setTransferNotice] = useState<MarkerTransferNotice>();
   const draggingId = drag?.id;
   markersRef.current = markers;
   onChangeRef.current = onChange;
@@ -91,6 +106,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
 
   useEffect(() => () => {
     if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -181,21 +197,62 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
     setEditing({ marker, aliasOnly: false, isNew });
   };
 
-  const createMarker = (kind: CustomLogMarker["kind"]) => openEditor(createEmptyCustomLogMarker(kind), true);
+  const createMarker = () => openEditor(createEmptyCustomLogMarker(), true);
   const menuMarker = menu?.markerId ? markers.find(({ id }) => id === menu.markerId) : undefined;
   const visible = markers.slice(0, capacity);
   const overflow = markers.slice(capacity);
 
+  const showTransferNotice = (notice: MarkerTransferNotice) => {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    setTransferNotice(notice);
+    noticeTimerRef.current = setTimeout(() => setTransferNotice(undefined), 4200);
+  };
+
+  const exportMarkers = async (selected: CustomLogMarker[], label?: string) => {
+    setMenu(undefined);
+    try {
+      const path = await saveCustomLogMarkerExport(customLogMarkerExportName(label), serializeCustomLogMarkers(selected));
+      showTransferNotice({ tone: "info", text: path ? `标记已导出：${path}` : `已导出 ${selected.length} 个标记` });
+    } catch (error) {
+      showTransferNotice({ tone: "error", text: `导出失败：${errorMessage(error)}` });
+    }
+  };
+
+  const importMarkers = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    if (file.size > MAX_CUSTOM_LOG_MARKER_IMPORT_BYTES) {
+      showTransferNotice({ tone: "error", text: "导入失败：标记文件不能超过 1 MB" });
+      return;
+    }
+    try {
+      const result = mergeCustomLogMarkerImport(markers, await file.text());
+      if (result.imported) onChange(result.markers);
+      const details = [
+        result.duplicates ? `跳过重复 ${result.duplicates} 个` : "",
+        result.invalid ? `忽略无效 ${result.invalid} 个` : "",
+        result.overflow ? `容量不足 ${result.overflow} 个` : ""
+      ].filter(Boolean).join("，");
+      showTransferNotice({
+        tone: result.imported ? "info" : "error",
+        text: result.imported ? `已导入 ${result.imported} 个标记${details ? `，${details}` : ""}` : `没有导入新标记${details ? `：${details}` : ""}`
+      });
+    } catch (error) {
+      showTransferNotice({ tone: "error", text: `导入失败：${errorMessage(error)}` });
+    }
+  };
+
   const markerButton = (marker: CustomLogMarker, inOverflow = false) => <button
     type="button"
-    className={`custom-marker-tag${marker.kind === "combine" ? " is-combine" : ""}${activeMarkerId === marker.id ? " is-active" : ""}${drag?.id === marker.id ? " is-dragging" : ""}${drag?.targetId === marker.id ? ` is-drop-${drag.action}` : ""}`}
+    className={`custom-marker-tag${activeMarkerId === marker.id ? " is-active" : ""}${drag?.id === marker.id ? " is-dragging" : ""}${drag?.targetId === marker.id ? ` is-drop-${drag.action}` : ""}`}
     data-custom-marker-id={marker.id}
     key={marker.id}
-    title={`${marker.kind === "combine" ? `${marker.rules.length} 个组合条件` : marker.rules[0].regex ? "正则标记" : "普通标记"} · 双击改名 · 右键操作`}
+    title={`${marker.rules.length} 个查询子项 · 双击改名 · 右键操作`}
     onPointerDown={(event) => beginDrag(event, marker)}
     onClick={() => { setOverflowOpen(false); chooseMarker(marker); }}
     onDoubleClick={() => editAlias(marker)}
-  ><i aria-hidden="true">{marker.kind === "combine" ? marker.rules.length : marker.rules[0].regex ? ".*" : "#"}</i><span>{marker.label}</span>{inOverflow && <small>{marker.kind === "combine" ? "组合" : marker.rules[0].regex ? "正则" : "文本"}</small>}</button>;
+  ><i aria-hidden="true">{marker.rules.length > 1 ? marker.rules.length : marker.rules[0].regex ? ".*" : "#"}</i><span>{marker.label}</span>{inOverflow && <small>{marker.rules.length} 个子项</small>}</button>;
 
   const openContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.target instanceof Element && event.target.closest(".custom-marker-editor")) return;
@@ -216,6 +273,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
   };
 
   return <div className="custom-marker-shelf" ref={hostRef} style={{ flexBasis: `${widthRatio * 100}%` }} onContextMenu={openContextMenu}>
+    <input ref={importInputRef} className="custom-marker-file-input" type="file" accept="application/json,.json" onChange={(event) => void importMarkers(event)} />
     <div className="custom-marker-track" aria-label="自定义日志标记">
       {visible.map((marker) => markerButton(marker))}
       {!markers.length && <span className="custom-marker-empty">右键新建标记</span>}
@@ -223,8 +281,11 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
     {overflow.length > 0 && <div className="custom-marker-overflow"><button type="button" className={overflowOpen ? "is-active" : undefined} aria-label={`查看其余 ${overflow.length} 个自定义标记`} onClick={() => setOverflowOpen((open) => !open)}><MoreIcon /><b>+{overflow.length}</b></button>{overflowOpen && <div className="custom-marker-overflow-menu">{overflow.map((marker) => markerButton(marker, true))}</div>}</div>}
     {drag && suppressClickRef.current && <div className={`custom-marker-drag-ghost${drag.action === "delete" ? " is-delete" : ""}`} style={{ left: drag.x, top: drag.y }}>{drag.action === "delete" ? "松开删除" : markers.find(({ id }) => id === drag.id)?.label}</div>}
     {menu && <CustomLogMarkerContextMenu
-      x={menu.x} y={menu.y} markerLabel={menuMarker?.label} cloneDisabled={markers.length >= MAX_CUSTOM_LOG_MARKERS}
-      onCreateSingle={() => createMarker("single")} onCreateCombine={() => createMarker("combine")}
+      x={menu.x} y={menu.y} markerLabel={menuMarker?.label} cloneDisabled={markers.length >= MAX_CUSTOM_LOG_MARKERS} exportAllDisabled={!markers.length}
+      onCreate={createMarker}
+      onImport={() => { setMenu(undefined); importInputRef.current?.click(); }}
+      onExportAll={() => void exportMarkers(markers)}
+      onExportMarker={() => { if (menuMarker) void exportMarkers([menuMarker], menuMarker.label); }}
       onEdit={() => menuMarker && openEditor(menuMarker)}
       onClone={() => { if (menuMarker) onChange(cloneCustomLogMarker(markers, menuMarker.id)); setMenu(undefined); }}
       onDelete={() => { if (menuMarker) onChange(markers.filter(({ id }) => id !== menuMarker.id)); setMenu(undefined); }}
@@ -234,6 +295,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
       onDelete={editing.isNew ? undefined : () => { onChange(markers.filter(({ id }) => id !== editing.marker.id)); setEditing(undefined); }}
       onSave={saveEditor}
     />}
+    {transferNotice && <div className={`custom-marker-transfer-notice ${transferNotice.tone}`} role="status">{transferNotice.text}</div>}
   </div>;
 });
 

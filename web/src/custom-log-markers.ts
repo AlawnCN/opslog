@@ -11,7 +11,6 @@ export interface CustomLogMarkerRule {
 export interface CustomLogMarker {
   id: string;
   label: string;
-  kind: "single" | "combine";
   rules: CustomLogMarkerRule[];
 }
 
@@ -60,20 +59,27 @@ const normalizeMarker = (value: unknown): CustomLogMarker | undefined => {
     ? candidate.rules.map(normalizeRule).filter((rule): rule is CustomLogMarkerRule => Boolean(rule)).slice(0, MAX_RULES)
     : [];
   if (!rules.length) return undefined;
-  const kind = rules.length > 1 ? "combine" : "single";
+  const storedLabel = cleanText(candidate.label, 40);
+  const legacyGeneratedLabel = storedLabel === "新建组合标记" || /^组合 · \d+$/.test(storedLabel);
   return {
     id: cleanText(candidate.id, 80) || createId(),
-    label: cleanText(candidate.label, 40) || (kind === "combine" ? `组合 · ${rules.length}` : rules[0].label),
-    kind,
+    label: !storedLabel || legacyGeneratedLabel ? rules[0].label : storedLabel,
     rules
   };
+};
+
+export const normalizeCustomLogMarkers = (value: unknown, maximum = MAX_CUSTOM_LOG_MARKERS): CustomLogMarker[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(normalizeMarker)
+    .filter((marker): marker is CustomLogMarker => Boolean(marker))
+    .slice(0, Math.max(0, maximum));
 };
 
 export const readCustomLogMarkers = (storage: MarkerStorage = localStorage): CustomLogMarker[] => {
   try {
     const value = JSON.parse(storage.getItem(CUSTOM_LOG_MARKERS_KEY) ?? "[]") as unknown;
-    if (!Array.isArray(value)) return [];
-    return value.map(normalizeMarker).filter((marker): marker is CustomLogMarker => Boolean(marker)).slice(0, MAX_CUSTOM_LOG_MARKERS);
+    return normalizeCustomLogMarkers(value);
   } catch {
     return [];
   }
@@ -90,13 +96,14 @@ export const storeCustomLogMarkers = (markers: CustomLogMarker[], storage: Marke
 export const createCustomLogMarker = (query: string, regex: boolean): CustomLogMarker => {
   const normalizedQuery = query.trim();
   const rule: CustomLogMarkerRule = { id: createId(), label: defaultLabel(normalizedQuery), query: normalizedQuery, regex };
-  return { id: createId(), label: rule.label, kind: "single", rules: [rule] };
+  return { id: createId(), label: rule.label, rules: [rule] };
 };
 
-export const createEmptyCustomLogMarker = (kind: CustomLogMarker["kind"]): CustomLogMarker => {
-  const rules = Array.from({ length: kind === "combine" ? 2 : 1 }, (_, index) => createCustomLogMarkerRule(index));
-  return { id: createId(), label: kind === "combine" ? "新建组合标记" : "新建标记", kind, rules };
-};
+export const createEmptyCustomLogMarker = (): CustomLogMarker => ({
+  id: createId(),
+  label: "新建标记",
+  rules: [createCustomLogMarkerRule()]
+});
 
 export const cloneCustomLogMarker = (markers: CustomLogMarker[], markerId: string): CustomLogMarker[] => {
   if (markers.length >= MAX_CUSTOM_LOG_MARKERS) return markers;
@@ -151,7 +158,6 @@ export const combineCustomLogMarkers = (markers: CustomLogMarker[], sourceId: st
   const combined: CustomLogMarker = {
     id: createId(),
     label: target.label,
-    kind: "combine",
     rules
   };
   const next = markers.filter(({ id }) => id !== sourceId && id !== targetId);

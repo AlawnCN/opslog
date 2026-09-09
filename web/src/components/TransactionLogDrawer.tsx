@@ -277,7 +277,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
           boundsRef={logReaderBodyRef}
           category="call"
           title={activeCustomMarker.label}
-          eyebrow={activeCustomMarker.kind === "combine" ? `COMBINE · ${activeCustomMarker.rules.length} RULES` : activeCustomMarker.rules[0].regex ? "REGEX MARKER" : "CUSTOM MARKER"}
+          eyebrow={`CUSTOM MARKER · ${activeCustomMarker.rules.length} ${activeCustomMarker.rules.length === 1 ? "RULE" : "RULES"}`}
           items={customOutline.items}
           content={content}
           highlights={customOutline.highlights}

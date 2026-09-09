@@ -3,8 +3,8 @@ use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::domain::{
-    DownloadInput, DownloadResult, PublicEnvironment, SaveTransactionLogInput, SearchInput,
-    SearchResponse, display_fields,
+    DownloadInput, DownloadResult, PublicEnvironment, SaveCustomMarkersInput,
+    SaveTransactionLogInput, SearchInput, SearchResponse, display_fields,
 };
 use crate::environment_store;
 use crate::export_files;
@@ -13,6 +13,7 @@ use crate::query_builders::{build_search_query, build_trace_query, build_trc_que
 
 const MAX_RANGE_DAYS: i64 = 31;
 const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
+const MAX_CUSTOM_MARKERS_BYTES: usize = 1024 * 1024;
 
 fn parse_range(start: &str, end: &str, enforce_maximum: bool) -> Result<(), String> {
     let start =
@@ -176,6 +177,21 @@ pub async fn save_transaction_log(
         return Err("日志内容超过 64 MB 安全上限".to_string());
     }
     export_files::save_named(&input.id, "trc", input.content.as_bytes()).await
+}
+
+#[tauri::command]
+pub async fn save_custom_log_markers(
+    input: SaveCustomMarkersInput,
+) -> Result<DownloadResult, String> {
+    if input.name.trim().is_empty() || input.name.chars().count() > 200 {
+        return Err("标记导出文件名不合法".to_string());
+    }
+    if input.contents.len() > MAX_CUSTOM_MARKERS_BYTES {
+        return Err("标记导出内容超过 1 MB 安全上限".to_string());
+    }
+    serde_json::from_str::<Value>(&input.contents)
+        .map_err(|_| "标记导出内容不是有效的 JSON".to_string())?;
+    export_files::save_named(&input.name, "json", input.contents.as_bytes()).await
 }
 
 #[tauri::command]

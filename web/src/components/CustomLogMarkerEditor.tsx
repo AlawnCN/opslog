@@ -40,12 +40,12 @@ export const CustomLogMarkerEditor = ({ marker, aliasOnly, creating = false, onC
     const label = draft.label.trim();
     if (!label || error) return;
     const rules = draft.rules.map((rule) => ({ ...rule, label: rule.label.trim() || rule.query.trim(), query: rule.query.trim() }));
-    onSave({ ...draft, label, kind: rules.length > 1 ? "combine" : "single", rules });
+    onSave({ ...draft, label, rules });
   };
 
   return <div className="custom-marker-editor" ref={hostRef} role="dialog" aria-label={aliasOnly ? "修改标记别名" : "编辑自定义标记"}>
-    <header><div><span>{creating ? "NEW CUSTOM MARKER" : "CUSTOM MARKER"}</span><strong>{aliasOnly ? "修改别名" : creating ? draft.kind === "combine" ? "创建 Combine 标签" : "创建普通标签" : draft.kind === "combine" ? "编辑组合模板" : "编辑标记"}</strong></div><button type="button" aria-label="关闭编辑器" onClick={onCancel}><CloseIcon /></button></header>
-    <label className="custom-marker-name"><span>标签名称</span><input autoFocus value={draft.label} maxLength={40} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") save(); }} /></label>
+    <header><div><span>{creating ? "NEW CUSTOM MARKER" : "CUSTOM MARKER"}</span><strong>{aliasOnly ? "修改名称" : creating ? "创建标记" : "编辑标记"}</strong></div><button type="button" aria-label="关闭编辑器" onClick={onCancel}><CloseIcon /></button></header>
+    <label className="custom-marker-name"><span>标记名称</span><input autoFocus value={draft.label} maxLength={40} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") save(); }} /></label>
     {!aliasOnly && <CustomLogMarkerRuleEditor rules={draft.rules} onChange={(rules) => setDraft((current) => ({ ...current, rules }))} />}
     {error && <p className="custom-marker-error">{error}</p>}
     <footer>{onDelete ? <button type="button" className="danger" onClick={onDelete}>删除</button> : <span />}<div><button type="button" onClick={onCancel}>取消</button><button type="button" className="primary" disabled={!draft.label.trim() || Boolean(error)} onClick={save}>保存</button></div></footer>

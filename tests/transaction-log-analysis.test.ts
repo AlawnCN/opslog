@@ -3,6 +3,7 @@ import test from "node:test";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
 import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../web/src/custom-marker-layout";
+import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeCustomLogMarkers } from "../web/src/custom-log-marker-transfer";
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
@@ -26,7 +27,6 @@ test("regular-expression search reports invalid patterns and skips empty matches
 const marker = (id: string, label: string, query = label, regex = false): CustomLogMarker => ({
   id,
   label,
-  kind: "single",
   rules: [{ id: `${id}-rule`, label, query, regex }]
 });
 
@@ -35,14 +35,12 @@ test("custom markers reorder and combine with the drop target rules first", () =
   assert.deepEqual(reorderCustomLogMarkers(markers, "gamma", "alpha", false).map(({ id }) => id), ["gamma", "alpha", "beta"]);
 
   const combined = combineCustomLogMarkers(markers, "gamma", "alpha");
-  assert.equal(combined[0].kind, "combine");
   assert.equal(combined[0].label, "Alpha");
   assert.deepEqual(combined[0].rules.map(({ label }) => label), ["Alpha", "Gamma"]);
   assert.equal(combined[1].id, "beta");
 
   const sourceBeforeTarget = combineCustomLogMarkers(markers, "alpha", "gamma");
   assert.equal(sourceBeforeTarget[0].id, "beta");
-  assert.equal(sourceBeforeTarget[1].kind, "combine");
   assert.equal(sourceBeforeTarget[1].label, "Gamma");
   assert.deepEqual(sourceBeforeTarget[1].rules.map(({ label }) => label), ["Gamma", "Alpha"]);
 });
@@ -51,13 +49,11 @@ test("combining markers preserves the target name and every child rule unchanged
   const target: CustomLogMarker = {
     id: "request",
     label: "请求报文",
-    kind: "single",
     rules: [{ id: "request-rule", label: "RequestBO 入参", query: "RequestBO >>>", regex: false }]
   };
   const source: CustomLogMarker = {
     id: "response",
     label: "响应报文",
-    kind: "single",
     rules: [{ id: "response-rule", label: "RequestBO 出参", query: String.raw`RequestBO\s+<<<`, regex: true }]
   };
 
@@ -68,12 +64,13 @@ test("combining markers preserves the target name and every child rule unchanged
 });
 
 test("custom marker creation, cloning, and child rule reordering preserve independent identities", () => {
-  const draft = createEmptyCustomLogMarker("combine");
-  assert.equal(draft.kind, "combine");
-  assert.equal(draft.rules.length, 2);
+  const draft = createEmptyCustomLogMarker();
+  assert.equal(draft.rules.length, 1);
+  const secondRule = createEmptyCustomLogMarker().rules[0];
+  const rules = [...draft.rules, secondRule];
 
-  const reordered = reorderCustomLogMarkerRules(draft.rules, draft.rules[1].id, draft.rules[0].id, false);
-  assert.deepEqual(reordered.map(({ id }) => id), [draft.rules[1].id, draft.rules[0].id]);
+  const reordered = reorderCustomLogMarkerRules(rules, secondRule.id, draft.rules[0].id, false);
+  assert.deepEqual(reordered.map(({ id }) => id), [secondRule.id, draft.rules[0].id]);
 
   const source = marker("source", "Source", "ERROR");
   const cloned = cloneCustomLogMarker([source], source.id);
@@ -103,7 +100,6 @@ test("custom marker outline merges text and regex hits with their source aliases
   const combined: CustomLogMarker = {
     id: "combined",
     label: "Problems",
-    kind: "combine",
     rules: [
       { id: "errors", label: "Errors", query: "error", regex: false },
       { id: "codes", label: "Codes", query: String.raw`[EW]\d{4}`, regex: true }
@@ -144,6 +140,55 @@ test("custom markers survive reload with combination order and regex settings in
   storeCustomLogMarkers(combined, storage);
   assert.ok(values.has(CUSTOM_LOG_MARKERS_KEY));
   assert.deepEqual(readCustomLogMarkers(storage), combined);
+});
+
+test("legacy single and combine markers migrate into one marker model without changing child rules", () => {
+  const legacyRules = [
+    { id: "request", label: "请求报文", query: "RequestBO >>>", regex: false },
+    { id: "response", label: "响应报文", query: String.raw`RequestBO\s+<<<`, regex: true }
+  ];
+  const storage = {
+    getItem: () => JSON.stringify([{ id: "legacy", label: "组合 · 2", kind: "combine", rules: legacyRules }]),
+    setItem: () => undefined
+  };
+
+  assert.deepEqual(readCustomLogMarkers(storage), [{ id: "legacy", label: "请求报文", rules: legacyRules }]);
+});
+
+test("custom marker export uses a versioned portable format", () => {
+  const source = [marker("request", "请求报文", "RequestBO >>>")];
+  const exported = JSON.parse(serializeCustomLogMarkers(source)) as { format: string; version: number; exportedAt: string; markers: CustomLogMarker[] };
+
+  assert.equal(exported.format, CUSTOM_LOG_MARKER_EXPORT_FORMAT);
+  assert.equal(exported.version, 1);
+  assert.ok(Number.isFinite(Date.parse(exported.exportedAt)));
+  assert.deepEqual(exported.markers, source);
+});
+
+test("custom marker import appends unique markers with fresh identities", () => {
+  const existing = marker("existing", "错误", "ERROR");
+  const imported = marker("shared-id", "请求", "RequestBO >>>");
+  const contents = serializeCustomLogMarkers([existing, imported]);
+  const result = mergeCustomLogMarkerImport([existing], contents);
+
+  assert.equal(result.imported, 1);
+  assert.equal(result.duplicates, 1);
+  assert.equal(result.invalid, 0);
+  assert.equal(result.overflow, 0);
+  assert.equal(result.markers[1].label, imported.label);
+  assert.notEqual(result.markers[1].id, imported.id);
+  assert.notEqual(result.markers[1].rules[0].id, imported.rules[0].id);
+  assert.equal(result.markers[1].rules[0].query, imported.rules[0].query);
+});
+
+test("custom marker import accepts legacy arrays and reports invalid or unsupported files", () => {
+  const legacy = JSON.stringify([marker("legacy", "旧标记", "legacy"), { id: "invalid", label: "无查询", rules: [] }]);
+  const result = mergeCustomLogMarkerImport([], legacy);
+
+  assert.equal(result.imported, 1);
+  assert.equal(result.invalid, 1);
+  assert.throws(() => mergeCustomLogMarkerImport([], "not json"), /有效的 JSON/);
+  assert.throws(() => mergeCustomLogMarkerImport([], JSON.stringify({ format: CUSTOM_LOG_MARKER_EXPORT_FORMAT, version: 99, markers: [] })), /更高版本/);
 });
 
 test("SQL keeps semantic highlighting without becoming foldable", () => {

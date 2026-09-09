@@ -97,6 +97,13 @@ pub struct SaveTransactionLogInput {
     pub content: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveCustomMarkersInput {
+    pub name: String,
+    pub contents: String,
+}
+
 #[derive(Debug)]
 pub struct QueryResult {
     pub columns: Vec<String>,

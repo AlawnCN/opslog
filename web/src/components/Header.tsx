@@ -56,8 +56,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.14<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.14</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.15<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.15</div>}
       </div>
     </header>
   );

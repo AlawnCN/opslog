@@ -126,6 +126,12 @@ export const saveTransactionLogContent = async (id: string, content: string): Pr
   return undefined;
 };
 
+export const saveCustomLogMarkerExport = async (name: string, contents: string): Promise<string | undefined> => {
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_custom_log_markers", { input: { name, contents } })).path;
+  saveBrowserBlob(new Blob([contents], { type: "application/json;charset=utf-8" }), `${name}.json`);
+  return undefined;
+};
+
 export const loadTrace = async (
   environment: string,
   id: string,

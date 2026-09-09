@@ -84,7 +84,7 @@ export const CustomLogMarkerRuleEditor = ({ rules, onChange }: CustomLogMarkerRu
         <b>{String(index + 1).padStart(2, "0")}</b>
         <input value={rule.label} maxLength={40} aria-label={`条件 ${index + 1} 别名`} onChange={(event) => updateRule(rule.id, { label: event.target.value })} />
         <button type="button" className={`custom-marker-rule-regex${rule.regex ? " is-active" : ""}`} aria-label={`条件 ${index + 1} 使用正则表达式`} aria-pressed={rule.regex} onClick={() => updateRule(rule.id, { regex: !rule.regex })}>.*</button>
-        <button type="button" className="custom-marker-rule-remove" disabled={rules.length <= 1} aria-label={`删除条件 ${index + 1}`} title="删除子标签" onClick={() => removeRule(rule.id)}>×</button>
+        <button type="button" className="custom-marker-rule-remove" disabled={rules.length <= 1} aria-label={`删除条件 ${index + 1}`} title="删除子项" onClick={() => removeRule(rule.id)}>×</button>
       </div>
       <textarea value={rule.query} rows={2} spellCheck={false} aria-label={`条件 ${index + 1} 查询内容`} onChange={(event) => updateRule(rule.id, { query: event.target.value })} />
     </div>)}
@@ -93,7 +93,7 @@ export const CustomLogMarkerRuleEditor = ({ rules, onChange }: CustomLogMarkerRu
       className="custom-marker-rule-add"
       disabled={rules.length >= MAX_CUSTOM_LOG_MARKERS}
       onClick={() => onChange([...rules, createCustomLogMarkerRule(rules.length)])}
-    ><i aria-hidden="true">＋</i>增加子标签</button>
+    ><i aria-hidden="true">＋</i>增加子项</button>
     {drag?.active && <div className="custom-marker-rule-drag-ghost" style={{ top: drag.y }}>{rules.find(({ id }) => id === drag.id)?.label || "未命名条件"}</div>}
   </div>;
 };
