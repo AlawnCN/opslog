@@ -1,10 +1,11 @@
 {
   "name": "opslog-web",
-  "version": "3.0.13",
+  "version": "3.0.14",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"npm run web:dev\"",
+    "dev:lan": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"vite --host 0.0.0.0\"",
     "build": "tsc -p tsconfig.server.json && vite build",
     "web:dev": "vite",
     "web:build": "vite build",

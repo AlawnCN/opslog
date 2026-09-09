@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { EnvironmentConfig, PublicEnvironment } from "./domain.js";
@@ -25,11 +25,30 @@ const configPath = path.resolve(process.cwd(), "opslog-envs.json");
 export const normalizeKibanaUrl = (url: string): string =>
   LEGACY_KIBANA_URLS.get(url.toLowerCase()) ?? url;
 
+export const parseEnvironmentConfig = (contents: string): EnvironmentConfig[] => {
+  try {
+    const parsed = JSON.parse(contents) as unknown;
+    const environments = z.array(environmentSchema).min(1).parse(parsed);
+    return environments.map((environment) => ({
+      ...environment,
+      kibanaUrl: normalizeKibanaUrl(environment.kibanaUrl)
+    }));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new Error(`环境配置 JSON 不合法：${error.message}`);
+    if (error instanceof z.ZodError) throw new Error("环境配置内容不完整或字段格式不合法");
+    throw error;
+  }
+};
+
 export const loadEnvironments = async (): Promise<EnvironmentConfig[]> => {
   const raw = await readFile(configPath, "utf8");
-  return z.array(environmentSchema)
-    .parse(JSON.parse(raw))
-    .map((environment) => ({ ...environment, kibanaUrl: normalizeKibanaUrl(environment.kibanaUrl) }));
+  return parseEnvironmentConfig(raw);
+};
+
+export const saveEnvironmentConfig = async (contents: string): Promise<string> => {
+  parseEnvironmentConfig(contents);
+  await writeFile(configPath, contents, { encoding: "utf8", mode: 0o600 });
+  return configPath;
 };
 
 export const findEnvironment = async (name: string): Promise<EnvironmentConfig> => {

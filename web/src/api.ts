@@ -144,6 +144,12 @@ export const loadTrace = async (
 };
 
 export const importEnvironmentConfig = async (contents: string): Promise<string> => {
-  if (!desktopMode) throw new Error("仅桌面版支持导入环境配置");
-  return (await desktopInvoke<SavedFile>("save_environment_config", { contents })).path;
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_environment_config", { contents })).path;
+  const response = await fetch("/api/environments/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ contents })
+  });
+  if (!response.ok) return parseError(response);
+  return ((await response.json()) as SavedFile).path;
 };

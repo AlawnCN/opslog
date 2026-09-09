@@ -33,6 +33,13 @@ const createId = (): string => globalThis.crypto?.randomUUID?.() ?? `${Date.now(
 const cleanText = (value: unknown, maximum: number): string => typeof value === "string" ? value.trim().slice(0, maximum) : "";
 const defaultLabel = (query: string): string => query.length > 18 ? `${query.slice(0, 17)}…` : query;
 
+export const createCustomLogMarkerRule = (index = 0): CustomLogMarkerRule => ({
+  id: createId(),
+  label: `条件 ${index + 1}`,
+  query: "",
+  regex: false
+});
+
 const normalizeRule = (value: unknown): CustomLogMarkerRule | undefined => {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Partial<CustomLogMarkerRule>;
@@ -86,11 +93,44 @@ export const createCustomLogMarker = (query: string, regex: boolean): CustomLogM
   return { id: createId(), label: rule.label, kind: "single", rules: [rule] };
 };
 
+export const createEmptyCustomLogMarker = (kind: CustomLogMarker["kind"]): CustomLogMarker => {
+  const rules = Array.from({ length: kind === "combine" ? 2 : 1 }, (_, index) => createCustomLogMarkerRule(index));
+  return { id: createId(), label: kind === "combine" ? "新建组合标记" : "新建标记", kind, rules };
+};
+
+export const cloneCustomLogMarker = (markers: CustomLogMarker[], markerId: string): CustomLogMarker[] => {
+  if (markers.length >= MAX_CUSTOM_LOG_MARKERS) return markers;
+  const markerIndex = markers.findIndex(({ id }) => id === markerId);
+  if (markerIndex < 0) return markers;
+  const marker = markers[markerIndex];
+  const label = `${marker.label} 副本`.slice(0, 40);
+  const clone: CustomLogMarker = {
+    ...marker,
+    id: createId(),
+    label,
+    rules: marker.rules.map((rule) => ({ ...rule, id: createId() }))
+  };
+  const next = [...markers];
+  next.splice(markerIndex + 1, 0, clone);
+  return next;
+};
+
 export const reorderCustomLogMarkers = (markers: CustomLogMarker[], sourceId: string, targetId: string, after: boolean): CustomLogMarker[] => {
   const sourceIndex = markers.findIndex(({ id }) => id === sourceId);
   const targetIndex = markers.findIndex(({ id }) => id === targetId);
   if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return markers;
   const next = [...markers];
+  const [source] = next.splice(sourceIndex, 1);
+  const adjustedTarget = next.findIndex(({ id }) => id === targetId);
+  next.splice(adjustedTarget + (after ? 1 : 0), 0, source);
+  return next;
+};
+
+export const reorderCustomLogMarkerRules = (rules: CustomLogMarkerRule[], sourceId: string, targetId: string, after: boolean): CustomLogMarkerRule[] => {
+  const sourceIndex = rules.findIndex(({ id }) => id === sourceId);
+  const targetIndex = rules.findIndex(({ id }) => id === targetId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return rules;
+  const next = [...rules];
   const [source] = next.splice(sourceIndex, 1);
   const adjustedTarget = next.findIndex(({ id }) => id === targetId);
   next.splice(adjustedTarget + (after ? 1 : 0), 0, source);
@@ -110,7 +150,7 @@ export const combineCustomLogMarkers = (markers: CustomLogMarker[], sourceId: st
   const rules = [...target.rules, ...source.rules].slice(0, MAX_RULES);
   const combined: CustomLogMarker = {
     id: createId(),
-    label: `组合 · ${rules.length}`,
+    label: target.label,
     kind: "combine",
     rules
   };

@@ -43,10 +43,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
       </div>
       <div className="topbar-context">
-        {desktopMode && <>
-          <button className="config-import" type="button" disabled={loading} onClick={() => configInput.current?.click()}><ImportIcon />导入配置</button>
-          <input ref={configInput} className="config-file-input" type="file" accept="application/json,.json" onChange={(event) => void selectConfig(event.currentTarget.files)} />
-        </>}
+        <button className="config-import" type="button" disabled={loading} onClick={() => configInput.current?.click()}><ImportIcon />导入配置</button>
+        <input ref={configInput} className="config-file-input" type="file" accept="application/json,.json" onChange={(event) => void selectConfig(event.currentTarget.files)} />
         <div className="environment-control">
           <label htmlFor="environment">运行环境</label>
           <select id="environment" value={selected} onChange={(event) => onSelect(event.target.value)}>
@@ -58,8 +56,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.13<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.13</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.14<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.14</div>}
       </div>
     </header>
   );

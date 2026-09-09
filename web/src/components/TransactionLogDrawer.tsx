@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../custom-marker-layout";
 import { buildCustomLogMarkerOutline, createCustomLogMarker, MAX_CUSTOM_LOG_MARKERS, readCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../custom-log-markers";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
 import { analyzeTransactionLog } from "../transaction-log-analysis";
@@ -6,6 +7,7 @@ import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MAT
 import type { LogOutlineCategory } from "../transaction-log-model";
 import { CloseIcon, MarkerAddIcon, SearchIcon } from "./Icons";
 import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
+import { CustomMarkerSectionResizeHandle } from "./CustomMarkerSectionResizeHandle";
 import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 
@@ -50,6 +52,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [isResizing, setIsResizing] = useState(false);
   const [outlineCategory, setOutlineCategory] = useState<LogOutlineCategory>();
   const [customMarkers, setCustomMarkers] = useState(readCustomLogMarkers);
+  const [customMarkerWidthRatio, setCustomMarkerWidthRatio] = useState(readCustomMarkerWidthRatio);
   const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
@@ -250,8 +253,8 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
             <button type="button" data-log-outline-trigger className={`${analysis.stats.exceptions ? "has-errors" : ""}${outlineCategory === "exception" ? " is-active" : ""}`} title="查看异常 Outline" onClick={() => toggleOutline("exception")}><b>{analysis.stats.exceptions}</b> ERROR/异常</button>
             <button type="button" data-log-outline-trigger className={outlineCategory === "structured" ? "is-active" : undefined} title="查看结构块 Outline" onClick={() => toggleOutline("structured")}><b>{analysis.stats.structured}</b> 结构块</button>
           </div>
-          <i className="marker-track-separator" aria-hidden="true" />
-          <CustomLogMarkerShelf ref={customMarkerShelfRef} markers={customMarkers} activeMarkerId={activeCustomMarkerId} onChange={replaceCustomMarkers} onOpen={openCustomMarker} />
+          <CustomMarkerSectionResizeHandle ratio={customMarkerWidthRatio} onChange={setCustomMarkerWidthRatio} onCommit={storeCustomMarkerWidthRatio} />
+          <CustomLogMarkerShelf ref={customMarkerShelfRef} markers={customMarkers} activeMarkerId={activeCustomMarkerId} widthRatio={customMarkerWidthRatio} onChange={replaceCustomMarkers} onOpen={openCustomMarker} />
           <div className="log-reader-fold-actions"><button title="折叠全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("folded")}>全部折叠</button><button title="展开全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("expanded")}>全部展开</button></div>
         </div>
       </div>}

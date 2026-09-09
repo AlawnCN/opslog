@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { toCsv } from "./csv.js";
 import { DISPLAY_FIELDS, type LogKind, type SearchInput } from "./domain.js";
-import { findEnvironment, loadEnvironments, toPublicEnvironment } from "./environment-store.js";
+import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvironment } from "./environment-store.js";
 import { runEsql } from "./kibana-client.js";
 import { buildSearchQuery, buildTraceQuery, buildTrcQuery, pageRows } from "./query-builders.js";
 
@@ -48,6 +48,10 @@ const downloadSchema = z.object({
   endTime: dateTime
 });
 
+const environmentImportSchema = z.object({
+  contents: z.string().min(2).max(256 * 1024)
+});
+
 const asyncRoute = (
   handler: (request: Parameters<Router["get"]>[1] extends (...args: infer A) => unknown ? A[0] : never, response: Response) => Promise<void>
 ) => (request: Parameters<typeof handler>[0], response: Response, next: (error?: unknown) => void) => {
@@ -83,6 +87,12 @@ apiRouter.get("/health", (_request, response) => {
 apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   const environments = await loadEnvironments();
   response.json(environments.map(toPublicEnvironment));
+}));
+
+apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
+  const { contents } = environmentImportSchema.parse(request.body);
+  const path = await saveEnvironmentConfig(contents);
+  response.json({ path });
 }));
 
 apiRouter.post("/search", asyncRoute(async (request, response) => {
@@ -158,6 +168,6 @@ export const errorHandler = (error: unknown, _request: unknown, response: Respon
     return;
   }
   const message = error instanceof Error ? error.message : "未知服务端错误";
-  const isConfigurationError = message.startsWith("未知环境") || message.includes("索引");
+  const isConfigurationError = message.startsWith("未知环境") || message.startsWith("环境配置") || message.includes("索引");
   response.status(isConfigurationError ? 400 : 502).json({ error: message });
 };

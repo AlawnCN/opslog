@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
-import { buildCustomLogMarkerOutline, combineCustomLogMarkers, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
+import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../web/src/custom-marker-layout";
+import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
 
@@ -35,13 +36,66 @@ test("custom markers reorder and combine with the drop target rules first", () =
 
   const combined = combineCustomLogMarkers(markers, "gamma", "alpha");
   assert.equal(combined[0].kind, "combine");
+  assert.equal(combined[0].label, "Alpha");
   assert.deepEqual(combined[0].rules.map(({ label }) => label), ["Alpha", "Gamma"]);
   assert.equal(combined[1].id, "beta");
 
   const sourceBeforeTarget = combineCustomLogMarkers(markers, "alpha", "gamma");
   assert.equal(sourceBeforeTarget[0].id, "beta");
   assert.equal(sourceBeforeTarget[1].kind, "combine");
+  assert.equal(sourceBeforeTarget[1].label, "Gamma");
   assert.deepEqual(sourceBeforeTarget[1].rules.map(({ label }) => label), ["Gamma", "Alpha"]);
+});
+
+test("combining markers preserves the target name and every child rule unchanged", () => {
+  const target: CustomLogMarker = {
+    id: "request",
+    label: "请求报文",
+    kind: "single",
+    rules: [{ id: "request-rule", label: "RequestBO 入参", query: "RequestBO >>>", regex: false }]
+  };
+  const source: CustomLogMarker = {
+    id: "response",
+    label: "响应报文",
+    kind: "single",
+    rules: [{ id: "response-rule", label: "RequestBO 出参", query: String.raw`RequestBO\s+<<<`, regex: true }]
+  };
+
+  const [combined] = combineCustomLogMarkers([target, source], source.id, target.id);
+
+  assert.equal(combined.label, target.label);
+  assert.deepEqual(combined.rules, [target.rules[0], source.rules[0]]);
+});
+
+test("custom marker creation, cloning, and child rule reordering preserve independent identities", () => {
+  const draft = createEmptyCustomLogMarker("combine");
+  assert.equal(draft.kind, "combine");
+  assert.equal(draft.rules.length, 2);
+
+  const reordered = reorderCustomLogMarkerRules(draft.rules, draft.rules[1].id, draft.rules[0].id, false);
+  assert.deepEqual(reordered.map(({ id }) => id), [draft.rules[1].id, draft.rules[0].id]);
+
+  const source = marker("source", "Source", "ERROR");
+  const cloned = cloneCustomLogMarker([source], source.id);
+  assert.equal(cloned.length, 2);
+  assert.equal(cloned[1].label, "Source 副本");
+  assert.notEqual(cloned[1].id, source.id);
+  assert.notEqual(cloned[1].rules[0].id, source.rules[0].id);
+  assert.equal(cloned[1].rules[0].query, source.rules[0].query);
+});
+
+test("custom marker section width is clamped and restored from storage", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); }
+  };
+
+  assert.equal(clampCustomMarkerWidthRatio(.05), .16);
+  assert.equal(clampCustomMarkerWidthRatio(.9), .58);
+  storeCustomMarkerWidthRatio(.41, storage);
+  assert.equal(values.get(CUSTOM_MARKER_WIDTH_RATIO_KEY), "0.41");
+  assert.equal(readCustomMarkerWidthRatio(storage), .41);
 });
 
 test("custom marker outline merges text and regex hits with their source aliases", () => {
