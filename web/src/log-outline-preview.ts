@@ -71,6 +71,24 @@ export const indexSqlOutlineHighlights = (
   return highlightsByItem;
 };
 
+export const indexOutlineHighlights = (
+  items: LogOutlineItem[],
+  highlights: LogHighlight[]
+): Map<number, LogHighlight[]> => {
+  const highlightsByItem = new Map<number, LogHighlight[]>();
+  let firstCandidate = 0;
+  for (const item of items) {
+    if (highlightsByItem.has(item.from)) continue;
+    while (firstCandidate < highlights.length && highlights[firstCandidate].to <= item.from) firstCandidate += 1;
+    const matching: LogHighlight[] = [];
+    for (let index = firstCandidate; index < highlights.length && highlights[index].from < item.to; index += 1) {
+      if (highlights[index].to > item.from) matching.push(highlights[index]);
+    }
+    if (matching.length) highlightsByItem.set(item.from, matching);
+  }
+  return highlightsByItem;
+};
+
 export const createSqlOutlinePreviews = (
   content: string,
   items: LogOutlineItem[],

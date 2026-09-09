@@ -3,6 +3,7 @@ export type LogReaderFoldMode = "folded" | "expanded";
 export interface LogReaderPreferences {
   wrapLines: boolean;
   outlineWrapLines: boolean;
+  regexSearch: boolean;
   foldMode: LogReaderFoldMode;
 }
 
@@ -15,6 +16,7 @@ const LOG_READER_PREFERENCES_KEY = "opslog.transaction-log-reader.preferences.v1
 export const DEFAULT_LOG_READER_PREFERENCES: LogReaderPreferences = {
   wrapLines: false,
   outlineWrapLines: false,
+  regexSearch: false,
   foldMode: "expanded"
 };
 
@@ -26,6 +28,9 @@ const normalizePreferences = (value: unknown): LogReaderPreferences => {
     outlineWrapLines: typeof candidate.outlineWrapLines === "boolean"
       ? candidate.outlineWrapLines
       : DEFAULT_LOG_READER_PREFERENCES.outlineWrapLines,
+    regexSearch: typeof candidate.regexSearch === "boolean"
+      ? candidate.regexSearch
+      : DEFAULT_LOG_READER_PREFERENCES.regexSearch,
     foldMode: candidate.foldMode === "folded" || candidate.foldMode === "expanded"
       ? candidate.foldMode
       : DEFAULT_LOG_READER_PREFERENCES.foldMode

@@ -1,8 +1,11 @@
-import { forwardRef, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { buildCustomLogMarkerOutline, createCustomLogMarker, MAX_CUSTOM_LOG_MARKERS, readCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../custom-log-markers";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
-import { analyzeTransactionLog, findLogMatchesInLowercase, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-analysis";
+import { analyzeTransactionLog } from "../transaction-log-analysis";
+import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-search";
 import type { LogOutlineCategory } from "../transaction-log-model";
-import { CloseIcon, SearchIcon } from "./Icons";
+import { CloseIcon, MarkerAddIcon, SearchIcon } from "./Icons";
+import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
 import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 
@@ -46,14 +49,18 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [widthRatio, setWidthRatio] = useState(readReaderWidthRatio);
   const [isResizing, setIsResizing] = useState(false);
   const [outlineCategory, setOutlineCategory] = useState<LogOutlineCategory>();
+  const [customMarkers, setCustomMarkers] = useState(readCustomLogMarkers);
+  const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
+  const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const logReaderBodyRef = useRef<HTMLDivElement>(null);
   const resizeStart = useRef<{ pointerX: number; width: number } | null>(null);
   const widthRatioRef = useRef(widthRatio);
   const deferredKeyword = useDeferredValue(keyword);
   const wrapLines = readerPreferences.wrapLines;
-  const query = deferredKeyword.trim();
+  const regexSearch = readerPreferences.regexSearch;
+  const query = regexSearch ? deferredKeyword : deferredKeyword.trim();
   const searchableContent = useMemo(() => content.toLocaleLowerCase(), [content]);
   const analyzed = useMemo(() => {
     const startedAt = performance.now();
@@ -61,13 +68,28 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
     return { value, durationMs: performance.now() - startedAt };
   }, [content]);
   const analysis = analyzed.value;
-  const matches = useMemo(() => findLogMatchesInLowercase(searchableContent, query), [query, searchableContent]);
+  const searchResult = useMemo(() => regexSearch
+    ? findRegexLogMatches(content, query)
+    : { matches: findPlainLogMatchesInLowercase(searchableContent, query) }, [content, query, regexSearch, searchableContent]);
+  const markerQuery = keyword.trim();
+  const markerQueryError = regexSearch ? findRegexLogMatches("", markerQuery).error : undefined;
+  const matches = searchResult.matches;
   const visibleActiveMatch = matches.length ? Math.min(activeMatch, matches.length - 1) : 0;
+  const activeCustomMarker = customMarkers.find(({ id }) => id === activeCustomMarkerId);
+  const customOutline = useMemo(
+    () => activeCustomMarker ? buildCustomLogMarkerOutline(content, activeCustomMarker) : undefined,
+    [activeCustomMarker, content]
+  );
 
   useImperativeHandle(ref, () => ({
     closeTopLayer: () => {
+      if (customMarkerShelfRef.current?.closeTopLayer()) return;
       if (outlineCategory) {
         setOutlineCategory(undefined);
+        return;
+      }
+      if (activeCustomMarkerId) {
+        setActiveCustomMarkerId(undefined);
         return;
       }
       onClose();
@@ -76,11 +98,12 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     }
-  }), [onClose, outlineCategory]);
+  }), [activeCustomMarkerId, onClose, outlineCategory]);
 
   useEffect(() => {
     setKeyword("");
     setOutlineCategory(undefined);
+    setActiveCustomMarkerId(undefined);
   }, [logId]);
 
   useEffect(() => {
@@ -125,7 +148,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
 
   useEffect(() => {
     setActiveMatch(0);
-  }, [content, query]);
+  }, [content, query, regexSearch]);
 
   const moveMatch = (direction: -1 | 1) => {
     if (matches.length === 0) return;
@@ -157,7 +180,26 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   };
 
   const toggleOutline = (category: LogOutlineCategory) => {
+    setActiveCustomMarkerId(undefined);
     setOutlineCategory((current) => current === category ? undefined : category);
+  };
+
+  const replaceCustomMarkers = useCallback((markers: CustomLogMarker[]) => {
+    const boundedMarkers = markers.slice(0, MAX_CUSTOM_LOG_MARKERS);
+    setCustomMarkers(boundedMarkers);
+    storeCustomLogMarkers(boundedMarkers);
+    setActiveCustomMarkerId((current) => current && boundedMarkers.some(({ id }) => id === current) ? current : undefined);
+  }, []);
+
+  const addCustomMarker = () => {
+    if (!markerQuery || markerQueryError || customMarkers.length >= MAX_CUSTOM_LOG_MARKERS) return;
+    const marker = createCustomLogMarker(markerQuery, regexSearch);
+    replaceCustomMarkers([...customMarkers, marker]);
+  };
+
+  const openCustomMarker = (marker: CustomLogMarker) => {
+    setOutlineCategory(undefined);
+    setActiveCustomMarkerId((current) => current === marker.id ? undefined : marker.id);
   };
 
   const updateReaderPreferences = (change: Partial<LogReaderPreferences>) => {
@@ -176,6 +218,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
 
   const jumpFromOutline = (position: number) => {
     setOutlineCategory(undefined);
+    setActiveCustomMarkerId(undefined);
     viewerRef.current?.jumpTo(position);
   };
 
@@ -185,29 +228,37 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />
       <div className="drawer-heading"><div><span className="eyebrow">TRANSACTION LOG</span><h2>日志阅读器</h2><code>{logId}</code></div><button title="关闭阅读器" aria-label="关闭阅读器" onClick={onClose}><CloseIcon /></button></div>
       <div className="log-reader-controls">
-        <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder="查询日志内容" aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" /></label>
-        {query && <span className={matches.length ? "match-count" : "match-count no-match"}>{matches.length ? `${visibleActiveMatch + 1} / ${matches.length === MAX_LOG_SEARCH_MATCHES ? `${MAX_LOG_SEARCH_MATCHES}+` : matches.length}` : "未找到匹配内容"}</span>}
+        <div className={`log-reader-search-group${searchResult.error ? " has-error" : ""}`}>
+          <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder={regexSearch ? "输入正则表达式查询日志" : "查询日志内容"} aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" aria-invalid={Boolean(searchResult.error)} aria-describedby={searchResult.error ? "log-reader-search-error" : undefined} /></label>
+          <button type="button" className={`regex-search-toggle${regexSearch ? " is-active" : ""}`} aria-pressed={regexSearch} aria-label="使用正则表达式查询" title={regexSearch ? "关闭正则表达式查询" : "启用正则表达式查询（不区分大小写）"} onClick={() => updateReaderPreferences({ regexSearch: !regexSearch })}><span aria-hidden="true">.*</span></button>
+          <button type="button" className="add-custom-marker" disabled={!markerQuery || Boolean(markerQueryError) || customMarkers.length >= MAX_CUSTOM_LOG_MARKERS} aria-label="将当前查询添加为自定义标记" title={customMarkers.length >= MAX_CUSTOM_LOG_MARKERS ? `最多保存 ${MAX_CUSTOM_LOG_MARKERS} 个自定义标记` : "保存为自定义标记"} onClick={addCustomMarker}><MarkerAddIcon /></button>
+        </div>
+        {query && <span id={searchResult.error ? "log-reader-search-error" : undefined} className={matches.length && !searchResult.error ? "match-count" : "match-count no-match"}>{searchResult.error ?? (matches.length ? `${visibleActiveMatch + 1} / ${matches.length === MAX_LOG_SEARCH_MATCHES ? `${MAX_LOG_SEARCH_MATCHES}+` : matches.length}` : "未找到匹配内容")}</span>}
         <div className="match-navigation"><button disabled={!matches.length} title="上一个命中（Shift + Enter）" onClick={() => moveMatch(-1)}>上一个</button><button disabled={!matches.length} title="下一个命中（Enter）" onClick={() => moveMatch(1)}>下一个</button></div>
         <label className="wrap-toggle"><input type="checkbox" checked={wrapLines} onChange={(event) => updateReaderPreferences({ wrapLines: event.target.checked })} />自动换行</label>
         {keyword && <button className="clear-reader-search" onClick={() => setKeyword("")}>清除</button>}
       </div>
       {!loading && content && <div className="log-reader-insights-shell" onPointerDown={(event) => event.stopPropagation()}>
         <div className="log-reader-insights" aria-label="日志分析摘要">
-          <span className="reader-performance" title="远程时间包含 Kibana 查询、VPN 传输和正文接收">{cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
-          <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
-          <button type="button" data-log-outline-trigger className={outlineCategory === "service" ? "is-active" : undefined} title="查看微服务入口 Outline" onClick={() => toggleOutline("service")}><b>{analysis.stats.services}</b> 微服务</button>
-          <button type="button" data-log-outline-trigger className={outlineCategory === "call" ? "is-active" : undefined} title="查看调用标记 Outline" onClick={() => toggleOutline("call")}><b>{analysis.stats.calls}</b> 调用标记</button>
-          <button type="button" data-log-outline-trigger className={outlineCategory === "sql" ? "is-active" : undefined} title="查看 SQL Outline" onClick={() => toggleOutline("sql")}><b>{analysis.stats.sql}</b> SQL</button>
-          <button type="button" data-log-outline-trigger className={`${analysis.stats.failedResults ? "has-errors" : ""}${outlineCategory === "failed-result" ? " is-active" : ""}`} title="查看失败线索 Outline" onClick={() => toggleOutline("failed-result")}><b>{analysis.stats.failedResults}</b> 失败线索</button>
-          <button type="button" data-log-outline-trigger className={`${analysis.stats.exceptions ? "has-errors" : ""}${outlineCategory === "exception" ? " is-active" : ""}`} title="查看异常 Outline" onClick={() => toggleOutline("exception")}><b>{analysis.stats.exceptions}</b> ERROR/异常</button>
-          <button type="button" data-log-outline-trigger className={outlineCategory === "structured" ? "is-active" : undefined} title="查看结构块 Outline" onClick={() => toggleOutline("structured")}><b>{analysis.stats.structured}</b> 结构块</button>
+          <div className="built-in-marker-track">
+            <span className="reader-performance" title="远程时间包含 Kibana 查询、VPN 传输和正文接收">{cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
+            <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
+            <button type="button" data-log-outline-trigger className={outlineCategory === "service" ? "is-active" : undefined} title="查看微服务入口 Outline" onClick={() => toggleOutline("service")}><b>{analysis.stats.services}</b> 微服务</button>
+            <button type="button" data-log-outline-trigger className={outlineCategory === "call" ? "is-active" : undefined} title="查看调用标记 Outline" onClick={() => toggleOutline("call")}><b>{analysis.stats.calls}</b> 调用标记</button>
+            <button type="button" data-log-outline-trigger className={outlineCategory === "sql" ? "is-active" : undefined} title="查看 SQL Outline" onClick={() => toggleOutline("sql")}><b>{analysis.stats.sql}</b> SQL</button>
+            <button type="button" data-log-outline-trigger className={`${analysis.stats.failedResults ? "has-errors" : ""}${outlineCategory === "failed-result" ? " is-active" : ""}`} title="查看失败线索 Outline" onClick={() => toggleOutline("failed-result")}><b>{analysis.stats.failedResults}</b> 失败线索</button>
+            <button type="button" data-log-outline-trigger className={`${analysis.stats.exceptions ? "has-errors" : ""}${outlineCategory === "exception" ? " is-active" : ""}`} title="查看异常 Outline" onClick={() => toggleOutline("exception")}><b>{analysis.stats.exceptions}</b> ERROR/异常</button>
+            <button type="button" data-log-outline-trigger className={outlineCategory === "structured" ? "is-active" : undefined} title="查看结构块 Outline" onClick={() => toggleOutline("structured")}><b>{analysis.stats.structured}</b> 结构块</button>
+          </div>
+          <i className="marker-track-separator" aria-hidden="true" />
+          <CustomLogMarkerShelf ref={customMarkerShelfRef} markers={customMarkers} activeMarkerId={activeCustomMarkerId} onChange={replaceCustomMarkers} onOpen={openCustomMarker} />
           <div className="log-reader-fold-actions"><button title="折叠全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("folded")}>全部折叠</button><button title="展开全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("expanded")}>全部展开</button></div>
         </div>
       </div>}
       {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在从交易日志索引加载文本内容</span></div>}
       {!loading && !content && <div className="log-reader-status">当前时间范围内未找到日志内容。</div>}
       {!loading && content && <div className="log-reader-body" ref={logReaderBodyRef}>
-        <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} queryLength={query.length} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} />
+        <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} />
         {outlineCategory && <LogOutlinePopover
           boundsRef={logReaderBodyRef}
           category={outlineCategory}
@@ -216,6 +267,20 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
           highlights={analysis.highlights}
           wrapLines={readerPreferences.outlineWrapLines}
           onClose={() => setOutlineCategory(undefined)}
+          onJump={jumpFromOutline}
+          onWrapLinesChange={(outlineWrapLines) => updateReaderPreferences({ outlineWrapLines })}
+        />}
+        {activeCustomMarker && customOutline && <LogOutlinePopover
+          boundsRef={logReaderBodyRef}
+          category="call"
+          title={activeCustomMarker.label}
+          eyebrow={activeCustomMarker.kind === "combine" ? `COMBINE · ${activeCustomMarker.rules.length} RULES` : activeCustomMarker.rules[0].regex ? "REGEX MARKER" : "CUSTOM MARKER"}
+          items={customOutline.items}
+          content={content}
+          highlights={customOutline.highlights}
+          highlightMode="all"
+          wrapLines={readerPreferences.outlineWrapLines}
+          onClose={() => setActiveCustomMarkerId(undefined)}
           onJump={jumpFromOutline}
           onWrapLinesChange={(outlineWrapLines) => updateReaderPreferences({ outlineWrapLines })}
         />}

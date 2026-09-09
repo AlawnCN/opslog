@@ -17,9 +17,9 @@ const createStorage = (initialValue: string | null = null) => {
 
 test("log reader preferences restore wrap and fold choices", () => {
   const storage = createStorage();
-  storeLogReaderPreferences({ wrapLines: true, outlineWrapLines: true, foldMode: "folded" }, storage);
+  storeLogReaderPreferences({ wrapLines: true, outlineWrapLines: true, regexSearch: true, foldMode: "folded" }, storage);
 
-  assert.deepEqual(readLogReaderPreferences(storage), { wrapLines: true, outlineWrapLines: true, foldMode: "folded" });
+  assert.deepEqual(readLogReaderPreferences(storage), { wrapLines: true, outlineWrapLines: true, regexSearch: true, foldMode: "folded" });
 });
 
 test("invalid log reader preferences safely use defaults", () => {

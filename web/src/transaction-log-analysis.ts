@@ -4,7 +4,6 @@ import { findStructuredRange, highlightJson, highlightXml } from "./transaction-
 import { addRegexHighlights, highlightSemanticFields, parseLogHeader } from "./transaction-log-syntax";
 
 export type { LogHighlight, TransactionLogAnalysis } from "./transaction-log-model";
-export const MAX_LOG_SEARCH_MATCHES = 5_000;
 
 interface OpenServiceSection {
   lineFrom: number;
@@ -60,20 +59,6 @@ const closeServiceSection = (section: OpenServiceSection | undefined, to: number
   if (!section || to - section.foldFrom < 100) return;
   folds.push({ lineFrom: section.lineFrom, from: section.foldFrom, to, kind: "service" });
 };
-
-export const findLogMatchesInLowercase = (source: string, query: string): number[] => {
-  if (!query) return [];
-  const needle = query.toLocaleLowerCase(), matches: number[] = [];
-  for (let from = 0, match = source.indexOf(needle); match >= 0; match = source.indexOf(needle, from)) {
-    matches.push(match);
-    if (matches.length >= MAX_LOG_SEARCH_MATCHES) return matches;
-    from = match + needle.length;
-  }
-  return matches;
-};
-
-export const findLogMatches = (content: string, query: string): number[] =>
-  findLogMatchesInLowercase(content.toLocaleLowerCase(), query);
 
 export const analyzeTransactionLog = (content: string): TransactionLogAnalysis => {
   const emptyStats = { lines: 0, calls: 0, services: 0, sql: 0, failedResults: 0, exceptions: 0, structured: 0 };

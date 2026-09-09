@@ -5,6 +5,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import type { LogReaderFoldMode } from "../log-reader-preferences";
 import type { LogHighlight, TransactionLogAnalysis } from "../transaction-log-analysis";
+import type { LogSearchMatch } from "../transaction-log-search";
 import type { LogLineStyle } from "../transaction-log-model";
 import { createLogFoldPlaceholder, type LogFoldPlaceholderData } from "./LogFoldPlaceholder";
 
@@ -17,9 +18,8 @@ export interface StructuredLogViewerHandle {
 interface StructuredLogViewerProps {
   analysis: TransactionLogAnalysis;
   content: string;
-  matches: number[];
+  matches: LogSearchMatch[];
   activeMatch: number;
-  queryLength: number;
   wrapLines: boolean;
   foldMode: LogReaderFoldMode;
 }
@@ -69,10 +69,10 @@ const createSemanticDecorations = (
   return Decoration.set(ranges, true);
 };
 
-const createSearchDecorations = (matches: number[], activeMatch: number, queryLength: number): DecorationSet => {
+const createSearchDecorations = (matches: LogSearchMatch[], activeMatch: number): DecorationSet => {
   const ranges: Array<Range<Decoration>> = [];
-  if (queryLength > 0) matches.forEach((from, index) => {
-    ranges.push(Decoration.mark({ class: index === activeMatch ? "cm-log-search-active" : "cm-log-search-hit" }).range(from, from + queryLength));
+  matches.forEach(({ from, to }, index) => {
+    ranges.push(Decoration.mark({ class: index === activeMatch ? "cm-log-search-active" : "cm-log-search-hit" }).range(from, to));
   });
   return Decoration.set(ranges, true);
 };
@@ -93,7 +93,7 @@ const logTheme = EditorView.theme({
 }, { dark: true });
 
 export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, StructuredLogViewerProps>(({
-  analysis, content, matches, activeMatch, queryLength, wrapLines, foldMode
+  analysis, content, matches, activeMatch, wrapLines, foldMode
 }, forwardedRef) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -156,7 +156,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
     viewRef.current = view;
     view.dispatch({ effects: [
       setSemanticDecorations.of(createSemanticDecorations(analysis.highlights, analysis.lineStyles)),
-      setSearchDecorations.of(createSearchDecorations(matches, activeMatch, queryLength))
+      setSearchDecorations.of(createSearchDecorations(matches, activeMatch))
     ] });
     if (foldMode === "folded") foldAll(view);
     return () => {
@@ -169,16 +169,16 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: setSearchDecorations.of(createSearchDecorations(matches, activeMatch, queryLength)) });
-  }, [activeMatch, matches, queryLength]);
+    view.dispatch({ effects: setSearchDecorations.of(createSearchDecorations(matches, activeMatch)) });
+  }, [activeMatch, matches]);
 
   useEffect(() => {
     const view = viewRef.current;
-    const position = matches[activeMatch];
-    if (!view || position === undefined) return;
+    const match = matches[activeMatch];
+    if (!view || !match) return;
     unfoldAll(view);
-    view.dispatch({ selection: { anchor: position, head: position + queryLength }, effects: EditorView.scrollIntoView(position, { y: "center" }) });
-  }, [activeMatch, matches, queryLength]);
+    view.dispatch({ selection: { anchor: match.from, head: match.to }, effects: EditorView.scrollIntoView(match.from, { y: "center" }) });
+  }, [activeMatch, matches]);
 
   return <div className="structured-log-viewer" ref={hostRef} />;
 });

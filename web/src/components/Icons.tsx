@@ -13,3 +13,5 @@ export const PulseIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><p
 export const ColumnsIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M9 5v14m6-14v14"/></Icon>;
 export const ChevronIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><path d="m7 10 5 5 5-5"/></Icon>;
 export const ImportIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><path d="M12 16V4m0 0 5 5m-5-5L7 9M4 14v6h16v-6"/></Icon>;
+export const MarkerAddIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><path d="M6 4h9a2 2 0 0 1 2 2v14l-6.5-4L4 20V6a2 2 0 0 1 2-2Z"/><path d="M10.5 7v5m-2.5-2.5h5"/></Icon>;
+export const MoreIcon = (props: SVGProps<SVGSVGElement>) => <Icon {...props}><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></Icon>;

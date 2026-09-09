@@ -2,7 +2,95 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
+import { buildCustomLogMarkerOutline, combineCustomLogMarkers, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
+import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
+
+test("plain and regular-expression searches return exact highlight ranges", () => {
+  assert.deepEqual(findPlainLogMatchesInLowercase("alpha beta alpha", "ALPHA"), [
+    { from: 0, to: 5 },
+    { from: 11, to: 16 }
+  ]);
+  assert.deepEqual(findRegexLogMatches("TX-12 tx-345 skip", String.raw`tx-\d+`).matches, [
+    { from: 0, to: 5 },
+    { from: 6, to: 12 }
+  ]);
+});
+
+test("regular-expression search reports invalid patterns and skips empty matches", () => {
+  assert.equal(findRegexLogMatches("content", "[").error, "正则表达式格式有误");
+  assert.deepEqual(findRegexLogMatches("aaa", "(?=a)").matches, []);
+});
+
+const marker = (id: string, label: string, query = label, regex = false): CustomLogMarker => ({
+  id,
+  label,
+  kind: "single",
+  rules: [{ id: `${id}-rule`, label, query, regex }]
+});
+
+test("custom markers reorder and combine with the drop target rules first", () => {
+  const markers = [marker("alpha", "Alpha"), marker("beta", "Beta"), marker("gamma", "Gamma")];
+  assert.deepEqual(reorderCustomLogMarkers(markers, "gamma", "alpha", false).map(({ id }) => id), ["gamma", "alpha", "beta"]);
+
+  const combined = combineCustomLogMarkers(markers, "gamma", "alpha");
+  assert.equal(combined[0].kind, "combine");
+  assert.deepEqual(combined[0].rules.map(({ label }) => label), ["Alpha", "Gamma"]);
+  assert.equal(combined[1].id, "beta");
+
+  const sourceBeforeTarget = combineCustomLogMarkers(markers, "alpha", "gamma");
+  assert.equal(sourceBeforeTarget[0].id, "beta");
+  assert.equal(sourceBeforeTarget[1].kind, "combine");
+  assert.deepEqual(sourceBeforeTarget[1].rules.map(({ label }) => label), ["Gamma", "Alpha"]);
+});
+
+test("custom marker outline merges text and regex hits with their source aliases", () => {
+  const content = ["first ERROR E1001", "second warning W2002", "third error E3003"].join("\n");
+  const combined: CustomLogMarker = {
+    id: "combined",
+    label: "Problems",
+    kind: "combine",
+    rules: [
+      { id: "errors", label: "Errors", query: "error", regex: false },
+      { id: "codes", label: "Codes", query: String.raw`[EW]\d{4}`, regex: true }
+    ]
+  };
+  const outline = buildCustomLogMarkerOutline(content, combined);
+
+  assert.deepEqual(outline.items.map(({ line, detail }) => [line, detail]), [
+    [1, "Errors"], [1, "Codes"], [2, "Codes"], [3, "Errors"], [3, "Codes"]
+  ]);
+  assert.equal(outline.highlights.length, 5);
+  assert.ok(outline.highlights.every(({ kind }) => kind === "custom-match"));
+});
+
+test("a custom marker built from the live search text finds matching log lines", () => {
+  const content = [
+    "2026-09-09T02:47:02.654Z [cte.p_0_22] [INFO] -> execute sql: [insert into t_sav_acjnl]",
+    "2026-09-09T02:47:02.655Z [cte.p_0_22] [INFO] -> ordinary log entry"
+  ].join("\n");
+  const outline = buildCustomLogMarkerOutline(content, marker("sql", "SQL", "execute sql"));
+
+  assert.equal(outline.items.length, 1);
+  assert.equal(outline.items[0].line, 1);
+  assert.equal(content.slice(outline.highlights[0].from, outline.highlights[0].to), "execute sql");
+});
+
+test("custom markers survive reload with combination order and regex settings intact", () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); }
+  };
+  const combined = combineCustomLogMarkers([
+    marker("plain", "普通", "ERROR"),
+    marker("regex", "追踪号", String.raw`req_(bus|jrn)_no`, true)
+  ], "regex", "plain");
+
+  storeCustomLogMarkers(combined, storage);
+  assert.ok(values.has(CUSTOM_LOG_MARKERS_KEY));
+  assert.deepEqual(readCustomLogMarkers(storage), combined);
+});
 
 test("SQL keeps semantic highlighting without becoming foldable", () => {
   const sql = "select customer_id, account_no, balance from t_account_balance where customer_id = '123' and status = 'A'";

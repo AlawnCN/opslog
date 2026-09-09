@@ -30,6 +30,9 @@ interface LogOutlinePopoverProps {
   onClose: () => void;
   onJump: (position: number) => void;
   onWrapLinesChange: (wrapLines: boolean) => void;
+  title?: string;
+  eyebrow?: string;
+  highlightMode?: "sql" | "all" | "none";
 }
 
 const OUTLINE_GEOMETRY_KEY = "opslog.transaction-log-outline.geometry.v1";
@@ -62,7 +65,7 @@ const storeGeometry = (geometry: LogOutlineGeometry) => {
 };
 
 export const LogOutlinePopover = ({
-  category, items, content, highlights, wrapLines, boundsRef, onClose, onJump, onWrapLinesChange
+  category, items, content, highlights, wrapLines, boundsRef, onClose, onJump, onWrapLinesChange, title, eyebrow = "LOG OUTLINE", highlightMode
 }: LogOutlinePopoverProps) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const geometryRef = useRef<LogOutlineGeometry>({ x: 8, y: 8, width: 380, height: 230 });
@@ -103,7 +106,7 @@ export const LogOutlinePopover = ({
     const closeOutside = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node) || hostRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest("[data-log-outline-trigger]")) return;
+      if (target instanceof Element && target.closest("[data-log-outline-trigger], [data-custom-marker-id]")) return;
       onClose();
     };
     window.addEventListener("pointerdown", closeOutside);
@@ -167,11 +170,11 @@ export const LogOutlinePopover = ({
     className={`log-outline-popover${ready ? " is-ready" : ""}${interacting ? " is-adjusting" : ""}`}
     ref={hostRef}
     role="dialog"
-    aria-label={`${CATEGORY_LABELS[category]}定位列表`}
+    aria-label={`${title ?? CATEGORY_LABELS[category]}定位列表`}
     style={{ left: geometry.x, top: geometry.y, width: geometry.width, height: geometry.height }}
   >
     <header onPointerDown={(event) => beginInteraction(event, "move")}>
-      <div><span>LOG OUTLINE</span><strong>{CATEGORY_LABELS[category]}</strong><small>{items.length.toLocaleString()} 个定位点</small></div>
+      <div><span>{eyebrow}</span><strong>{title ?? CATEGORY_LABELS[category]}</strong><small>{items.length.toLocaleString()} 个定位点</small></div>
       <div className="log-outline-header-actions" onPointerDown={(event) => event.stopPropagation()}>
         <label><input type="checkbox" checked={wrapLines} onChange={(event) => onWrapLinesChange(event.target.checked)} />自动换行</label>
         <button type="button" aria-label="关闭定位列表" title="关闭" onClick={onClose}><CloseIcon /></button>
@@ -184,6 +187,7 @@ export const LogOutlinePopover = ({
       highlights={highlights}
       wrapLines={wrapLines}
       viewportHeight={wrapLines ? 0 : geometry.height}
+      highlightMode={highlightMode}
       onJump={onJump}
     />
     <footer><span>拖动标题栏移动 · 拖动边缘缩放</span><span>点击条目定位日志行</span></footer>

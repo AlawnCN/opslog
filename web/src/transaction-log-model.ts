@@ -26,7 +26,8 @@ export type LogHighlightKind =
   | "xml-comment"
   | "exception"
   | "service-entry"
-  | "service-name";
+  | "service-name"
+  | "custom-match";
 
 export interface LogHighlight {
   from: number;

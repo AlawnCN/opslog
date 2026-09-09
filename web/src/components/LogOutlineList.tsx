@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { logHighlightClassName } from "../log-highlight-presentation";
-import { createOutlinePreviewSegments, indexSqlOutlineHighlights } from "../log-outline-preview";
+import { createOutlinePreviewSegments, indexOutlineHighlights, indexSqlOutlineHighlights } from "../log-outline-preview";
 import type { LogHighlight, LogOutlineCategory, LogOutlineItem } from "../transaction-log-model";
 
 const OUTLINE_ROW_HEIGHT = 43;
@@ -12,6 +12,7 @@ interface LogOutlineListProps {
   highlights: LogHighlight[];
   wrapLines: boolean;
   viewportHeight: number;
+  highlightMode?: "sql" | "all" | "none";
   onJump: (position: number) => void;
 }
 
@@ -19,7 +20,7 @@ const linePreview = (content: string, item: LogOutlineItem): string =>
   content.slice(item.from, item.to).trim() || "（空行）";
 
 export const LogOutlineList = memo(({
-  category, items, content, highlights, wrapLines, viewportHeight, onJump
+  category, items, content, highlights, wrapLines, viewportHeight, highlightMode, onJump
 }: LogOutlineListProps) => {
   const [scrollTop, setScrollTop] = useState(0);
   const firstVisibleIndex = Math.max(0, Math.floor(scrollTop / OUTLINE_ROW_HEIGHT) - 4);
@@ -28,9 +29,13 @@ export const LogOutlineList = memo(({
     () => items.slice(firstVisibleIndex, firstVisibleIndex + visibleRowCount),
     [firstVisibleIndex, items, visibleRowCount]
   );
-  const sqlHighlightsByItem = useMemo(
-    () => category === "sql" ? indexSqlOutlineHighlights(items, highlights) : new Map<number, LogHighlight[]>(),
-    [category, highlights, items]
+  const highlightsByItem = useMemo(
+    () => highlightMode === "all"
+      ? indexOutlineHighlights(items, highlights)
+      : highlightMode !== "none" && category === "sql"
+        ? indexSqlOutlineHighlights(items, highlights)
+        : new Map<number, LogHighlight[]>(),
+    [category, highlightMode, highlights, items]
   );
   const contentWidthCharacters = useMemo(() => items.reduce(
     (maximum, item) => Math.max(maximum, Math.min(32768, item.to - item.from + (item.detail?.length ?? 0) + 16)),
@@ -38,7 +43,7 @@ export const LogOutlineList = memo(({
   ), [items]);
 
   const renderPreview = (item: LogOutlineItem) => {
-    const semanticHighlights = sqlHighlightsByItem.get(item.from);
+    const semanticHighlights = highlightsByItem.get(item.from);
     const segments = semanticHighlights
       ? createOutlinePreviewSegments(content, item, semanticHighlights)
       : [{ text: linePreview(content, item) }];
