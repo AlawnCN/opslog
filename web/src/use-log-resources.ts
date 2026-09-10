@@ -2,6 +2,7 @@ import { useState } from "react";
 import { errorMessage, loadTrace, readTransactionLog, saveTransactionLogContent } from "./api";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, traceCacheKey, transactionLogCacheKey } from "./opslog-session-cache";
+import { transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "./transaction-log-fetch";
 import type { SearchRequest } from "./types";
 
 interface Notice {
@@ -38,12 +39,25 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
   const [trace, setTrace] = useState<TraceState>();
   const [transactionLog, setTransactionLog] = useState<TransactionLogState>();
 
-  const loadLog = (id: string) => {
+  const loadLog = (row: Record<string, unknown>) => {
     if (!request) return Promise.reject(new Error("查询时间范围不可用"));
-    const key = transactionLogCacheKey(environmentName, id, request.startTime, request.endTime);
+    const id = transactionId(row);
+    if (!id) return Promise.reject(new Error("日志 ID 不可用"));
+    const windows = transactionLogTimeWindows(row, request);
+    // ecp.txn.id identifies the transaction log resource. The row timestamp and
+    // outer query range only help locate it in ES and must not fragment the cache.
+    const key = transactionLogCacheKey(environmentName, id);
     return cache.loadTransactionLog(
       key,
-      () => readTransactionLog(environmentName, id, request.startTime, request.endTime)
+      async () => {
+        let content = "";
+        for (const [position, window] of windows.entries()) {
+          content = await readTransactionLog(environmentName, id, window.startTime, window.endTime);
+          const hasFallback = position < windows.length - 1;
+          if (!hasFallback || !transactionLogNeedsWiderWindow(content, window)) return content;
+        }
+        return content;
+      }
     );
   };
 
@@ -51,7 +65,7 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
     const id = transactionId(row);
     if (!request || !id) return;
     try {
-      const loaded = await loadLog(id);
+      const loaded = await loadLog(row);
       const path = await saveTransactionLogContent(id, loaded.value);
       if (path) onNotice({ tone: "info", text: `交易日志已保存：${path}` });
     } catch (error) {
@@ -65,9 +79,12 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
     setTransactionLog({ id, content: "", loading: true });
     const startedAt = performance.now();
     try {
-      const loaded = await loadLog(id);
+      const loaded = await loadLog(row);
       const remoteDurationMs = performance.now() - startedAt;
-      await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.transactionLogReader);
+      const minimumFeedbackMs = loaded.cached
+        ? MINIMUM_LOADING_FEEDBACK_MS.transactionLogReaderCached
+        : MINIMUM_LOADING_FEEDBACK_MS.transactionLogReader;
+      await keepLoadingFeedbackVisible(startedAt, minimumFeedbackMs);
       setTransactionLog((current) => current?.id === id
         ? { id, content: loaded.value, loading: false, remoteDurationMs, cached: loaded.cached }
         : current);

@@ -5,6 +5,17 @@ interface SavedFile {
   path: string;
 }
 
+export interface LanShareStatus {
+  enabled: boolean;
+  url?: string | null;
+  port?: number | null;
+}
+
+export interface WebRuntimeInfo {
+  mode: "standalone" | "lan";
+  canImportConfig: boolean;
+}
+
 export const desktopMode = isTauri();
 
 export const errorMessage = (error: unknown): string => {
@@ -43,6 +54,23 @@ export const loadEnvironments = async (): Promise<Environment[]> => {
   const response = await fetch("/api/environments");
   if (!response.ok) return parseError(response);
   return response.json();
+};
+
+export const loadWebRuntimeInfo = async (): Promise<WebRuntimeInfo> => {
+  if (desktopMode) return { mode: "standalone", canImportConfig: true };
+  const response = await fetch("/api/runtime");
+  if (!response.ok) return { mode: "standalone", canImportConfig: true };
+  return response.json();
+};
+
+export const getLanShareStatus = async (): Promise<LanShareStatus> => {
+  if (!desktopMode) return { enabled: false };
+  return desktopInvoke<LanShareStatus>("get_lan_share_status");
+};
+
+export const setLanShareEnabled = async (enabled: boolean): Promise<LanShareStatus> => {
+  if (!desktopMode) return { enabled: false };
+  return desktopInvoke<LanShareStatus>("set_lan_share_enabled", { enabled });
 };
 
 export const searchLogs = async (request: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> => {

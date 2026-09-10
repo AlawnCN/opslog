@@ -289,7 +289,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
           <div className="log-reader-fold-actions"><button title="折叠全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("folded")}>全部折叠</button><button title="展开全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("expanded")}>全部展开</button></div>
         </div>
       </div>}
-      {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在从交易日志索引加载文本内容</span></div>}
+      {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在准备日志内容与阅读视图</span></div>}
       {!loading && !content && <div className="log-reader-status">当前时间范围内未找到日志内容。</div>}
       {!loading && content && <div className="log-reader-body" ref={logReaderBodyRef}>
         <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} />

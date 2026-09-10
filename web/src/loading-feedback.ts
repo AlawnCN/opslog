@@ -1,6 +1,7 @@
 export const MINIMUM_LOADING_FEEDBACK_MS = {
   search: 1200,
   transactionLogReader: 1550,
+  transactionLogReaderCached: 700,
   trace: 1350,
   transactionLogDownload: 900
 } as const;

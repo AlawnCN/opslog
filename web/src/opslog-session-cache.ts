@@ -4,7 +4,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_SEARCH_RESULTS = 8;
 const MAX_TRANSACTION_LOGS = 4;
 const MAX_TRACES = 8;
-const MAX_LOG_CHARACTERS = 16 * 1024 * 1024;
+const MAX_TRANSACTION_LOG_CHARACTERS = 32 * 1024 * 1024;
 
 interface CacheEntry<Value> {
   value: Value;
@@ -25,6 +25,14 @@ const take = <Value>(cache: Map<string, CacheEntry<Value>>, key: string): Value 
   return entry.value;
 };
 
+const takeForSession = <Value>(cache: Map<string, CacheEntry<Value>>, key: string): Value | undefined => {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry.value;
+};
+
 const store = <Value>(cache: Map<string, CacheEntry<Value>>, key: string, value: Value, maximum: number) => {
   cache.delete(key);
   cache.set(key, { value, savedAt: Date.now() });
@@ -35,10 +43,8 @@ export const searchCacheKey = (request: SearchRequest): string => JSON.stringify
 
 export const transactionLogCacheKey = (
   environment: string,
-  id: string,
-  startTime: string,
-  endTime: string
-): string => JSON.stringify([environment, id, startTime, endTime]);
+  id: string
+): string => JSON.stringify([environment, id]);
 
 export const traceCacheKey = (
   environment: string,
@@ -71,12 +77,24 @@ export class OpsLogSessionCache {
   }
 
   getTransactionLog(key: string): string | undefined {
-    return take(this.transactionLogs, key);
+    return takeForSession(this.transactionLogs, key);
   }
 
   saveTransactionLog(key: string, content: string): void {
-    if (content.length > MAX_LOG_CHARACTERS) return;
-    store(this.transactionLogs, key, content, MAX_TRANSACTION_LOGS);
+    this.transactionLogs.delete(key);
+    this.transactionLogs.set(key, { value: content, savedAt: Date.now() });
+
+    let cachedCharacters = [...this.transactionLogs.values()]
+      .reduce((total, entry) => total + entry.value.length, 0);
+    while (
+      this.transactionLogs.size > 1 &&
+      (this.transactionLogs.size > MAX_TRANSACTION_LOGS || cachedCharacters > MAX_TRANSACTION_LOG_CHARACTERS)
+    ) {
+      const oldestKey = this.transactionLogs.keys().next().value as string;
+      const oldest = this.transactionLogs.get(oldestKey);
+      if (oldest) cachedCharacters -= oldest.value.length;
+      this.transactionLogs.delete(oldestKey);
+    }
   }
 
   async loadTransactionLog(key: string, loader: () => Promise<string>): Promise<CachedLoad<string>> {

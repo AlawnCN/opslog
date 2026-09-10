@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, searchLogs } from "./api";
+import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, loadWebRuntimeInfo, searchLogs } from "./api";
 import { initialFilters, initialPageSize, PAGE_SIZE_KEY, PAGE_SIZES } from "./app-defaults";
 import { DataTable } from "./components/DataTable";
 import { FilterPanel, type FilterPanelHandle } from "./components/FilterPanel";
@@ -14,6 +14,7 @@ import type { Environment, LogKind, SearchFilters, SearchRequest, SearchResponse
 import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
 import { isEditableFocusTarget, isQueryFocusShortcut } from "./keyboard-shortcuts";
+import { useLanShare } from "./use-lan-share";
 import type { TransactionLogDrawerHandle } from "./components/TransactionLogDrawer";
 
 const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawer")
@@ -31,6 +32,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [searchPerformance, setSearchPerformance] = useState<{ durationMs: number; cached: boolean }>();
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
+  const [canImportConfig, setCanImportConfig] = useState(true);
   const controller = useRef<AbortController | undefined>(undefined);
   const searchRunId = useRef(0);
   const sessionCache = useRef(new OpsLogSessionCache());
@@ -49,6 +51,7 @@ export default function App() {
     onCurrent: notifyCurrentVersion,
     onError: notifyUpdateError
   });
+  const lanShare = useLanShare(desktopMode);
 
   const reloadEnvironments = async () => {
     try {
@@ -64,6 +67,9 @@ export default function App() {
 
   useEffect(() => {
     void reloadEnvironments();
+    if (!desktopMode) {
+      void loadWebRuntimeInfo().then((runtime) => setCanImportConfig(runtime.canImportConfig));
+    }
   }, []);
 
   const importConfig = async (file: File) => {
@@ -215,7 +221,7 @@ export default function App() {
     finally { setLoading(false); }
   };
   return <div className="app-shell">
-    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} onImportConfig={importConfig} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
+    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onImportConfig={importConfig} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} />
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true)} onExport={exportCurrent} onRange={setRange} />

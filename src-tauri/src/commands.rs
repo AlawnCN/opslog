@@ -39,7 +39,7 @@ fn validate_optional_text(value: &Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_search(input: &SearchInput) -> Result<(), String> {
+pub(crate) fn validate_search(input: &SearchInput) -> Result<(), String> {
     if input.environment.trim().is_empty() || input.environment.chars().count() > 100 {
         return Err("请选择有效环境".to_string());
     }

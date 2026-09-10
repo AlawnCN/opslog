@@ -61,6 +61,30 @@ select:focus, input:focus { border-color: var(--cyan); background: #0a1b2d; }
 .connection-state { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
 .connection-state i, .index-hint i { width: 7px; height: 7px; background: var(--green); border-radius: 50%; box-shadow: 0 0 9px rgba(53, 219, 154, .65); }
 .connection-state.warning i { background: var(--amber); box-shadow: 0 0 9px rgba(255, 189, 89, .65); }
+.lan-share-control { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.lan-share-switch { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--radius); background: #081827; color: #708fa5; cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
+.lan-share-switch:hover:not(:disabled) { color: #a8c5d6; border-color: var(--line-bright); }
+.lan-share-switch:disabled { cursor: wait; opacity: .7; }
+.lan-share-switch b { font: 700 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; }
+.lan-share-switch-track { position: relative; width: 25px; height: 13px; border: 1px solid #31536a; border-radius: 8px; background: #0b1d2c; transition: border-color .18s ease, background .18s ease, box-shadow .18s ease; }
+.lan-share-switch-track i { position: absolute; top: 2px; left: 2px; width: 7px; height: 7px; border-radius: 50%; background: #65849a; transition: transform .2s ease, background .18s ease, box-shadow .18s ease; }
+.lan-share-control.is-enabled .lan-share-switch { color: var(--cyan); border-color: rgba(42, 212, 224, .55); background: rgba(42, 212, 224, .055); }
+.lan-share-control.is-enabled .lan-share-switch-track { border-color: rgba(42, 212, 224, .7); background: rgba(42, 212, 224, .16); box-shadow: 0 0 10px rgba(42, 212, 224, .1); }
+.lan-share-control.is-enabled .lan-share-switch-track i { transform: translateX(12px); background: var(--cyan); box-shadow: 0 0 7px rgba(42, 212, 224, .75); }
+.lan-share-details { min-height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: var(--radius); background: #081827; color: #6f91a7; font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
+.lan-share-details:hover, .lan-share-details.is-active { color: var(--cyan); border-color: rgba(42, 212, 224, .55); background: rgba(42, 212, 224, .055); }
+.lan-share-panel { position: absolute; z-index: 20; top: 39px; right: 0; width: 360px; padding: 14px; border: 1px solid #28617a; border-radius: 6px; background: #071725; box-shadow: 0 18px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(42, 212, 224, .04); }
+.lan-share-panel::before { content: ""; position: absolute; top: -5px; right: 25px; width: 8px; height: 8px; border-left: 1px solid #28617a; border-top: 1px solid #28617a; background: #071725; transform: rotate(45deg); }
+.lan-share-panel-close { position: absolute; z-index: 1; top: 7px; right: 8px; width: 24px; height: 24px; border: 0; background: transparent; color: #66869a; font: 16px/1 ui-monospace, monospace; cursor: pointer; transition: color .16s ease, background .16s ease; }
+.lan-share-panel-close:hover { color: var(--cyan); background: rgba(42, 212, 224, .07); }
+.lan-share-panel > strong { display: block; margin-top: 5px; font-size: 12px; color: #d6e7f1; }
+.lan-share-url-row { display: flex; align-items: stretch; margin-top: 12px; }
+.lan-share-url-row code { min-width: 0; flex: 1; display: flex; align-items: center; padding: 0 9px; overflow: hidden; border: 1px solid var(--line); background: #061421; color: var(--cyan); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.lan-share-url-row button { min-width: 58px; min-height: 31px; margin-left: -1px; border: 1px solid var(--line-bright); background: #0a2132; color: #9fc1d3; font-size: 10px; cursor: pointer; }
+.lan-share-url-row button:hover { color: var(--cyan); border-color: var(--cyan); }
+.lan-share-panel > small, .lan-share-panel > em { display: block; margin-top: 10px; font-size: 9px; line-height: 1.55; }
+.lan-share-panel > small { color: #7798ad; }
+.lan-share-panel > em { padding-left: 8px; border-left: 2px solid var(--amber); color: #b69c71; font-style: normal; }
 .version-chip { position: relative; min-height: 29px; padding: 6px 9px; color: var(--blue); border: 1px solid var(--line); background: transparent; font: 10px ui-monospace, monospace; letter-spacing: .08em; }
 .version-chip.is-interactive { padding-right: 20px; cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
 .version-chip.is-interactive:hover:not(:disabled) { color: var(--cyan); border-color: var(--line-bright); background: rgba(42, 212, 224, .045); }
@@ -316,7 +340,8 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 @keyframes update-progress-scan { 0% { transform: translateX(-120%); } 100% { transform: translateX(310%); } }
 @keyframes update-status-pulse { 0%, 100% { transform: scale(.8); opacity: .55; } 50% { transform: scale(1.25); opacity: 1; } }
 
-@media (max-width: 1250px) { .filter-grid { grid-template-columns: repeat(3, minmax(160px, 1fr)); }.filter-field.wide { grid-column: span 2; }.connection-state { display: none; } }
+@media (max-width: 1350px) { .topbar-context { gap: 14px; }.connection-state { display: none; } }
+@media (max-width: 1250px) { .filter-grid { grid-template-columns: repeat(3, minmax(160px, 1fr)); }.filter-field.wide { grid-column: span 2; } }
 @media (max-width: 1200px) { .filter-heading { align-items: stretch; flex-direction: column; gap: 14px; }.filter-heading-title { flex: 0 0 auto; min-width: 0; }.filter-heading-divider { display: none; }.filter-heading-controls { width: 100%; } }
 @media (max-width: 900px) { .log-reader-controls { align-items: stretch; flex-wrap: wrap; }.log-reader-search-group { flex-basis: 100%; }.log-reader-drawer { width: min(900px, 94vw); } }
 @media (prefers-reduced-motion: reduce) { .trace-loading-visual *, .trace-loading-visual *::after, .log-reader-loading-visual *, .version-chip *, .update-progress * { animation: none !important; } }

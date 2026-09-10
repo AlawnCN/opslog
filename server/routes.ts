@@ -84,6 +84,10 @@ apiRouter.get("/health", (_request, response) => {
   response.json({ status: "ok", version: "2.0.0" });
 });
 
+apiRouter.get("/runtime", (_request, response) => {
+  response.json({ mode: "standalone", canImportConfig: true });
+});
+
 apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   const environments = await loadEnvironments();
   response.json(environments.map(toPublicEnvironment));
