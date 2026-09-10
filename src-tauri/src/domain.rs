@@ -104,6 +104,13 @@ pub struct SaveCustomMarkersInput {
     pub contents: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePortableLogInput {
+    pub name: String,
+    pub contents: String,
+}
+
 #[derive(Debug)]
 pub struct QueryResult {
     pub columns: Vec<String>,

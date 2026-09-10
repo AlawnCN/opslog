@@ -7,6 +7,7 @@ import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeC
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
+import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot, encodePortableLogSnapshot, portableLogFilename, PORTABLE_LOG_FORMAT } from "../web/src/portable-log-export-data";
 
 test("plain and regular-expression searches return exact highlight ranges", () => {
   assert.deepEqual(findPlainLogMatchesInLowercase("alpha beta alpha", "ALPHA"), [
@@ -17,6 +18,66 @@ test("plain and regular-expression searches return exact highlight ranges", () =
     { from: 0, to: 5 },
     { from: 6, to: 12 }
   ]);
+});
+
+test("portable log snapshot preserves semantic highlights and read-only marker outlines", () => {
+  const content = "2026-09-10T01:02:03.004Z [cte.p_0_21] [ERROR] -> execute sql: [select id from t_pay_order where req_bus_no = 'FT001']";
+  const analysis = analyzeTransactionLog(content);
+  const customMarker = marker("request", "请求号", "FT001");
+  const snapshot = buildPortableLogSnapshot({
+    logId: "channelPosting/unsafe",
+    content,
+    analysis,
+    customMarkers: [customMarker],
+    initiallyFolded: true,
+    initialWrapLines: false,
+    initialOutlineWrapLines: true,
+    exportedAt: "2026-09-10T01:02:04.000Z"
+  });
+
+  assert.equal(snapshot.format, PORTABLE_LOG_FORMAT);
+  assert.equal(snapshot.content, content);
+  assert.equal(snapshot.initiallyFolded, true);
+  assert.equal(snapshot.initialWrapLines, false);
+  assert.equal(snapshot.initialOutlineWrapLines, true);
+  assert.ok(snapshot.analysis.highlights.some(({ kind }) => kind === "sql-table"));
+  assert.ok(snapshot.analysis.highlights.some(({ kind }) => kind === "trace-value"));
+  assert.equal(snapshot.customMarkers[0].outline.items[0].line, 1);
+
+  const encoded = encodePortableLogSnapshot(snapshot);
+  assert.equal(encoded.includes("<"), false);
+  const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+  const decoded = JSON.parse(new TextDecoder().decode(bytes));
+  assert.equal(decoded.content, snapshot.content);
+  assert.deepEqual(decoded.analysis.highlights, snapshot.analysis.highlights);
+  assert.deepEqual(decoded.customMarkers, snapshot.customMarkers);
+  assert.equal(portableLogFilename(snapshot.logId), "OpsLog_channelPosting_unsafe.html");
+});
+
+test("portable log snapshot uses lossless gzip compression when the platform supports it", async () => {
+  const content = "same repeated transaction log line\n".repeat(2_000);
+  const snapshot = buildPortableLogSnapshot({
+    logId: "compressed",
+    content,
+    analysis: analyzeTransactionLog(content),
+    customMarkers: [],
+    initiallyFolded: false,
+    initialWrapLines: true,
+    initialOutlineWrapLines: false,
+    exportedAt: "2026-09-10T01:02:04.000Z"
+  });
+  const encoded = await encodeCompressedPortableLogSnapshot(snapshot);
+
+  if (typeof CompressionStream === "undefined") {
+    assert.equal(encoded.encoding, "base64");
+    return;
+  }
+  assert.equal(encoded.encoding, "gzip-base64");
+  assert.ok(encoded.payload.length < encodePortableLogSnapshot(snapshot).length / 5);
+  const compressed = Uint8Array.from(atob(encoded.payload), (character) => character.charCodeAt(0));
+  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const decoded = JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer()));
+  assert.equal(decoded.content, content);
 });
 
 test("regular-expression search reports invalid patterns and skips empty matches", () => {

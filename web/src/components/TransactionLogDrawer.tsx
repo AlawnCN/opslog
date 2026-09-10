@@ -3,9 +3,12 @@ import { readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../cust
 import { buildCustomLogMarkerOutline, createCustomLogMarker, MAX_CUSTOM_LOG_MARKERS, readCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../custom-log-markers";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
 import { analyzeTransactionLog } from "../transaction-log-analysis";
+import { createPortableLogDocument } from "../portable-log-export";
+import { portableLogFilename } from "../portable-log-export-data";
+import { errorMessage, savePortableLogHtml } from "../api";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-search";
 import type { LogOutlineCategory } from "../transaction-log-model";
-import { CloseIcon, MarkerAddIcon, SearchIcon } from "./Icons";
+import { CloseIcon, DownloadIcon, MarkerAddIcon, SearchIcon } from "./Icons";
 import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
 import { CustomMarkerSectionResizeHandle } from "./CustomMarkerSectionResizeHandle";
 import { LogOutlinePopover } from "./LogOutlinePopover";
@@ -54,6 +57,8 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [customMarkers, setCustomMarkers] = useState(readCustomLogMarkers);
   const [customMarkerWidthRatio, setCustomMarkerWidthRatio] = useState(readCustomMarkerWidthRatio);
   const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
+  const [exportingPortable, setExportingPortable] = useState(false);
+  const [portableExportNotice, setPortableExportNotice] = useState<string>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -225,11 +230,37 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
     viewerRef.current?.jumpTo(position);
   };
 
+  const exportPortableReader = async () => {
+    if (exportingPortable || !content || !logId) return;
+    const activeLogId = logId;
+    setExportingPortable(true);
+    setPortableExportNotice(undefined);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    try {
+      const filename = portableLogFilename(activeLogId);
+      const html = await createPortableLogDocument({
+        logId: activeLogId,
+        content,
+        analysis,
+        customMarkers,
+        initiallyFolded: readerPreferences.foldMode === "folded",
+        initialWrapLines: readerPreferences.wrapLines,
+        initialOutlineWrapLines: readerPreferences.outlineWrapLines
+      });
+      const path = await savePortableLogHtml(filename, html);
+      setPortableExportNotice(path ? `离线阅读页已保存：${path}` : `已导出 ${filename}`);
+    } catch (error) {
+      setPortableExportNotice(`导出失败：${errorMessage(error)}`);
+    } finally {
+      setExportingPortable(false);
+    }
+  };
+
   if (!logId) return null;
   return <div className="drawer-backdrop" onMouseDown={onClose}>
     <aside className="drawer log-reader-drawer" style={{ width: `${widthRatio * 100}vw` }} onMouseDown={(event) => event.stopPropagation()}>
       <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />
-      <div className="drawer-heading"><div><span className="eyebrow">TRANSACTION LOG</span><h2>日志阅读器</h2><code>{logId}</code></div><button title="关闭阅读器" aria-label="关闭阅读器" onClick={onClose}><CloseIcon /></button></div>
+      <div className="drawer-heading"><div><span className="eyebrow">TRANSACTION LOG</span><h2>日志阅读器</h2><div className="log-reader-title-line"><code>{logId}</code><button type="button" className="portable-log-export" disabled={loading || !content || exportingPortable} aria-busy={exportingPortable} title="导出可在浏览器中离线打开的只读日志页面" onClick={() => void exportPortableReader()}>{exportingPortable ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}<span>{exportingPortable ? "正在生成阅读页…" : "导出阅读页"}</span></button></div>{portableExportNotice && <span className="portable-log-export-notice" role="status">{portableExportNotice}</span>}</div><button title="关闭阅读器" aria-label="关闭阅读器" onClick={onClose}><CloseIcon /></button></div>
       <div className="log-reader-controls">
         <div className={`log-reader-search-group${searchResult.error ? " has-error" : ""}`}>
           <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder={regexSearch ? "输入正则表达式查询日志" : "查询日志内容"} aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" aria-invalid={Boolean(searchResult.error)} aria-describedby={searchResult.error ? "log-reader-search-error" : undefined} /></label>

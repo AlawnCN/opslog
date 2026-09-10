@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::domain::{
-    DownloadInput, DownloadResult, PublicEnvironment, SaveCustomMarkersInput,
+    DownloadInput, DownloadResult, PublicEnvironment, SaveCustomMarkersInput, SavePortableLogInput,
     SaveTransactionLogInput, SearchInput, SearchResponse, display_fields,
 };
 use crate::environment_store;
@@ -14,6 +14,7 @@ use crate::query_builders::{build_search_query, build_trace_query, build_trc_que
 const MAX_RANGE_DAYS: i64 = 31;
 const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CUSTOM_MARKERS_BYTES: usize = 1024 * 1024;
+const MAX_PORTABLE_LOG_BYTES: usize = 192 * 1024 * 1024;
 
 fn parse_range(start: &str, end: &str, enforce_maximum: bool) -> Result<(), String> {
     let start =
@@ -192,6 +193,22 @@ pub async fn save_custom_log_markers(
     serde_json::from_str::<Value>(&input.contents)
         .map_err(|_| "标记导出内容不是有效的 JSON".to_string())?;
     export_files::save_named(&input.name, "json", input.contents.as_bytes()).await
+}
+
+#[tauri::command]
+pub async fn save_portable_log(input: SavePortableLogInput) -> Result<DownloadResult, String> {
+    if input.name.trim().is_empty() || input.name.chars().count() > 220 {
+        return Err("离线阅读文件名不合法".to_string());
+    }
+    if input.contents.len() > MAX_PORTABLE_LOG_BYTES {
+        return Err("离线阅读文件超过 192 MB 安全上限".to_string());
+    }
+    if !input.contents.starts_with("<!doctype html>")
+        || !input.contents.contains("opslog-portable-reader")
+    {
+        return Err("离线阅读文件格式不合法".to_string());
+    }
+    export_files::save_named(&input.name, "html", input.contents.as_bytes()).await
 }
 
 #[tauri::command]

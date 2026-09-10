@@ -132,6 +132,13 @@ export const saveCustomLogMarkerExport = async (name: string, contents: string):
   return undefined;
 };
 
+export const savePortableLogHtml = async (name: string, contents: string): Promise<string | undefined> => {
+  const filename = name.toLocaleLowerCase().endsWith(".html") ? name : `${name}.html`;
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_portable_log", { input: { name: filename.replace(/\.html$/i, ""), contents } })).path;
+  saveBrowserBlob(new Blob([contents], { type: "text/html;charset=utf-8" }), filename);
+  return undefined;
+};
+
 export const loadTrace = async (
   environment: string,
   id: string,
