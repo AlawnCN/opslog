@@ -24,6 +24,8 @@ export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps)
   if (!state.visible) return null;
   const percentage = progress(state);
   const busy = state.phase === "checking" || state.phase === "downloading" || state.phase === "installing";
+  const showChangelog = Boolean(state.version) && state.phase !== "checking";
+  const changelog = state.notes?.trim() || "本次版本未提供更新说明。";
 
   return <div className="update-dialog-backdrop" role="presentation">
     <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title" aria-busy={busy}>
@@ -36,7 +38,10 @@ export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps)
         <strong>{statusCopy(state)}</strong>
         {state.currentVersion && state.version && <p className="update-version">当前 {state.currentVersion}<i />最新 {state.version}</p>}
         {state.phase === "available" && <p className="update-security">更新包将通过数字签名验证，校验通过后才会安装。</p>}
-        {state.notes && state.phase === "available" && <div className="update-notes">{state.notes}</div>}
+        {showChangelog && <section className="update-changelog" aria-label="更新内容">
+          <header><span>CHANGELOG</span><strong>更新内容</strong></header>
+          <div className={`update-notes${state.notes?.trim() ? "" : " is-empty"}`}>{changelog}</div>
+        </section>}
         {busy && <div className="update-progress"><span style={{ width: percentage == null ? "34%" : `${percentage}%` }} className={percentage == null ? "is-indeterminate" : undefined} /></div>}
         {state.phase === "checking" && <small>正在连接安全更新服务</small>}
         {state.phase === "downloading" && <small>{percentage == null ? "正在连接更新服务" : `已下载 ${Math.round(percentage)}%`}</small>}

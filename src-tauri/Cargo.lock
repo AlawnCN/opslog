@@ -2493,12 +2493,13 @@ dependencies = [
 
 [[package]]
 name = "opslog"
-version = "3.0.17"
+version = "3.0.18"
 dependencies = [
  "axum",
  "chrono",
  "dirs",
  "futures-util",
+ "getrandom 0.3.4",
  "local-ip-address",
  "log",
  "reqwest 0.12.28",

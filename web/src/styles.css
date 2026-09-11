@@ -85,6 +85,16 @@ select:focus, input:focus { border-color: var(--cyan); background: #0a1b2d; }
 .lan-share-panel > small, .lan-share-panel > em { display: block; margin-top: 10px; font-size: 9px; line-height: 1.55; }
 .lan-share-panel > small { color: #7798ad; }
 .lan-share-panel > em { padding-left: 8px; border-left: 2px solid var(--amber); color: #b69c71; font-style: normal; }
+.lan-share-access-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.lan-share-access-options label { min-width: 0; display: flex; align-items: flex-start; gap: 7px; padding: 10px; border: 1px solid var(--line); background: #061421; color: #7898ac; cursor: pointer; transition: border-color .16s ease, background .16s ease, color .16s ease; }
+.lan-share-access-options label:hover, .lan-share-access-options label.is-selected { border-color: #2d7189; background: rgba(42, 212, 224, .055); color: #b9d2df; }
+.lan-share-access-options input { margin: 2px 0 0; accent-color: var(--cyan); }
+.lan-share-access-options span, .lan-share-access-options b, .lan-share-access-options small { display: block; min-width: 0; }
+.lan-share-access-options b { color: #c9dce7; font-size: 10px; }
+.lan-share-access-options small { margin-top: 4px; color: #66889d; font-size: 8px; line-height: 1.4; }
+.lan-share-enable { width: 100%; min-height: 34px; margin-top: 11px; border: 1px solid var(--cyan); background: var(--cyan); color: #001820; font-weight: 700; cursor: pointer; }
+.lan-share-enable:hover:not(:disabled) { background: #52e5ed; }.lan-share-enable:disabled { opacity: .65; cursor: wait; }
+.lan-share-panel > .lan-share-error { color: #f0a9b2; }
 .version-chip { position: relative; min-height: 29px; padding: 6px 9px; color: var(--blue); border: 1px solid var(--line); background: transparent; font: 10px ui-monospace, monospace; letter-spacing: .08em; }
 .version-chip.is-interactive { padding-right: 20px; cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
 .version-chip.is-interactive:hover:not(:disabled) { color: var(--cyan); border-color: var(--line-bright); background: rgba(42, 212, 224, .045); }
@@ -327,7 +337,12 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 .update-version { display: flex; align-items: center; gap: 10px; margin: 13px 0 0; color: #7395aa; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .update-version i { width: 24px; height: 1px; background: #37627a; }
 .update-security { margin: 17px 0 0; padding: 10px 12px; border-left: 2px solid var(--green); background: rgba(53, 219, 154, .055); color: #86b9a6; font-size: 11px; line-height: 1.55; }
-.update-notes { max-height: 150px; margin-top: 14px; padding: 12px; overflow: auto; border: 1px solid rgba(25, 56, 80, .82); background: #071522; color: #8aa9bc; font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
+.update-changelog { margin-top: 16px; border: 1px solid rgba(25, 56, 80, .9); background: #071522; }
+.update-changelog > header { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgba(25, 56, 80, .82); }
+.update-changelog > header span { color: var(--cyan); font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .16em; }
+.update-changelog > header strong { color: #c7dce8; font-size: 11px; }
+.update-notes { max-height: 170px; padding: 12px; overflow: auto; color: #9bb6c7; font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.update-notes.is-empty { color: #627f92; font-style: italic; }
 .update-progress { height: 4px; margin-top: 30px; overflow: hidden; background: #102d43; }
 .update-progress span { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 10px rgba(42, 212, 224, .65); transition: width .18s ease; }
 .update-progress span.is-indeterminate { animation: update-progress-scan 1.35s ease-in-out infinite; }

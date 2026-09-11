@@ -9,11 +9,13 @@ export interface LanShareStatus {
   enabled: boolean;
   url?: string | null;
   port?: number | null;
+  requiresPasscode?: boolean;
 }
 
 export interface WebRuntimeInfo {
   mode: "standalone" | "lan";
   canImportConfig: boolean;
+  requiresPasscode?: boolean;
 }
 
 export const desktopMode = isTauri();
@@ -49,16 +51,35 @@ const parseError = async (response: Response): Promise<never> => {
   throw new Error(body.error ?? `请求失败：HTTP ${response.status}`);
 };
 
+const LAN_ACCESS_KEY_STORAGE = "opslog.lanAccessKey";
+
+const lanAccessKey = (): string | null => {
+  if (typeof window === "undefined") return null;
+  const keyFromUrl = new URLSearchParams(window.location.hash.slice(1)).get("accessKey")?.trim();
+  if (keyFromUrl) {
+    window.sessionStorage.setItem(LAN_ACCESS_KEY_STORAGE, keyFromUrl);
+    return keyFromUrl;
+  }
+  return window.sessionStorage.getItem(LAN_ACCESS_KEY_STORAGE);
+};
+
+const webFetch = (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+  const headers = new Headers(init.headers);
+  const accessKey = lanAccessKey();
+  if (accessKey) headers.set("X-OpsLog-LAN-Key", accessKey);
+  return fetch(input, { ...init, headers });
+};
+
 export const loadEnvironments = async (): Promise<Environment[]> => {
   if (desktopMode) return desktopInvoke<Environment[]>("load_environments");
-  const response = await fetch("/api/environments");
+  const response = await webFetch("/api/environments");
   if (!response.ok) return parseError(response);
   return response.json();
 };
 
 export const loadWebRuntimeInfo = async (): Promise<WebRuntimeInfo> => {
   if (desktopMode) return { mode: "standalone", canImportConfig: true };
-  const response = await fetch("/api/runtime");
+  const response = await webFetch("/api/runtime");
   if (!response.ok) return { mode: "standalone", canImportConfig: true };
   return response.json();
 };
@@ -68,14 +89,14 @@ export const getLanShareStatus = async (): Promise<LanShareStatus> => {
   return desktopInvoke<LanShareStatus>("get_lan_share_status");
 };
 
-export const setLanShareEnabled = async (enabled: boolean): Promise<LanShareStatus> => {
+export const setLanShareEnabled = async (enabled: boolean, requirePasscode = false): Promise<LanShareStatus> => {
   if (!desktopMode) return { enabled: false };
-  return desktopInvoke<LanShareStatus>("set_lan_share_enabled", { enabled });
+  return desktopInvoke<LanShareStatus>("set_lan_share_enabled", { enabled, requirePasscode });
 };
 
 export const searchLogs = async (request: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> => {
   if (desktopMode) return desktopInvoke<SearchResponse>("search_logs", { input: request });
-  const response = await fetch("/api/search", {
+  const response = await webFetch("/api/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
@@ -86,7 +107,7 @@ export const searchLogs = async (request: SearchRequest, signal?: AbortSignal): 
 };
 
 const download = async (url: string, request: unknown): Promise<string | undefined> => {
-  const response = await fetch(url, {
+  const response = await webFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request)
@@ -138,7 +159,7 @@ export const readTransactionLog = async (
 ): Promise<string> => {
   const input = { environment, id, startTime, endTime };
   if (desktopMode) return desktopInvoke<string>("read_transaction_log", { input });
-  const response = await fetch("/api/transaction-log/content", {
+  const response = await webFetch("/api/transaction-log/content", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
@@ -175,7 +196,7 @@ export const loadTrace = async (
 ): Promise<Record<string, unknown>[]> => {
   const input = { environment, id, startTime, endTime };
   if (desktopMode) return desktopInvoke<Record<string, unknown>[]>("load_trace", { input });
-  const response = await fetch("/api/trace", {
+  const response = await webFetch("/api/trace", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input)
@@ -186,7 +207,7 @@ export const loadTrace = async (
 
 export const importEnvironmentConfig = async (contents: string): Promise<string> => {
   if (desktopMode) return (await desktopInvoke<SavedFile>("save_environment_config", { contents })).path;
-  const response = await fetch("/api/environments/import", {
+  const response = await webFetch("/api/environments/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contents })

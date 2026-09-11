@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{DefaultBodyLimit, State},
-    http::{HeaderValue, Request, StatusCode, Uri, header},
+    http::{HeaderName, HeaderValue, Request, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -33,6 +33,7 @@ use crate::{
 
 const MAX_CONCURRENT_QUERIES: usize = 4;
 const REQUEST_BODY_LIMIT: usize = 256 * 1024;
+const ACCESS_KEY_HEADER: HeaderName = HeaderName::from_static("x-opslog-lan-key");
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,11 +41,13 @@ pub struct LanShareStatus {
     enabled: bool,
     url: Option<String>,
     port: Option<u16>,
+    requires_passcode: bool,
 }
 
 struct LanRuntime {
     url: String,
     port: u16,
+    requires_passcode: bool,
     task: JoinHandle<()>,
 }
 
@@ -65,6 +68,7 @@ impl Drop for LanShareManager {
 struct LanApiState {
     app: AppHandle,
     query_slots: Arc<Semaphore>,
+    access_key: Option<Arc<str>>,
 }
 
 fn disabled_status() -> LanShareStatus {
@@ -72,7 +76,22 @@ fn disabled_status() -> LanShareStatus {
         enabled: false,
         url: None,
         port: None,
+        requires_passcode: false,
     }
+}
+
+fn generate_access_key() -> Result<String, String> {
+    let mut bytes = [0_u8; 18];
+    getrandom::fill(&mut bytes).map_err(|error| format!("无法生成局域网访问口令：{error}"))?;
+    const ALPHABET: &[u8; 32] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+    Ok(bytes
+        .into_iter()
+        .map(|byte| ALPHABET[(byte as usize) % ALPHABET.len()] as char)
+        .collect())
+}
+
+fn access_allowed(expected: Option<&str>, provided: Option<&str>) -> bool {
+    expected.is_none() || expected == provided
 }
 
 fn interface_score(name: &str, address: Ipv4Addr) -> i32 {
@@ -137,6 +156,29 @@ async fn security_headers(request: Request<Body>, next: Next) -> Response {
     response
 }
 
+async fn require_access_key(
+    State(state): State<LanApiState>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    if path == "/api/runtime" || !path.starts_with("/api/") {
+        return next.run(request).await;
+    }
+    let supplied = request
+        .headers()
+        .get(&ACCESS_KEY_HEADER)
+        .and_then(|value| value.to_str().ok());
+    if access_allowed(state.access_key.as_deref(), supplied) {
+        return next.run(request).await;
+    }
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": "局域网访问口令缺失或错误，请使用 APP 中复制的完整 Share URL。" })),
+    )
+        .into_response()
+}
+
 fn api_error(message: String) -> Response {
     let client_error = message.starts_with("未知环境")
         || message.starts_with("环境配置")
@@ -163,8 +205,12 @@ async fn query_permit(state: &LanApiState) -> Result<tokio::sync::OwnedSemaphore
         .map_err(|_| api_error("局域网查询服务已停止".to_string()))
 }
 
-async fn runtime_info() -> Json<serde_json::Value> {
-    Json(json!({ "mode": "lan", "canImportConfig": false }))
+async fn runtime_info(State(state): State<LanApiState>) -> Json<serde_json::Value> {
+    Json(json!({
+        "mode": "lan",
+        "canImportConfig": false,
+        "requiresPasscode": state.access_key.is_some()
+    }))
 }
 
 async fn environments(State(state): State<LanApiState>) -> Response {
@@ -332,6 +378,10 @@ fn router(state: LanApiState) -> Router {
         .route("/api/trace", post(trace))
         .fallback(asset)
         .layer(DefaultBodyLimit::max(REQUEST_BODY_LIMIT))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_access_key,
+        ))
         .layer(middleware::from_fn(security_headers))
         .with_state(state)
 }
@@ -350,6 +400,7 @@ async fn current_status(manager: &LanShareManager) -> LanShareStatus {
             enabled: true,
             url: Some(runtime.url.clone()),
             port: Some(runtime.port),
+            requires_passcode: runtime.requires_passcode,
         })
         .unwrap_or_else(disabled_status)
 }
@@ -366,6 +417,7 @@ pub async fn set_lan_share_enabled(
     app: AppHandle,
     manager: TauriState<'_, LanShareManager>,
     enabled: bool,
+    require_passcode: Option<bool>,
 ) -> Result<LanShareStatus, String> {
     if !enabled {
         if let Some(runtime) = manager.runtime.lock().await.take() {
@@ -388,6 +440,7 @@ pub async fn set_lan_share_enabled(
             enabled: true,
             url: Some(existing.url.clone()),
             port: Some(existing.port),
+            requires_passcode: existing.requires_passcode,
         });
     }
 
@@ -402,10 +455,23 @@ pub async fn set_lan_share_enabled(
         .local_addr()
         .map_err(|error| format!("无法读取局域网分享端口：{error}"))?
         .port();
-    let url = format!("http://{address}:{port}");
+    let base_url = format!("http://{address}:{port}");
+    let access_key = if require_passcode.unwrap_or(false) {
+        Some(generate_access_key()?)
+    } else {
+        None
+    };
+    // Keep the passcode in the URL fragment: browsers do not send fragments
+    // in HTTP requests or referrer headers. The web client forwards it only
+    // through the dedicated LAN access header.
+    let url = access_key
+        .as_ref()
+        .map(|key| format!("{base_url}/#accessKey={key}"))
+        .unwrap_or(base_url);
     let api_state = LanApiState {
         app,
         query_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES)),
+        access_key: access_key.map(Arc::<str>::from),
     };
     let task = tokio::spawn(async move {
         if let Err(error) = axum::serve(listener, router(api_state)).await {
@@ -415,12 +481,14 @@ pub async fn set_lan_share_enabled(
     *runtime = Some(LanRuntime {
         url: url.clone(),
         port,
+        requires_passcode: require_passcode.unwrap_or(false),
         task,
     });
     Ok(LanShareStatus {
         enabled: true,
         url: Some(url),
         port: Some(port),
+        requires_passcode: require_passcode.unwrap_or(false),
     })
 }
 
@@ -443,5 +511,24 @@ mod tests {
             safe_filename("channelPosting.p_0_1"),
             "channelPosting.p_0_1"
         );
+    }
+
+    #[test]
+    fn generated_access_keys_are_url_safe_and_not_ambiguous() {
+        let key = generate_access_key().expect("key should be generated");
+        assert_eq!(key.len(), 18);
+        assert!(
+            key.chars()
+                .all(|character| character.is_ascii_alphanumeric())
+        );
+        assert!(!key.contains(['0', '1', 'I', 'O']));
+    }
+
+    #[test]
+    fn access_key_is_optional_but_enforced_when_configured() {
+        assert!(access_allowed(None, None));
+        assert!(access_allowed(Some("ABC234"), Some("ABC234")));
+        assert!(!access_allowed(Some("ABC234"), None));
+        assert!(!access_allowed(Some("ABC234"), Some("wrong")));
     }
 }

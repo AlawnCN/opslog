@@ -1,6 +1,6 @@
 [package]
 name = "opslog"
-version = "3.0.17"
+version = "3.0.18"
 description = "Portable M5/Faulu log query console"
 authors = ["MuRong Technology"]
 license = "Proprietary"
@@ -21,6 +21,7 @@ axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 futures-util = "0.3"
+getrandom = "0.3"
 local-ip-address = "0.6.13"
 log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "stream", "gzip", "brotli", "deflate"] }

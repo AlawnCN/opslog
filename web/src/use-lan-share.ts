@@ -4,7 +4,8 @@ import { errorMessage, getLanShareStatus, setLanShareEnabled, type LanShareStatu
 export interface LanShareController extends LanShareStatus {
   busy: boolean;
   error?: string;
-  toggle: () => Promise<void>;
+  enable: (requirePasscode: boolean) => Promise<void>;
+  disable: () => Promise<void>;
 }
 
 export const useLanShare = (enabled: boolean): LanShareController => {
@@ -17,12 +18,12 @@ export const useLanShare = (enabled: boolean): LanShareController => {
     void getLanShareStatus().then(setStatus).catch((reason) => setError(errorMessage(reason)));
   }, [enabled]);
 
-  const toggle = async () => {
+  const update = async (nextEnabled: boolean, requirePasscode = false) => {
     if (!enabled || busy) return;
     setBusy(true);
     setError(undefined);
     try {
-      setStatus(await setLanShareEnabled(!status.enabled));
+      setStatus(await setLanShareEnabled(nextEnabled, requirePasscode));
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -30,5 +31,11 @@ export const useLanShare = (enabled: boolean): LanShareController => {
     }
   };
 
-  return { ...status, busy, error, toggle };
+  return {
+    ...status,
+    busy,
+    error,
+    enable: (requirePasscode) => update(true, requirePasscode),
+    disable: () => update(false)
+  };
 };
