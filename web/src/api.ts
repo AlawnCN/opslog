@@ -94,6 +94,11 @@ export const setLanShareEnabled = async (enabled: boolean, requirePasscode = fal
   return desktopInvoke<LanShareStatus>("set_lan_share_enabled", { enabled, requirePasscode });
 };
 
+export const loadUpdateReleaseNotes = async (version: string): Promise<string | undefined> => {
+  if (!desktopMode) return undefined;
+  return (await desktopInvoke<string | null>("load_update_release_notes", { version })) ?? undefined;
+};
+
 export const searchLogs = async (request: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> => {
   if (desktopMode) return desktopInvoke<SearchResponse>("search_logs", { input: request });
   const response = await webFetch("/api/search", {

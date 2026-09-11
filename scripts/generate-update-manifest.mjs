@@ -1,14 +1,14 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const [, , releaseDirectory, version, repository, tag] = process.argv;
+const [, , releaseDirectory, version, repository, tag, releaseNotesFile] = process.argv;
 
 const fail = (message) => {
   throw new Error(`Updater manifest: ${message}`);
 };
 
-if (!releaseDirectory || !version || !repository || !tag) {
-  fail("usage: node scripts/generate-update-manifest.mjs <release-dir> <version> <owner/repo> <tag>");
+if (!releaseDirectory || !version || !repository || !tag || !releaseNotesFile) {
+  fail("usage: node scripts/generate-update-manifest.mjs <release-dir> <version> <owner/repo> <tag> <release-notes-file>");
 }
 if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) fail(`invalid version: ${version}`);
 if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) fail(`invalid repository: ${repository}`);
@@ -30,9 +30,14 @@ const platforms = Object.fromEntries(await Promise.all([
   asset("darwin-x86_64", `OpsLog_${version}_macos_x64.app.tar.gz`)
 ]));
 
+const notes = (await readFile(releaseNotesFile, "utf8"))
+  .replace(/\r\n?/g, "\n")
+  .replace(/\n$/, "");
+if (!notes.trim()) fail("release notes are required and cannot be empty");
+
 const manifest = {
   version,
-  notes: `OpsLog ${version} 已发布。完整更新说明请查看 GitHub Release。`,
+  notes,
   pub_date: new Date().toISOString(),
   platforms
 };

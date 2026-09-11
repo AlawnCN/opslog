@@ -1,4 +1,5 @@
 import type { AppUpdateState } from "../use-app-updater";
+import { parseReleaseNotes } from "../update-release-notes";
 import { CloseIcon, DownloadIcon } from "./Icons";
 
 interface UpdateDialogProps {
@@ -20,12 +21,22 @@ const statusCopy = (state: AppUpdateState): string => {
   return `发现新版本 ${state.version ?? ""}`;
 };
 
+const ReleaseNotes = ({ notes }: { notes: string }) => <>
+  {parseReleaseNotes(notes).map((block, index) => {
+    if (block.type === "heading") return <h3 key={index} data-level={block.level}>{block.text}</h3>;
+    if (block.type === "list") return <ul key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ul>;
+    if (block.type === "code") return <pre key={index}><code>{block.text}</code></pre>;
+    return <p key={index}>{block.text}</p>;
+  })}
+</>;
+
 export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps) => {
   if (!state.visible) return null;
   const percentage = progress(state);
   const busy = state.phase === "checking" || state.phase === "downloading" || state.phase === "installing";
   const showChangelog = Boolean(state.version) && state.phase !== "checking";
-  const changelog = state.notes?.trim() || "本次版本未提供更新说明。";
+  const changelog = state.notes?.trim()
+    || (state.notesLoading ? "正在读取完整更新内容…" : state.notesError || "本次版本未提供更新说明。");
 
   return <div className="update-dialog-backdrop" role="presentation">
     <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title" aria-busy={busy}>
@@ -40,7 +51,9 @@ export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps)
         {state.phase === "available" && <p className="update-security">更新包将通过数字签名验证，校验通过后才会安装。</p>}
         {showChangelog && <section className="update-changelog" aria-label="更新内容">
           <header><span>CHANGELOG</span><strong>更新内容</strong></header>
-          <div className={`update-notes${state.notes?.trim() ? "" : " is-empty"}`}>{changelog}</div>
+          <div className={`update-notes${state.notes?.trim() ? "" : " is-empty"}${state.notesLoading ? " is-loading" : ""}`}>
+            {state.notes?.trim() ? <ReleaseNotes notes={changelog} /> : changelog}
+          </div>
         </section>}
         {busy && <div className="update-progress"><span style={{ width: percentage == null ? "34%" : `${percentage}%` }} className={percentage == null ? "is-indeterminate" : undefined} /></div>}
         {state.phase === "checking" && <small>正在连接安全更新服务</small>}

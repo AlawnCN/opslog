@@ -5,6 +5,7 @@ mod export_files;
 mod kibana_client;
 mod lan_server;
 mod query_builders;
+mod update_release;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +34,7 @@ pub fn run() {
             commands::save_custom_log_markers,
             commands::save_portable_log,
             commands::load_trace,
+            update_release::load_update_release_notes,
             lan_server::get_lan_share_status,
             lan_server::set_lan_share_enabled,
         ])

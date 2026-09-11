@@ -329,7 +329,7 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 @keyframes reader-log-line { 0%, 100% { opacity: .42; transform: scaleX(.55); } 50% { opacity: 1; transform: scaleX(1); } } @keyframes reader-log-scan { from { transform: translateX(0); } to { transform: translateX(198px); } } @keyframes log-outline-target { 0% { background: rgba(42, 212, 224, .34); } 100% { background: rgba(42, 212, 224, .08); } }
 
 .update-dialog-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(1, 8, 14, .76); backdrop-filter: blur(5px); }
-.update-dialog { width: min(520px, calc(100vw - 48px)); overflow: hidden; border: 1px solid #265b74; border-radius: 8px; background: #081827; box-shadow: 0 24px 80px rgba(0, 0, 0, .52), 0 0 0 1px rgba(42, 212, 224, .04); }
+.update-dialog { width: min(620px, calc(100vw - 48px)); overflow: hidden; border: 1px solid #265b74; border-radius: 8px; background: #081827; box-shadow: 0 24px 80px rgba(0, 0, 0, .52), 0 0 0 1px rgba(42, 212, 224, .04); }
 .update-dialog > header { min-height: 82px; display: grid; grid-template-columns: 48px minmax(0, 1fr) 34px; align-items: center; gap: 13px; padding: 16px 18px; border-bottom: 1px solid var(--line); background: linear-gradient(90deg, rgba(42, 212, 224, .055), transparent 58%); }
 .update-dialog h2 { margin-top: 5px; font-size: 17px; }
 .update-emblem { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid rgba(42, 212, 224, .45); border-radius: 50%; color: var(--cyan); background: rgba(42, 212, 224, .055); box-shadow: inset 0 0 18px rgba(42, 212, 224, .04); }
@@ -346,8 +346,11 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 .update-changelog > header { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgba(25, 56, 80, .82); }
 .update-changelog > header span { color: var(--cyan); font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .16em; }
 .update-changelog > header strong { color: #c7dce8; font-size: 11px; }
-.update-notes { max-height: 170px; padding: 12px; overflow: auto; color: #9bb6c7; font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.update-notes { max-height: min(320px, 42vh); padding: 12px 14px; overflow: auto; color: #9bb6c7; font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; scrollbar-width: thin; }
+.update-notes h3 { margin: 13px 0 6px; color: #cde3ee; font-size: 12px; line-height: 1.45; }.update-notes h3:first-child { margin-top: 0; }.update-notes h3[data-level="1"], .update-notes h3[data-level="2"] { padding-bottom: 5px; border-bottom: 1px solid rgba(42, 212, 224, .12); color: var(--cyan); }
+.update-notes p { margin: 7px 0; white-space: pre-wrap; }.update-notes ul { margin: 6px 0 10px; padding-left: 18px; }.update-notes li { margin: 3px 0; }.update-notes li::marker { color: var(--cyan); }.update-notes pre { margin: 8px 0; padding: 9px 10px; overflow-x: auto; border: 1px solid rgba(42, 212, 224, .13); background: #05111c; color: #b8d7e4; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; }
 .update-notes.is-empty { color: #627f92; font-style: italic; }
+.update-notes.is-loading { animation: update-notes-pulse 1.2s ease-in-out infinite; }
 .update-progress { height: 4px; margin-top: 30px; overflow: hidden; background: #102d43; }
 .update-progress span { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 10px rgba(42, 212, 224, .65); transition: width .18s ease; }
 .update-progress span.is-indeterminate { animation: update-progress-scan 1.35s ease-in-out infinite; }
@@ -358,6 +361,7 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 .update-dialog > footer .primary { min-width: 112px; border-color: var(--cyan); background: var(--cyan); color: #001820; }
 .update-dialog > footer .primary:hover { color: #001820; background: #52e5ed; }
 @keyframes update-progress-scan { 0% { transform: translateX(-120%); } 100% { transform: translateX(310%); } }
+@keyframes update-notes-pulse { 0%, 100% { opacity: .52; } 50% { opacity: 1; } }
 @keyframes update-status-pulse { 0%, 100% { transform: scale(.8); opacity: .55; } 50% { transform: scale(1.25); opacity: 1; } }
 
 @media (max-width: 1350px) { .topbar-context { gap: 14px; }.connection-state { display: none; } }

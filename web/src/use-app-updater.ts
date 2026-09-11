@@ -1,6 +1,8 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { loadUpdateReleaseNotes } from "./api";
+import { normalizeReleaseNotes } from "./update-release-notes";
 
 export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "installing" | "error";
 
@@ -10,6 +12,8 @@ export interface AppUpdateState {
   version?: string;
   currentVersion?: string;
   notes?: string;
+  notesLoading?: boolean;
+  notesError?: string;
   downloadedBytes: number;
   totalBytes?: number;
   error?: string;
@@ -47,14 +51,35 @@ export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions
       }
       await candidate.current?.close();
       candidate.current = update;
+      const manifestNotes = normalizeReleaseNotes(update.body);
       setState({
         phase: "available",
         visible: true,
         version: update.version,
         currentVersion: update.currentVersion,
-        notes: update.body,
+        notes: manifestNotes,
+        notesLoading: !manifestNotes,
         downloadedBytes: 0
       });
+      if (!manifestNotes) {
+        try {
+          const releaseNotes = normalizeReleaseNotes(await loadUpdateReleaseNotes(update.version));
+          if (candidate.current !== update) return;
+          setState((current) => ({
+            ...current,
+            notes: releaseNotes,
+            notesLoading: false,
+            notesError: releaseNotes ? undefined : "该版本没有可显示的更新说明。"
+          }));
+        } catch (error) {
+          if (candidate.current !== update) return;
+          setState((current) => ({
+            ...current,
+            notesLoading: false,
+            notesError: `完整更新说明暂时读取失败：${messageOf(error)}`
+          }));
+        }
+      }
     } catch (error) {
       setState(initialState);
       if (manual) onError(messageOf(error));

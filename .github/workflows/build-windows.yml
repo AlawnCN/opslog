@@ -198,7 +198,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          node scripts/generate-update-manifest.mjs release "${GITHUB_REF_NAME#v}" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME"
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json body --jq .body > release-notes.md 2>/dev/null || true
+          if ! test -s release-notes.md; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="${GITHUB_REF_NAME}" \
+              -f target_commitish="${GITHUB_SHA}" \
+              --jq .body > release-notes.md
+          fi
+          test -s release-notes.md
+          node scripts/generate-update-manifest.mjs release "${GITHUB_REF_NAME#v}" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" release-notes.md
           find release -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS
           assets=(release/*)
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
@@ -209,5 +217,5 @@ jobs:
             gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
               --repo "${GITHUB_REPOSITORY}" \
               --title "OpsLog ${GITHUB_REF_NAME#v}" \
-              --generate-notes
+              --notes-file release-notes.md
           fi
