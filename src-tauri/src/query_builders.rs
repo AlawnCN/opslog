@@ -238,7 +238,7 @@ pub fn build_trace_query(
 ) -> Result<String, String> {
     let source = index(environment.apm_index.as_deref().unwrap_or("traces-apm*"))?;
     Ok(format!(
-        "FROM {source} | WHERE trace.id == \"{}\" AND @timestamp >= \"{}\" AND @timestamp < \"{}\" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*",
+        "FROM {source} | WHERE trace.id == \"{}\" AND @timestamp >= \"{}\" AND @timestamp < \"{}\" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, parent.id, span.*, transaction.*, processor.event, service.*, http.*, url.*, destination.*, event.outcome",
         literal(trace_id),
         literal(start_time),
         literal(end_time)
@@ -338,7 +338,10 @@ mod tests {
         )
         .unwrap();
         assert!(query.contains(
-            "LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*"
+            "LIMIT 20000 | KEEP @timestamp, trace.id, parent.id, span.*, transaction.*, processor.event, service.*"
         ));
+        assert!(query.contains("http.*, url.*, destination.*, event.outcome"));
+        assert!(!query.contains("db.*"));
+        assert!(!query.contains("error.*"));
     }
 }

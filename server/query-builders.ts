@@ -128,7 +128,7 @@ export const buildTraceQuery = (
   endTime: string
 ): string => {
   const source = index(environment.apmIndex ?? "traces-apm*");
-  return `FROM ${source} | WHERE trace.id == "${literal(traceId)}" AND @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, span.*, transaction.*, processor.event, service.*`;
+  return `FROM ${source} | WHERE trace.id == "${literal(traceId)}" AND @timestamp >= "${literal(startTime)}" AND @timestamp < "${literal(endTime)}" | SORT @timestamp ASC | LIMIT 20000 | KEEP @timestamp, trace.id, parent.id, span.*, transaction.*, processor.event, service.*, http.*, url.*, destination.*, event.outcome`;
 };
 
 export const pageRows = <T>(rows: T[], page: number, pageSize: number): T[] => {

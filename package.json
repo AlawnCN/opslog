@@ -1,6 +1,6 @@
 {
   "name": "opslog-web",
-  "version": "3.0.18",
+  "version": "3.0.19",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
     "desktop:portable": "npm run desktop:windows",
     "desktop:windows:setup": "tauri build --bundles nsis",
     "desktop:info": "tauri info",
-    "test": "npm run build && node --import tsx --test tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/routes.test.mjs tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts",
+    "test": "npm run build && node --import tsx --test tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/routes.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {

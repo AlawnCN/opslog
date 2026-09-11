@@ -62,7 +62,9 @@ test("TRC 与 APM 查询保留原工具的关联规则", () => {
   assert.match(buildTrcQuery(environment, "log-1", base.startTime, base.endTime), /ecp\.log\.id == "log-1"/);
   const traceQuery = buildTraceQuery(environment, "trace-1", base.startTime, base.endTime);
   assert.match(traceQuery, /^FROM traces-apm\*/);
-  assert.match(traceQuery, /LIMIT 20000 \| KEEP @timestamp, trace\.id, span\.\*, transaction\.\*/);
+  assert.match(traceQuery, /LIMIT 20000 \| KEEP @timestamp, trace\.id, parent\.id, span\.\*, transaction\.\*/);
+  assert.match(traceQuery, /http\.\*, url\.\*, destination\.\*, event\.outcome/);
+  assert.doesNotMatch(traceQuery, /db\.\*|error\.\*|, message/);
   assert.doesNotMatch(traceQuery, /event\.duration/);
 });
 
