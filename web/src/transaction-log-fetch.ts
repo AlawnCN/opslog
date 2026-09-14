@@ -7,6 +7,7 @@ const INITIAL_RADIUS_MS = 60 * 60 * 1000;
 const EXPANDED_RADIUS_MS = 6 * 60 * 60 * 1000;
 const DURATION_PADDING_MS = 30 * 60 * 1000;
 const BOUNDARY_MARGIN_MS = 60 * 1000;
+export const RECENT_TRANSACTION_LOG_WINDOW_MS = 3 * 60 * 1000;
 
 const scalar = (value: unknown): unknown => Array.isArray(value) ? value[0] : value;
 
@@ -18,6 +19,15 @@ const timestamp = (value: unknown): number | undefined => {
 const duration = (value: unknown): number => {
   const parsed = Number(scalar(value));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+export const transactionLogCanUseCache = (
+  row: Record<string, unknown>,
+  now = Date.now()
+): boolean => {
+  const anchor = timestamp(row["ecp.txn.timestamp"]);
+  if (anchor === undefined) return true;
+  return now - anchor >= RECENT_TRANSACTION_LOG_WINDOW_MS;
 };
 
 const windowAround = (anchor: number, radius: number): TransactionLogTimeWindow => ({

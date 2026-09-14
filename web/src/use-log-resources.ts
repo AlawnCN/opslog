@@ -2,7 +2,7 @@ import { useState } from "react";
 import { errorMessage, loadTrace, readTransactionLog, saveTransactionLogContent } from "./api";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, traceCacheKey, transactionLogCacheKey } from "./opslog-session-cache";
-import { transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "./transaction-log-fetch";
+import { transactionLogCanUseCache, transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "./transaction-log-fetch";
 import type { SearchRequest } from "./types";
 
 interface Notice {
@@ -47,6 +47,7 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
     // ecp.txn.id identifies the transaction log resource. The row timestamp and
     // outer query range only help locate it in ES and must not fragment the cache.
     const key = transactionLogCacheKey(environmentName, id);
+    const allowCache = transactionLogCanUseCache(row);
     return cache.loadTransactionLog(
       key,
       async () => {
@@ -57,7 +58,8 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
           if (!hasFallback || !transactionLogNeedsWiderWindow(content, window)) return content;
         }
         return content;
-      }
+      },
+      { allowCache }
     );
   };
 

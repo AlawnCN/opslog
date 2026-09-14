@@ -1,9 +1,11 @@
-import { codeFolding, foldAll, foldedRanges, foldGutter, foldKeymap, foldService, unfoldAll, unfoldEffect } from "@codemirror/language";
+import { codeFolding, foldAll, foldEffect, foldedRanges, foldGutter, foldKeymap, foldService, unfoldAll, unfoldEffect } from "@codemirror/language";
 import { EditorState, StateEffect, StateField, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { directChildLogFolds } from "../log-fold-hierarchy";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import type { LogReaderFoldMode } from "../log-reader-preferences";
+import type { InspectableLogStructureKind } from "../structured-log-preview";
 import type { LogHighlight, TransactionLogAnalysis } from "../transaction-log-analysis";
 import type { LogSearchMatch } from "../transaction-log-search";
 import type { LogLineStyle } from "../transaction-log-model";
@@ -22,6 +24,7 @@ interface StructuredLogViewerProps {
   activeMatch: number;
   wrapLines: boolean;
   foldMode: LogReaderFoldMode;
+  onInspectStructure?: (kind: InspectableLogStructureKind, source: string) => void;
 }
 
 const setSemanticDecorations = StateEffect.define<DecorationSet>();
@@ -77,6 +80,32 @@ const createSearchDecorations = (matches: LogSearchMatch[], activeMatch: number)
   return Decoration.set(ranges, true);
 };
 
+interface FoldRange {
+  from: number;
+  to: number;
+}
+
+const unfoldOneLevel = (
+  view: EditorView,
+  parent: FoldRange,
+  folds: TransactionLogAnalysis["folds"]
+) => {
+  view.dispatch({
+    effects: [
+      unfoldEffect.of(parent),
+      ...directChildLogFolds(folds, parent).map(({ from, to }) => foldEffect.of({ from, to }))
+    ]
+  });
+};
+
+const foldedRangeOnLine = (view: EditorView, from: number, to: number): FoldRange | undefined => {
+  let selected: FoldRange | undefined;
+  foldedRanges(view.state).between(from, Math.min(to + 1, view.state.doc.length), (foldFrom, foldTo) => {
+    if (!selected || foldTo - foldFrom > selected.to - selected.from) selected = { from: foldFrom, to: foldTo };
+  });
+  return selected;
+};
+
 const logTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "#061421", color: "#b9ccda" },
   ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "11px", lineHeight: "1.72" },
@@ -93,7 +122,7 @@ const logTheme = EditorView.theme({
 }, { dark: true });
 
 export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, StructuredLogViewerProps>(({
-  analysis, content, matches, activeMatch, wrapLines, foldMode
+  analysis, content, matches, activeMatch, wrapLines, foldMode, onInspectStructure
 }, forwardedRef) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -128,15 +157,34 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
     const foldsByRange = new Map(analysis.folds.map((fold) => [`${fold.from}:${fold.to}`, fold]));
     const extensions: Extension[] = [
       lineNumbers(),
-      foldGutter({ openText: "⌄", closedText: "›" }),
+      foldGutter({
+        openText: "⌄",
+        closedText: "›",
+        domEventHandlers: {
+          click: (view, line) => {
+            const folded = foldedRangeOnLine(view, line.from, line.to);
+            if (!folded) return false;
+            unfoldOneLevel(view, folded, analysis.folds);
+            return true;
+          }
+        }
+      }),
       codeFolding({
         preparePlaceholder: (state, range): LogFoldPlaceholderData => ({
           ...range,
           lines: state.doc.lineAt(range.to).number - state.doc.lineAt(range.from).number + 1,
           kind: foldsByRange.get(`${range.from}:${range.to}`)?.kind
         }),
-        placeholderDOM: (view, onUnfold, prepared) =>
-          createLogFoldPlaceholder(view, onUnfold, prepared as LogFoldPlaceholderData)
+        placeholderDOM: (view, _onUnfold, prepared) => {
+          const fold = prepared as LogFoldPlaceholderData;
+          const inspectable = fold.kind === "json" || fold.kind === "xml" ? fold.kind : undefined;
+          return createLogFoldPlaceholder(view, (event) => {
+            event.preventDefault();
+            unfoldOneLevel(view, fold, analysis.folds);
+          }, fold, inspectable && onInspectStructure
+            ? () => onInspectStructure(inspectable, view.state.doc.sliceString(fold.from, fold.to))
+            : undefined);
+        }
       }),
       keymap.of(foldKeymap),
       foldService.of((_state, lineStart) => {

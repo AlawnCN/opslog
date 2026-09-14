@@ -7,12 +7,14 @@ import { createPortableLogDocument } from "../portable-log-export";
 import { portableLogFilename } from "../portable-log-export-data";
 import { errorMessage, savePortableLogHtml } from "../api";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-search";
+import type { InspectableLogStructureKind } from "../structured-log-preview";
 import type { LogOutlineCategory } from "../transaction-log-model";
 import { CloseIcon, DownloadIcon, MarkerAddIcon, SearchIcon } from "./Icons";
 import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
 import { CustomMarkerSectionResizeHandle } from "./CustomMarkerSectionResizeHandle";
 import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
+import { StructuredLogPreviewDialog } from "./StructuredLogPreviewDialog";
 
 const READER_WIDTH_KEY = "opslog.transaction-log-reader.width-ratio.v1";
 const DEFAULT_READER_WIDTH_RATIO = .5;
@@ -59,6 +61,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
   const [exportingPortable, setExportingPortable] = useState(false);
   const [portableExportNotice, setPortableExportNotice] = useState<string>();
+  const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind; source: string }>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +94,10 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
 
   useImperativeHandle(ref, () => ({
     closeTopLayer: () => {
+      if (structuredPreview) {
+        setStructuredPreview(undefined);
+        return;
+      }
       if (customMarkerShelfRef.current?.closeTopLayer()) return;
       if (outlineCategory) {
         setOutlineCategory(undefined);
@@ -106,12 +113,13 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     }
-  }), [activeCustomMarkerId, onClose, outlineCategory]);
+  }), [activeCustomMarkerId, onClose, outlineCategory, structuredPreview]);
 
   useEffect(() => {
     setKeyword("");
     setOutlineCategory(undefined);
     setActiveCustomMarkerId(undefined);
+    setStructuredPreview(undefined);
   }, [logId]);
 
   useEffect(() => {
@@ -292,7 +300,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在准备日志内容与阅读视图</span></div>}
       {!loading && !content && <div className="log-reader-status">当前时间范围内未找到日志内容。</div>}
       {!loading && content && <div className="log-reader-body" ref={logReaderBodyRef}>
-        <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} />
+        <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} onInspectStructure={(kind, source) => setStructuredPreview({ kind, source })} />
         {outlineCategory && <LogOutlinePopover
           boundsRef={logReaderBodyRef}
           category={outlineCategory}
@@ -318,6 +326,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
           onJump={jumpFromOutline}
           onWrapLinesChange={(outlineWrapLines) => updateReaderPreferences({ outlineWrapLines })}
         />}
+        {structuredPreview && <StructuredLogPreviewDialog kind={structuredPreview.kind} source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />}
       </div>}
     </aside>
   </div>;

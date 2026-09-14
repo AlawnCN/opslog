@@ -50,10 +50,26 @@ const showCopyResult = (button: HTMLButtonElement, succeeded: boolean) => {
   }, 1200);
 };
 
+const createEyeIcon = (): SVGSVGElement => {
+  const namespace = "http://www.w3.org/2000/svg";
+  const icon = document.createElementNS(namespace, "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  const eye = document.createElementNS(namespace, "path");
+  eye.setAttribute("d", "M2.5 12s3.4-5 9.5-5 9.5 5 9.5 5-3.4 5-9.5 5-9.5-5-9.5-5Z");
+  const pupil = document.createElementNS(namespace, "circle");
+  pupil.setAttribute("cx", "12");
+  pupil.setAttribute("cy", "12");
+  pupil.setAttribute("r", "2.5");
+  icon.append(eye, pupil);
+  return icon;
+};
+
 export const createLogFoldPlaceholder = (
   view: EditorView,
   onUnfold: (event: Event) => void,
-  prepared: LogFoldPlaceholderData
+  prepared: LogFoldPlaceholderData,
+  onInspect?: () => void
 ): HTMLElement => {
   const container = document.createElement("span");
   container.className = "cm-foldPlaceholder cm-log-fold-placeholder";
@@ -64,6 +80,18 @@ export const createLogFoldPlaceholder = (
   summary.textContent = `… ${prepared.kind ? KIND_LABELS[prepared.kind] : "折叠内容"} · ${prepared.lines} 行`;
   summary.title = "点击展开";
   summary.onclick = onUnfold;
+
+  const inspect = document.createElement("button");
+  inspect.type = "button";
+  inspect.className = "cm-log-fold-preview";
+  inspect.title = `格式化预览 ${prepared.kind?.toUpperCase() ?? "结构块"}`;
+  inspect.setAttribute("aria-label", inspect.title);
+  inspect.append(createEyeIcon());
+  inspect.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onInspect?.();
+  };
 
   const copy = document.createElement("button");
   copy.type = "button";
@@ -78,6 +106,8 @@ export const createLogFoldPlaceholder = (
     void copyText(text).then(() => showCopyResult(copy, true), () => showCopyResult(copy, false));
   };
 
-  container.append(summary, copy);
+  container.append(summary);
+  if (onInspect) container.append(inspect);
+  container.append(copy);
   return container;
 };

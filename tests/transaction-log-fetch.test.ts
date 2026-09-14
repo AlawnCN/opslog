@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpsLogSessionCache, transactionLogCacheKey } from "../web/src/opslog-session-cache";
-import { transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "../web/src/transaction-log-fetch";
+import { RECENT_TRANSACTION_LOG_WINDOW_MS, transactionLogCanUseCache, transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "../web/src/transaction-log-fetch";
 
 const fallback = {
   startTime: "2026-09-01T00:00:00.000Z",
@@ -48,6 +48,24 @@ test("时间锚点不可用时回退外层查询范围", () => {
   assert.deepEqual(transactionLogTimeWindows({}, fallback), [fallback]);
 });
 
+test("最新三分钟的交易日志不使用缓存", () => {
+  const now = Date.parse("2026-09-14T12:00:00.000Z");
+  assert.equal(transactionLogCanUseCache({
+    "ecp.txn.timestamp": new Date(now - RECENT_TRANSACTION_LOG_WINDOW_MS + 1).toISOString()
+  }, now), false);
+  assert.equal(transactionLogCanUseCache({
+    "ecp.txn.timestamp": new Date(now + 1000).toISOString()
+  }, now), false);
+});
+
+test("达到三分钟的交易日志恢复缓存", () => {
+  const now = Date.parse("2026-09-14T12:00:00.000Z");
+  assert.equal(transactionLogCanUseCache({
+    "ecp.txn.timestamp": new Date(now - RECENT_TRANSACTION_LOG_WINDOW_MS).toISOString()
+  }, now), true);
+  assert.equal(transactionLogCanUseCache({}, now), true);
+});
+
 test("同一日志 ID 在外层时间变化后仍只加载一次", async () => {
   const cache = new OpsLogSessionCache();
   const firstKey = transactionLogCacheKey("uat", "transaction-1");
@@ -61,6 +79,24 @@ test("同一日志 ID 在外层时间变化后仍只加载一次", async () => {
   assert.equal((await cache.loadTransactionLog(firstKey, loader)).cached, false);
   assert.equal((await cache.loadTransactionLog(secondKey, loader)).cached, true);
   assert.equal(loads, 1);
+});
+
+test("近期交易日志既不读取也不写入正文缓存", async () => {
+  const cache = new OpsLogSessionCache();
+  const key = transactionLogCacheKey("uat", "recent-transaction");
+  cache.saveTransactionLog(key, "stale transaction log");
+  let loads = 0;
+  const loader = async () => `transaction log ${++loads}`;
+
+  assert.deepEqual(await cache.loadTransactionLog(key, loader, { allowCache: false }), {
+    value: "transaction log 1",
+    cached: false
+  });
+  assert.deepEqual(await cache.loadTransactionLog(key, loader, { allowCache: false }), {
+    value: "transaction log 2",
+    cached: false
+  });
+  assert.equal(cache.getTransactionLog(key), undefined);
 });
 
 test("不同环境或日志 ID 不会共享日志缓存", () => {

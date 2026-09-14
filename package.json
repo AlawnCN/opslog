@@ -1,6 +1,6 @@
 {
   "name": "opslog-web",
-  "version": "3.0.20",
+  "version": "3.0.21",
   "private": true,
   "type": "module",
   "scripts": {
@@ -30,6 +30,8 @@
     "express": "^5.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zod": "^4.5.0"
   },
   "devDependencies": {

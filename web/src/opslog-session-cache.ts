@@ -58,6 +58,10 @@ interface CachedLoad<Value> {
   cached: boolean;
 }
 
+interface TransactionLogLoadOptions {
+  allowCache?: boolean;
+}
+
 export class OpsLogSessionCache {
   private readonly searchResults = new Map<string, CacheEntry<SearchResponse>>();
   private readonly transactionLogs = new Map<string, CacheEntry<string>>();
@@ -97,7 +101,16 @@ export class OpsLogSessionCache {
     }
   }
 
-  async loadTransactionLog(key: string, loader: () => Promise<string>): Promise<CachedLoad<string>> {
+  async loadTransactionLog(
+    key: string,
+    loader: () => Promise<string>,
+    { allowCache = true }: TransactionLogLoadOptions = {}
+  ): Promise<CachedLoad<string>> {
+    if (!allowCache) {
+      this.transactionLogs.delete(key);
+      return { value: await loader(), cached: false };
+    }
+
     const cached = this.getTransactionLog(key);
     if (cached !== undefined) return { value: cached, cached: true };
     const existing = this.transactionLogLoads.get(key);

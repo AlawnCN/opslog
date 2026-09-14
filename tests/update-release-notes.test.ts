@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeReleaseNotes, parseReleaseNotes } from "../web/src/update-release-notes";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ReleaseNotesMarkdown } from "../web/src/components/ReleaseNotesMarkdown";
+import { normalizeReleaseNotes } from "../web/src/update-release-notes";
 
 test("keeps complete updater release notes", () => {
   assert.equal(
@@ -17,11 +20,23 @@ test("rejects the legacy GitHub redirect placeholder", () => {
   assert.equal(normalizeReleaseNotes("   "), undefined);
 });
 
-test("parses GitHub release markdown into safe display blocks", () => {
-  assert.deepEqual(parseReleaseNotes("## 新功能\n\n- 支持 A\n- 支持 `B`\n\n说明 **完成**。\n\n```bash\nxattr -dr app\n```"), [
-    { type: "heading", level: 2, text: "新功能" },
-    { type: "list", items: ["支持 A", "支持 B"] },
-    { type: "paragraph", text: "说明 完成。" },
-    { type: "code", text: "xattr -dr app" }
-  ]);
+test("renders GitHub release markdown", () => {
+  const html = renderToStaticMarkup(createElement(ReleaseNotesMarkdown, {
+    notes: "## 新功能\n\n- 支持 **A**\n- 支持 `B`\n\n```bash\nxattr -dr app\n```"
+  }));
+
+  assert.match(html, /<h2>新功能<\/h2>/);
+  assert.match(html, /<li>支持 <strong>A<\/strong><\/li>/);
+  assert.match(html, /<code>B<\/code>/);
+  assert.match(html, /language-bash/);
+});
+
+test("does not render release HTML or unsafe links and images", () => {
+  const html = renderToStaticMarkup(createElement(ReleaseNotesMarkdown, {
+    notes: "<script>alert(1)</script>\n\n[危险](javascript:alert(1)) [安全](https://example.com/release)\n\n![远程图](https://example.com/image.png)"
+  }));
+
+  assert.doesNotMatch(html, /<script|javascript:|<img/i);
+  assert.match(html, /href="https:\/\/example\.com\/release"/);
+  assert.match(html, /\[图片：远程图\]/);
 });

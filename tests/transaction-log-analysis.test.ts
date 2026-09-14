@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
+import { directChildLogFolds } from "../web/src/log-fold-hierarchy";
 import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../web/src/custom-marker-layout";
 import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeCustomLogMarkers } from "../web/src/custom-log-marker-transfer";
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
+import { formatStructuredLogPreview } from "../web/src/structured-log-preview";
 import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot, encodePortableLogSnapshot, portableLogFilename, PORTABLE_LOG_FORMAT } from "../web/src/portable-log-export-data";
 
 test("plain and regular-expression searches return exact highlight ranges", () => {
@@ -270,6 +272,30 @@ test("structured payloads remain foldable after SQL folding is removed", () => {
   assert.ok(analysis.folds.some(({ kind }) => kind === "json"));
   assert.equal(analysis.outline.structured.length, 1);
   assert.equal(analysis.outline.structured[0]?.line, 1);
+});
+
+test("JSON and XML structure previews are formatted with semantic highlights", () => {
+  const json = formatStructuredLogPreview("json", '{"request":{"amount":6400,"valid":true}}');
+  const xml = formatStructuredLogPreview("xml", '<root><request id="1"><amount>6400</amount></request><empty/></root>');
+
+  assert.match(json.content, /\n  "request": \{\n    "amount": 6400,/);
+  assert.ok(json.highlights.some(({ kind }) => kind === "json-key"));
+  assert.ok(json.highlights.some(({ kind }) => kind === "json-number"));
+  assert.equal(xml.content, '<root>\n  <request id="1">\n    <amount>6400</amount>\n  </request>\n  <empty/>\n</root>');
+  assert.ok(xml.highlights.some(({ kind }) => kind === "xml-name"));
+  assert.ok(xml.highlights.some(({ kind }) => kind === "xml-attribute"));
+  assert.match(formatStructuredLogPreview("json", '{"incomplete":').error ?? "", /不完整/);
+});
+
+test("expanding a folded range keeps only its direct child ranges folded", () => {
+  const parent = { lineFrom: 0, from: 10, to: 1_000, kind: "service" as const };
+  const child = { lineFrom: 100, from: 100, to: 500, kind: "json" as const };
+  const grandchild = { lineFrom: 150, from: 150, to: 250, kind: "xml" as const };
+  const sibling = { lineFrom: 600, from: 600, to: 900, kind: "stack" as const };
+  const outside = { lineFrom: 1_100, from: 1_100, to: 1_200, kind: "java" as const };
+
+  assert.deepEqual(directChildLogFolds([parent, child, grandchild, sibling, outside], parent), [child, sibling]);
+  assert.deepEqual(directChildLogFolds([parent, child, grandchild, sibling, outside], child), [grandchild]);
 });
 
 test("analysis builds lightweight outline entries for navigable log categories", () => {
