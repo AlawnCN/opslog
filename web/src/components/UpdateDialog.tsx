@@ -1,6 +1,11 @@
+import { lazy, Suspense } from "react";
 import type { AppUpdateState } from "../use-app-updater";
-import { parseReleaseNotes } from "../update-release-notes";
 import { CloseIcon, DownloadIcon } from "./Icons";
+
+const ReleaseNotesMarkdown = lazy(async () => {
+  const module = await import("./ReleaseNotesMarkdown");
+  return { default: module.ReleaseNotesMarkdown };
+});
 
 interface UpdateDialogProps {
   state: AppUpdateState;
@@ -20,15 +25,6 @@ const statusCopy = (state: AppUpdateState): string => {
   if (state.phase === "error") return "本次更新未能完成";
   return `发现新版本 ${state.version ?? ""}`;
 };
-
-const ReleaseNotes = ({ notes }: { notes: string }) => <>
-  {parseReleaseNotes(notes).map((block, index) => {
-    if (block.type === "heading") return <h3 key={index} data-level={block.level}>{block.text}</h3>;
-    if (block.type === "list") return <ul key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ul>;
-    if (block.type === "code") return <pre key={index}><code>{block.text}</code></pre>;
-    return <p key={index}>{block.text}</p>;
-  })}
-</>;
 
 export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps) => {
   if (!state.visible) return null;
@@ -52,7 +48,9 @@ export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps)
         {showChangelog && <section className="update-changelog" aria-label="更新内容">
           <header><span>CHANGELOG</span><strong>更新内容</strong></header>
           <div className={`update-notes${state.notes?.trim() ? "" : " is-empty"}${state.notesLoading ? " is-loading" : ""}`}>
-            {state.notes?.trim() ? <ReleaseNotes notes={changelog} /> : changelog}
+            {state.notes?.trim()
+              ? <Suspense fallback={<span className="update-notes-rendering">正在渲染更新内容…</span>}><ReleaseNotesMarkdown notes={changelog} /></Suspense>
+              : changelog}
           </div>
         </section>}
         {busy && <div className="update-progress"><span style={{ width: percentage == null ? "34%" : `${percentage}%` }} className={percentage == null ? "is-indeterminate" : undefined} /></div>}
