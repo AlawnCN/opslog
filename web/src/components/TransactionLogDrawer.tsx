@@ -12,6 +12,7 @@ import type { LogOutlineCategory } from "../transaction-log-model";
 import { CloseIcon, DownloadIcon, MarkerAddIcon, SearchIcon } from "./Icons";
 import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
 import { CustomMarkerSectionResizeHandle } from "./CustomMarkerSectionResizeHandle";
+import { JavaObjectPreviewDialog } from "./JavaObjectPreviewDialog";
 import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 import { StructuredLogPreviewDialog } from "./StructuredLogPreviewDialog";
@@ -61,7 +62,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
   const [exportingPortable, setExportingPortable] = useState(false);
   const [portableExportNotice, setPortableExportNotice] = useState<string>();
-  const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind; source: string }>();
+  const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind | "java"; source: string }>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -326,7 +327,9 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
           onJump={jumpFromOutline}
           onWrapLinesChange={(outlineWrapLines) => updateReaderPreferences({ outlineWrapLines })}
         />}
-        {structuredPreview && <StructuredLogPreviewDialog kind={structuredPreview.kind} source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />}
+        {structuredPreview?.kind === "java"
+          ? <JavaObjectPreviewDialog source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />
+          : structuredPreview && <StructuredLogPreviewDialog kind={structuredPreview.kind} source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />}
       </div>}
     </aside>
   </div>;

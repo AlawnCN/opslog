@@ -6,6 +6,7 @@ import { directChildLogFolds, serviceFoldExpansionAnchor } from "../web/src/log-
 import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../web/src/custom-marker-layout";
 import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeCustomLogMarkers } from "../web/src/custom-log-marker-transfer";
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
+import { javaObjectSourceStart, parseJavaObjectPreview } from "../web/src/java-object-preview";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
 import { directChildStructuredPreviewFolds, formatStructuredLogPreview } from "../web/src/structured-log-preview";
@@ -307,6 +308,18 @@ test("JSON and XML structure previews are formatted with semantic highlights", (
   assert.match(formatStructuredLogPreview("json", '{"incomplete":').error ?? "", /不完整/);
 });
 
+test("JSON preview unwraps a single object while preserving real arrays", () => {
+  const wrappedObject = formatStructuredLogPreview("json", '[{"gda":{"msg_cd":"SCM60001"},"bda":{"ci_no":768550}}]');
+  const multipleObjects = formatStructuredLogPreview("json", '[{"id":1},{"id":2}]');
+  const scalarArray = formatStructuredLogPreview("json", '[2]');
+
+  assert.equal(wrappedObject.content.startsWith("{\n"), true);
+  assert.equal(wrappedObject.content.endsWith("\n}"), true);
+  assert.equal(wrappedObject.content.startsWith("["), false);
+  assert.equal(multipleObjects.content.startsWith("[\n"), true);
+  assert.equal(scalarArray.content, "[\n  2\n]");
+});
+
 test("structured preview unfolding restores only the direct child folds", () => {
   const preview = formatStructuredLogPreview("json", JSON.stringify({
     request: { account: { number: "1001" }, amount: 6400 },
@@ -441,6 +454,26 @@ test("large Java object dumps are detected as foldable structures before bracket
   assert.ok(analysis.folds.some(({ kind }) => kind === "java"));
   assert.equal(analysis.folds.some(({ kind }) => kind === "json"), false);
   assert.ok(analysis.outline.structured.some(({ detail }) => detail === "JAVA"));
+});
+
+test("Java object preview keeps class, field, nested object, and list hierarchy", () => {
+  const source = "PrdDpInfoRspCO(super=PrdBaseRspCO(code=0), account=PrdLiabilityAccount(prdCd=6106, rules=[RuleVO(id=1, enabled=Y), RuleVO(id=2, enabled=N)]), description=transfer, approved manually, remark=null)";
+  const preview = parseJavaObjectPreview(source);
+  const account = preview.members.find(({ name }) => name === "account")?.value;
+  const rules = account?.members.find(({ name }) => name === "rules")?.value;
+
+  assert.equal(preview.kind, "object");
+  assert.equal(preview.typeName, "PrdDpInfoRspCO");
+  assert.equal(preview.members.find(({ name }) => name === "super")?.value.typeName, "PrdBaseRspCO");
+  assert.equal(account?.typeName, "PrdLiabilityAccount");
+  assert.equal(rules?.kind, "list");
+  assert.deepEqual(rules?.members.map(({ name, value }) => [name, value.typeName]), [["[0]", "RuleVO"], ["[1]", "RuleVO"]]);
+  assert.equal(preview.members.find(({ name }) => name === "description")?.value.value, "transfer, approved manually");
+  assert.equal(preview.members.find(({ name }) => name === "remark")?.value.scalarKind, "null");
+
+  const logPrefix = "2026-09-15T05:54:51.002Z [cte] [INFO] -> response: ";
+  const openingParenthesis = logPrefix.length + source.indexOf("(");
+  assert.equal(javaObjectSourceStart(`${logPrefix}${source}`, openingParenthesis), logPrefix.length);
 });
 
 test("XML structures keep semantic highlighting on opening and closing field names", () => {

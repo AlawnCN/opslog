@@ -334,6 +334,17 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 .structured-preview-error { flex: 0 0 auto; padding: 7px 18px; border-bottom: 1px solid rgba(255, 189, 89, .18); background: rgba(255, 189, 89, .055); color: #c6a76c; font: 9px/1.5 ui-monospace, monospace; }
 .structured-preview-toolbar { flex: 0 0 auto; min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 18px; border-bottom: 1px solid rgba(31, 75, 99, .72); background: #071725; }.structured-preview-toolbar > span { color: #557a90; font: 8px ui-monospace, monospace; letter-spacing: .04em; }.structured-preview-toolbar > div { display: flex; gap: 6px; }.structured-preview-toolbar button { padding: 4px 9px; border: 1px solid #21465d; background: #081b2b; color: #789aae; font: 9px ui-monospace, monospace; cursor: pointer; }.structured-preview-toolbar button:hover { border-color: #2f7189; color: var(--cyan); background: rgba(42, 212, 224, .06); }
 .structured-preview-editor { flex: 1 1 auto; min-height: 0; overflow: hidden; background: #061421; }
+.java-object-preview-dialog { width: min(1080px, 92%); }
+.java-object-tree { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0 28px; background: #061421; color: #b7cbd8; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; scrollbar-width: thin; }
+.java-object-row { min-width: max-content; height: 27px; display: flex; align-items: center; padding-right: 24px; border-left: 2px solid transparent; white-space: nowrap; }
+.java-object-row:hover { border-left-color: var(--cyan); background: rgba(42, 212, 224, .065); }
+.java-object-toggle { width: 20px; height: 22px; display: grid; place-items: center; flex: 0 0 20px; padding: 0; border: 0; background: transparent; color: #7196aa; font: 15px/20px ui-monospace, monospace; cursor: pointer; }
+.java-object-toggle:hover { color: var(--cyan); background: rgba(42, 212, 224, .08); }
+.java-object-toggle-spacer { width: 20px; flex: 0 0 20px; }
+.java-object-kind { width: 17px; height: 17px; display: inline-grid; place-items: center; flex: 0 0 17px; margin-right: 7px; border: 1px solid currentColor; border-radius: 50%; font: 8px/1 ui-monospace, monospace; }
+.java-object-kind.is-class { color: #58d6e0; background: rgba(42, 212, 224, .08); }.java-object-kind.is-field { color: #d79555; background: rgba(231, 145, 69, .08); }
+.java-object-field { color: #e88b7d; }.java-object-equals { margin: 0 7px; color: #597a90; }.java-object-type { color: #d3b27b; font-style: italic; }
+.java-object-value.is-null { color: #788795; font-style: italic; }.java-object-value.is-boolean { color: #63cfe0; }.java-object-value.is-number { color: #e5bc70; }.java-object-value.is-string { color: #83c99f; }.java-object-value.is-plain { color: #aebdcc; }
 @keyframes reader-log-line { 0%, 100% { opacity: .42; transform: scaleX(.55); } 50% { opacity: 1; transform: scaleX(1); } } @keyframes reader-log-scan { from { transform: translateX(0); } to { transform: translateX(198px); } } @keyframes log-outline-target { 0% { background: rgba(42, 212, 224, .34); } 100% { background: rgba(42, 212, 224, .08); } }
 
 .update-dialog-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(1, 8, 14, .76); backdrop-filter: blur(5px); }

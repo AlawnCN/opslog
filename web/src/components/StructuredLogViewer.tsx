@@ -5,6 +5,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { directChildLogFolds, serviceFoldExpansionAnchor } from "../log-fold-hierarchy";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import type { LogReaderFoldMode } from "../log-reader-preferences";
+import { javaObjectSourceStart } from "../java-object-preview";
 import type { InspectableLogStructureKind } from "../structured-log-preview";
 import type { LogHighlight, TransactionLogAnalysis } from "../transaction-log-analysis";
 import type { LogSearchMatch } from "../transaction-log-search";
@@ -24,7 +25,7 @@ interface StructuredLogViewerProps {
   activeMatch: number;
   wrapLines: boolean;
   foldMode: LogReaderFoldMode;
-  onInspectStructure?: (kind: InspectableLogStructureKind, source: string) => void;
+  onInspectStructure?: (kind: InspectableLogStructureKind | "java", source: string) => void;
 }
 
 const setSemanticDecorations = StateEffect.define<DecorationSet>();
@@ -182,12 +183,18 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
         }),
         placeholderDOM: (view, _onUnfold, prepared) => {
           const fold = prepared as LogFoldPlaceholderData;
-          const inspectable = fold.kind === "json" || fold.kind === "xml" ? fold.kind : undefined;
+          const inspectable = fold.kind === "json" || fold.kind === "xml" || fold.kind === "java" ? fold.kind : undefined;
           return createLogFoldPlaceholder(view, (event) => {
             event.preventDefault();
             unfoldOneLevel(view, fold, analysis.folds);
           }, fold, inspectable && onInspectStructure
-            ? () => onInspectStructure(inspectable, view.state.doc.sliceString(fold.from, fold.to))
+            ? () => {
+              const lineFrom = view.state.doc.lineAt(fold.from).from;
+              const sourceFrom = inspectable === "java"
+                ? lineFrom + javaObjectSourceStart(view.state.doc.sliceString(lineFrom, fold.from), fold.from - lineFrom)
+                : fold.from;
+              onInspectStructure(inspectable, view.state.doc.sliceString(sourceFrom, fold.to));
+            }
             : undefined);
         }
       }),

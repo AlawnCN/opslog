@@ -190,7 +190,15 @@ export const formatStructuredLogPreview = (
   let error: string | undefined;
   if (kind === "json") {
     try {
-      content = JSON.stringify(JSON.parse(source), null, 2);
+      const parsed: unknown = JSON.parse(source);
+      const previewValue = Array.isArray(parsed)
+        && parsed.length === 1
+        && typeof parsed[0] === "object"
+        && parsed[0] !== null
+        && !Array.isArray(parsed[0])
+        ? parsed[0]
+        : parsed;
+      content = JSON.stringify(previewValue, null, 2);
     } catch {
       error = "JSON 内容不完整，暂时显示原始结构";
     }
