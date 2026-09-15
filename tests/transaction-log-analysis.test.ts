@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
 import { directChildLogFolds, serviceFoldExpansionAnchor } from "../web/src/log-fold-hierarchy";
@@ -81,6 +83,36 @@ test("portable log snapshot uses lossless gzip compression when the platform sup
   const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"));
   const decoded = JSON.parse(new TextDecoder().decode(await new Response(stream).arrayBuffer()));
   assert.equal(decoded.content, content);
+});
+
+test("portable reader embeds equivalent structured and Java preview engines", () => {
+  const context: Record<string, unknown> = {};
+  runInNewContext(readFileSync(new URL("../web/src/portable-structured-preview.js", import.meta.url), "utf8"), context);
+  runInNewContext(readFileSync(new URL("../web/src/portable-java-object-preview.js", import.meta.url), "utf8"), context);
+  const structured = context.OpsLogPortableStructuredPreview as {
+    format: (kind: "json" | "xml", source: string) => { content: string; folds: unknown[]; error?: string };
+  };
+  const java = context.OpsLogPortableJavaPreview as {
+    parse: (source: string) => { kind: string; members: Array<{ value: { kind: string; members: unknown[] } }> };
+  };
+
+  const json = structured.format("json", '[{"gda":{"req_bus_no":"FT001"}}]');
+  const xml = structured.format("xml", "<root><gda><req_bus_no>FT001</req_bus_no></gda></root>");
+  const javaList = java.parse("[[RestrictionCode(rscCd=R01), RestrictionCode(rscCd=R02)]]");
+
+  assert.equal(json.error, undefined);
+  assert.match(json.content, /^\{\n\s+"gda"/);
+  assert.ok(json.folds.length >= 1);
+  assert.match(xml.content, /^<root>\n\s+<gda>/);
+  assert.ok(xml.folds.length >= 1);
+  assert.equal(javaList.kind, "list");
+  assert.equal(javaList.members[0]?.value.kind, "list");
+  assert.equal(javaList.members[0]?.value.members.length, 2);
+
+  const exportSource = readFileSync(new URL("../web/src/portable-log-export.ts", import.meta.url), "utf8");
+  assert.match(exportSource, /portableStructuredPreview/);
+  assert.match(exportSource, /portableJavaPreview/);
+  assert.match(exportSource, /portablePreviewRuntime/);
 });
 
 test("regular-expression search reports invalid patterns and skips empty matches", () => {
@@ -475,6 +507,25 @@ test("Java object collections keep the complete outer list as the preview struct
   assert.equal(preview.typeName, "List");
   assert.equal(preview.members.length, rules.length);
   assert.ok(preview.members.every(({ value }) => value.kind === "object" && value.typeName === "RrcRulePO"));
+});
+
+test("nested Java collections keep every enclosing list around their objects", () => {
+  const restrictions = Array.from({ length: 3 }, (_, index) =>
+    `RestrictionCode(rscCd=R0${index + 1}, rscDesc=Rule ${index + 1}, scope=PND, reqBusNo=null, cusRsvExt2VO=CusRsvExt2VO(reserved1=, reserved2=))`
+  );
+  const payload = `[[${restrictions.join(", ")}]]`;
+  const content = `2026-09-15T15:08:21.537Z [cte.p_0_23] [INFO] -> [usrStsCheck]:Transaction request exception. MsgCd:${payload}`;
+  const analysis = analyzeTransactionLog(content);
+  const fold = analysis.folds.find(({ kind }) => kind === "java");
+
+  assert.ok(fold);
+  assert.equal(content.slice(fold.from, fold.to), payload);
+  const preview = parseJavaObjectPreview(content.slice(fold.from, fold.to));
+  assert.equal(preview.kind, "list");
+  assert.equal(preview.members.length, 1);
+  assert.equal(preview.members[0]?.value.kind, "list");
+  assert.equal(preview.members[0]?.value.members.length, restrictions.length);
+  assert.ok(preview.members[0]?.value.members.every(({ value }) => value.typeName === "RestrictionCode"));
 });
 
 test("Java object preview keeps class, field, nested object, and list hierarchy", () => {

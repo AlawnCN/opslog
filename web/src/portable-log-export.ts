@@ -1,5 +1,8 @@
 import portableStyles from "./portable-log-document.css?raw";
+import portableJavaPreview from "./portable-java-object-preview.js?raw";
+import portablePreviewRuntime from "./portable-log-preview-runtime.js?raw";
 import portableRuntime from "./portable-log-runtime.js?raw";
+import portableStructuredPreview from "./portable-structured-preview.js?raw";
 import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot } from "./portable-log-export-data";
 import type { CustomLogMarker } from "./custom-log-markers";
 import type { TransactionLogAnalysis } from "./transaction-log-model";
@@ -35,6 +38,9 @@ export const createPortableLogDocument = async (input: PortableLogDocumentInput)
 <body>
   <main id="app" aria-busy="true"><div class="boot"><i></i><strong>正在装载离线日志快照…</strong></div></main>
   <script id="opslog-data" type="application/octet-stream" data-encoding="${encoded.encoding}">${encoded.payload}</script>
+  <script>${portableStructuredPreview}</script>
+  <script>${portableJavaPreview}</script>
+  <script>${portablePreviewRuntime}</script>
   <script>${portableRuntime}</script>
 </body>
 </html>`;

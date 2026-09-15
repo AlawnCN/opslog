@@ -266,6 +266,28 @@
     }, undefined) || foldByLine.get(lineIndex);
   }
 
+  function directChildFoldIndexes(parentIndex) {
+    var parent = analysis.folds[parentIndex];
+    return analysis.folds.map(function (fold, index) { return { fold: fold, index: index }; }).filter(function (candidate) {
+      if (candidate.fold.from <= parent.from || candidate.fold.to >= parent.to) return false;
+      return !analysis.folds.some(function (possibleParent) {
+        return possibleParent.from > parent.from && possibleParent.to < parent.to
+          && possibleParent.from < candidate.fold.from && possibleParent.to > candidate.fold.to;
+      });
+    }).map(function (candidate) { return candidate.index; });
+  }
+
+  function inspectableFoldSource(fold) {
+    var from = fold.from;
+    if (fold.kind === "java" && content[from] === "(") {
+      var lineFrom = lineStarts[lineIndexAt(from)];
+      var prefix = content.slice(lineFrom, from);
+      var className = /[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:<[^>\n]+>)?\s*$/.exec(prefix);
+      if (className) from = lineFrom + className.index;
+    }
+    return content.slice(from, fold.to);
+  }
+
   function copyText(text, trigger) {
     var done = function () {
       var before = trigger.textContent;
@@ -315,6 +337,17 @@
       var foldLabels = { json: "JSON", xml: "XML", java: "Java 对象", "sql-result": "SQL Result", stack: "异常栈", service: "服务区段" };
       var open = button("", "… " + (foldLabels[foldEntry.fold.kind] || "折叠内容") + " · " + foldedLines + " 行", "展开折叠区域");
       open.dataset.fold = String(foldEntry.index);
+      var inspectable = foldEntry.fold.kind === "json" || foldEntry.fold.kind === "xml" || foldEntry.fold.kind === "java";
+      var inspect;
+      if (inspectable && globalThis.OpsLogPortablePreview) {
+        inspect = button("fold-preview", "", "格式化预览 " + foldLabels[foldEntry.fold.kind]);
+        inspect.setAttribute("aria-label", inspect.title);
+        inspect.append(globalThis.OpsLogPortablePreview.createEyeIcon());
+        inspect.addEventListener("click", function (event) {
+          event.stopPropagation();
+          globalThis.OpsLogPortablePreview.open(foldEntry.fold.kind, inspectableFoldSource(foldEntry.fold));
+        });
+      }
       var copy = button("", "复制", "复制折叠区域");
       copy.addEventListener("click", function (event) {
         event.stopPropagation();
@@ -322,7 +355,9 @@
         var fold = analysis.folds[index];
         copyText(content.slice(fold.from, fold.to), event.currentTarget);
       });
-      chip.append(open, copy);
+      chip.append(open);
+      if (inspect) chip.append(inspect);
+      chip.append(copy);
       text.append(chip);
     } else appendHighlighted(text, lineIndex, lineStart, lineEnd);
     row.append(gutter, text);
@@ -384,9 +419,17 @@
   }
 
   function toggleFold(index) {
-    if (collapsed.has(index)) collapsed.delete(index);
-    else collapsed.add(index);
+    var opening = collapsed.has(index);
+    if (opening) {
+      collapsed.delete(index);
+      directChildFoldIndexes(index).forEach(function (child) { collapsed.add(child); });
+    } else collapsed.add(index);
     rebuildVisibleLines();
+    if (opening && analysis.folds[index].kind === "service") {
+      var lineIndex = lineIndexAt(analysis.folds[index].lineFrom);
+      var visibleIndex = visiblePositionByLine[lineIndex];
+      if (visibleIndex >= 0) viewer.scrollTop = visibleOffsets[visibleIndex];
+    }
     renderViewport(true);
   }
 

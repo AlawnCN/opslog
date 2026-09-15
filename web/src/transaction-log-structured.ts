@@ -71,13 +71,18 @@ const enclosingJavaCollection = (
   objectFrom: number,
   objectTo: number
 ): StructuredLogRange | undefined => {
-  for (let start = objectFrom - 1; start >= from; start -= 1) {
-    if (content[start] !== "[") continue;
-    if (content.slice(start + 1, objectFrom).trim()) continue;
+  let cursor = objectFrom - 1;
+  let collection: StructuredLogRange | undefined;
+  while (cursor >= from) {
+    while (cursor >= from && /\s/.test(content[cursor])) cursor -= 1;
+    if (content[cursor] !== "[") break;
+    const start = cursor;
     const end = findBalancedEnd(content, start, "[", "]");
-    if (end && end >= objectTo) return { kind: "java", start, end };
+    if (!end || end < objectTo) break;
+    collection = { kind: "java", start, end };
+    cursor -= 1;
   }
-  return undefined;
+  return collection;
 };
 
 const firstCompleteJavaObject = (content: string, from: number, to: number): StructuredLogRange | undefined => {
