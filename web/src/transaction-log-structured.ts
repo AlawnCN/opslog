@@ -1,6 +1,6 @@
 import type { LogHighlight, StructuredLogRange } from "./transaction-log-model";
 
-const STRUCTURE_MARKER = /(?:request|response|req|rsp|body|edb|object|argument|result|param(?:s)?)[^:=>]{0,40}(?::|=>|=|>>>|<<<)/i;
+const STRUCTURE_MARKER = /\b(?:request(?:BO|EDB|Body|Root)?|response(?:BO|EDB|Body|Root)?|rspRoot|req|rsp|body|edb|object|argument|result|params?)\b[^:=>]{0,40}(?::|=>|=|>>>|<<<)/i;
 const WRAPPED_XML_ASSIGNMENT = /\b(?:request|response|req|rsp|body|edb)\w*\s*=\s*\[?\s*(?=<)/i;
 const JAVA_OBJECT = /\b[A-Z][\w$]*(?:<[^>\n]+>)?\s*\(/g;
 const JSON_PRIMITIVE = /(?:-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)\b/y;
@@ -65,12 +65,30 @@ const findXmlEnd = (content: string, start: number): number | undefined => {
   return undefined;
 };
 
+const enclosingJavaCollection = (
+  content: string,
+  from: number,
+  objectFrom: number,
+  objectTo: number
+): StructuredLogRange | undefined => {
+  for (let start = objectFrom - 1; start >= from; start -= 1) {
+    if (content[start] !== "[") continue;
+    if (content.slice(start + 1, objectFrom).trim()) continue;
+    const end = findBalancedEnd(content, start, "[", "]");
+    if (end && end >= objectTo) return { kind: "java", start, end };
+  }
+  return undefined;
+};
+
 const firstCompleteJavaObject = (content: string, from: number, to: number): StructuredLogRange | undefined => {
   JAVA_OBJECT.lastIndex = from;
   for (let match = JAVA_OBJECT.exec(content); match && match.index < to; match = JAVA_OBJECT.exec(content)) {
     const start = match.index + match[0].lastIndexOf("(");
     const end = findBalancedEnd(content, start, "(", ")");
-    if (end && end - start >= 100) return { kind: "java", start, end };
+    if (!end) continue;
+    const collection = enclosingJavaCollection(content, from, match.index, end);
+    if (collection && collection.end - collection.start >= 100) return collection;
+    if (end - start >= 100) return { kind: "java", start, end };
   }
   return undefined;
 };

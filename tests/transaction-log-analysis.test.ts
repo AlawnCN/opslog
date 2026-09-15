@@ -448,12 +448,33 @@ test("nested SQL highlights every scope while keeping table names prominent", ()
 
 test("large Java object dumps are detected as foldable structures before bracket lists", () => {
   const javaObject = `PrdDpInfoRspCO(super=PrdBaseRspCO(code=0), account=PrdLiabilityAccount(prdCd=6106, rules=[${Array.from({ length: 12 }, (_, index) => `RuleVO(id=${index}, enabled=Y)`).join(", ")}]))`;
-  const content = `2026-09-07T06:35:02.841Z [cte.p_0_21] [INFO] -> qryDpProductInfo rsp: [${javaObject}]`;
+  const payload = `[${javaObject}]`;
+  const content = `2026-09-07T06:35:02.841Z [cte.p_0_21] [INFO] -> qryDpProductInfo rsp: ${payload}`;
   const analysis = analyzeTransactionLog(content);
+  const fold = analysis.folds.find(({ kind }) => kind === "java");
 
-  assert.ok(analysis.folds.some(({ kind }) => kind === "java"));
+  assert.ok(fold);
+  assert.equal(content.slice(fold.from, fold.to), payload);
   assert.equal(analysis.folds.some(({ kind }) => kind === "json"), false);
   assert.ok(analysis.outline.structured.some(({ detail }) => detail === "JAVA"));
+});
+
+test("Java object collections keep the complete outer list as the preview structure", () => {
+  const rules = Array.from({ length: 8 }, (_, index) =>
+    `RrcRulePO(chkDt=null, chkOpr=null, rulDesc=Risk rule ${index}, rulFactor=transaction_amount, rulId=RTM0${index}, rulSts=2, reqBusNo=null)`
+  );
+  const payload = `[${rules.join(", ")}]`;
+  const content = `2026-09-15T14:44:57.154Z [cte.p_0_23] [INFO] -> getRuleCacheInfo last lst=${payload}`;
+  const analysis = analyzeTransactionLog(content);
+  const fold = analysis.folds.find(({ kind }) => kind === "java");
+
+  assert.ok(fold);
+  assert.equal(content.slice(fold.from, fold.to), payload);
+  const preview = parseJavaObjectPreview(content.slice(fold.from, fold.to));
+  assert.equal(preview.kind, "list");
+  assert.equal(preview.typeName, "List");
+  assert.equal(preview.members.length, rules.length);
+  assert.ok(preview.members.every(({ value }) => value.kind === "object" && value.typeName === "RrcRulePO"));
 });
 
 test("Java object preview keeps class, field, nested object, and list hierarchy", () => {

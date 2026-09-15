@@ -190,7 +190,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
           }, fold, inspectable && onInspectStructure
             ? () => {
               const lineFrom = view.state.doc.lineAt(fold.from).from;
-              const sourceFrom = inspectable === "java"
+              const sourceFrom = inspectable === "java" && view.state.doc.sliceString(fold.from, fold.from + 1) === "("
                 ? lineFrom + javaObjectSourceStart(view.state.doc.sliceString(lineFrom, fold.from), fold.from - lineFrom)
                 : fold.from;
               onInspectStructure(inspectable, view.state.doc.sliceString(sourceFrom, fold.to));
