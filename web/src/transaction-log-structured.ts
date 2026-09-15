@@ -1,6 +1,7 @@
 import type { LogHighlight, StructuredLogRange } from "./transaction-log-model";
 
-const STRUCTURE_MARKER = /(?:request|response|req|rsp|body|edb|object|argument|result|param(?:s)?)[^:=>]{0,40}(?::|=>|>>>|<<<)/i;
+const STRUCTURE_MARKER = /(?:request|response|req|rsp|body|edb|object|argument|result|param(?:s)?)[^:=>]{0,40}(?::|=>|=|>>>|<<<)/i;
+const WRAPPED_XML_ASSIGNMENT = /\b(?:request|response|req|rsp|body|edb)\w*\s*=\s*\[?\s*(?=<)/i;
 const JAVA_OBJECT = /\b[A-Z][\w$]*(?:<[^>\n]+>)?\s*\(/g;
 const JSON_PRIMITIVE = /(?:-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)\b/y;
 
@@ -112,7 +113,7 @@ export const findStructuredRange = (
   content: string, line: string, lineFrom: number, _lineTo: number, payloadFrom: number
 ): StructuredLogRange | undefined => {
   const payload = line.slice(payloadFrom);
-  const marker = STRUCTURE_MARKER.exec(payload);
+  const marker = WRAPPED_XML_ASSIGNMENT.exec(payload) ?? STRUCTURE_MARKER.exec(payload);
   const relativeFrom = payloadFrom + (marker ? marker.index + marker[0].length : 0);
   const searchFrom = lineFrom + relativeFrom;
   const searchTo = lineFrom + line.length;

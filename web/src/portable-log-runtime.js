@@ -42,9 +42,10 @@
   var activeMarker = "";
   var semanticPriority = [
     "cm-log-sql-muted", "cm-log-timestamp", "cm-log-source", "cm-log-level-info",
+    "cm-log-sql-result-key", "cm-log-sql-result-number", "cm-log-sql-result-literal",
     "cm-log-json-punctuation", "cm-log-xml-punctuation", "cm-log-json-string", "cm-log-json-number",
     "cm-log-json-literal", "cm-log-json-key", "cm-log-xml-string", "cm-log-xml-attribute",
-    "cm-log-xml-name", "cm-log-xml-tag", "cm-log-sql-keyword", "cm-log-sql-table",
+    "cm-log-xml-name", "cm-log-xml-tag", "cm-log-sql-keyword", "cm-log-sql-table", "cm-log-sql-result-label",
     "cm-log-service-entry", "cm-log-service-name", "cm-log-message-key", "cm-log-trace-key",
     "cm-log-trace-value", "cm-log-code-success", "cm-log-message-info", "cm-log-level-warn",
     "cm-log-code-error", "cm-log-level-error", "cm-log-exception", "cm-log-custom-match"
@@ -311,7 +312,8 @@
       appendHighlighted(text, lineIndex, lineStart, prefixEnd);
       var chip = element("span", "fold-chip");
       var foldedLines = Math.max(1, lineIndexAt(Math.max(foldEntry.fold.from, foldEntry.fold.to - 1)) - lineIndex + 1);
-      var open = button("", "… " + foldEntry.fold.kind.toUpperCase() + " · " + foldedLines + " 行", "展开折叠区域");
+      var foldLabels = { json: "JSON", xml: "XML", java: "Java 对象", "sql-result": "SQL Result", stack: "异常栈", service: "服务区段" };
+      var open = button("", "… " + (foldLabels[foldEntry.fold.kind] || "折叠内容") + " · " + foldedLines + " 行", "展开折叠区域");
       open.dataset.fold = String(foldEntry.index);
       var copy = button("", "复制", "复制折叠区域");
       copy.addEventListener("click", function (event) {

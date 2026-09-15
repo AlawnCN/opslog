@@ -7,8 +7,28 @@ export interface StructuredLogPreview {
   kind: InspectableLogStructureKind;
   content: string;
   highlights: LogHighlight[];
+  folds: StructuredPreviewFold[];
   error?: string;
 }
+
+export interface StructuredPreviewFold {
+  lineFrom: number;
+  from: number;
+  to: number;
+}
+
+export const directChildStructuredPreviewFolds = (
+  folds: StructuredPreviewFold[],
+  parent: Pick<StructuredPreviewFold, "from" | "to">
+): StructuredPreviewFold[] => folds.filter((candidate) => {
+  if (candidate.from <= parent.from || candidate.to >= parent.to) return false;
+  return !folds.some((possibleParent) =>
+    possibleParent.from > parent.from
+    && possibleParent.to < parent.to
+    && possibleParent.from < candidate.from
+    && possibleParent.to > candidate.to
+  );
+});
 
 interface XmlToken {
   source: string;
@@ -101,6 +121,67 @@ export const formatXmlLogStructure = (source: string): string => {
   return lines.join("\n");
 };
 
+const lineStartAt = (content: string, position: number): number => content.lastIndexOf("\n", position - 1) + 1;
+
+const jsonPreviewFolds = (content: string): StructuredPreviewFold[] => {
+  const folds: StructuredPreviewFold[] = [];
+  const stack: Array<{ close: string; open: number; lineFrom: number }> = [];
+  let quote = false, escaped = false;
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+    if (escaped) { escaped = false; continue; }
+    if (quote) {
+      if (character === "\\") escaped = true;
+      else if (character === '"') quote = false;
+      continue;
+    }
+    if (character === '"') { quote = true; continue; }
+    if (character === "{" || character === "[") {
+      stack.push({ close: character === "{" ? "}" : "]", open: index, lineFrom: lineStartAt(content, index) });
+      continue;
+    }
+    const opened = stack.at(-1);
+    if (!opened || character !== opened.close) continue;
+    stack.pop();
+    if (lineStartAt(content, index) > opened.lineFrom) {
+      folds.push({ lineFrom: opened.lineFrom, from: opened.open + 1, to: index });
+    }
+  }
+  return folds;
+};
+
+const xmlPreviewFolds = (content: string): StructuredPreviewFold[] => {
+  const folds: StructuredPreviewFold[] = [];
+  const stack: Array<{ name: string; tagTo: number; lineFrom: number }> = [];
+  for (let cursor = 0; cursor < content.length;) {
+    const tagFrom = content.indexOf("<", cursor);
+    if (tagFrom < 0) break;
+    const tagTo = xmlTagEnd(content, tagFrom);
+    const tag = content.slice(tagFrom, tagTo);
+    const closing = closingTagName(tag);
+    if (closing) {
+      const opened = stack.at(-1);
+      if (opened?.name === closing) {
+        stack.pop();
+        if (lineStartAt(content, tagFrom) > opened.lineFrom) {
+          folds.push({ lineFrom: opened.lineFrom, from: opened.tagTo, to: tagFrom });
+        }
+      }
+    } else {
+      const opening = openingTagName(tag);
+      if (opening && !isStandaloneTag(tag)) stack.push({ name: opening, tagTo, lineFrom: lineStartAt(content, tagFrom) });
+    }
+    cursor = Math.max(tagTo, tagFrom + 1);
+  }
+  return folds;
+};
+
+export const findStructuredPreviewFolds = (
+  kind: InspectableLogStructureKind,
+  content: string
+): StructuredPreviewFold[] => (kind === "json" ? jsonPreviewFolds(content) : xmlPreviewFolds(content))
+  .sort((left, right) => left.lineFrom - right.lineFrom || right.to - left.to);
+
 export const formatStructuredLogPreview = (
   kind: InspectableLogStructureKind,
   source: string
@@ -117,5 +198,5 @@ export const formatStructuredLogPreview = (
   const highlights: LogHighlight[] = [];
   if (kind === "json") highlightJson(content, 0, content.length, highlights);
   else highlightXml(content, 0, content.length, highlights);
-  return { kind, content, highlights, error };
+  return { kind, content, highlights, folds: findStructuredPreviewFolds(kind, content), error };
 };

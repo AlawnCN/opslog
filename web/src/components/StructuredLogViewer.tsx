@@ -2,7 +2,7 @@ import { codeFolding, foldAll, foldEffect, foldedRanges, foldGutter, foldKeymap,
 import { EditorState, StateEffect, StateField, type Extension, type Range } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { directChildLogFolds } from "../log-fold-hierarchy";
+import { directChildLogFolds, serviceFoldExpansionAnchor } from "../log-fold-hierarchy";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import type { LogReaderFoldMode } from "../log-reader-preferences";
 import type { InspectableLogStructureKind } from "../structured-log-preview";
@@ -90,11 +90,16 @@ const unfoldOneLevel = (
   parent: FoldRange,
   folds: TransactionLogAnalysis["folds"]
 ) => {
+  const effects: Array<StateEffect<unknown>> = [
+    unfoldEffect.of(parent),
+    ...directChildLogFolds(folds, parent).map(({ from, to }) => foldEffect.of({ from, to }))
+  ];
+  const serviceAnchor = serviceFoldExpansionAnchor(folds, parent);
+  if (serviceAnchor !== undefined) {
+    effects.push(EditorView.scrollIntoView(serviceAnchor, { y: "start", yMargin: 12 }));
+  }
   view.dispatch({
-    effects: [
-      unfoldEffect.of(parent),
-      ...directChildLogFolds(folds, parent).map(({ from, to }) => foldEffect.of({ from, to }))
-    ]
+    effects
   });
 };
 

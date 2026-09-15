@@ -7,6 +7,10 @@ export type LogHighlightKind =
   | "sql-keyword"
   | "sql-table"
   | "sql-muted"
+  | "sql-result-label"
+  | "sql-result-key"
+  | "sql-result-number"
+  | "sql-result-literal"
   | "message-key"
   | "message-info"
   | "code-success"
@@ -44,7 +48,7 @@ export interface LogFoldBlock {
   lineFrom: number;
   from: number;
   to: number;
-  kind: "json" | "xml" | "java" | "stack" | "service";
+  kind: "json" | "xml" | "java" | "sql-result" | "stack" | "service";
 }
 
 export type LogOutlineCategory = "service" | "call" | "sql" | "failed-result" | "exception" | "structured";

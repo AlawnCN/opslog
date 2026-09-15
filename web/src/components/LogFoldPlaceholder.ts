@@ -12,6 +12,7 @@ const KIND_LABELS: Record<LogFoldBlock["kind"], string> = {
   json: "JSON",
   xml: "XML",
   java: "Java 对象",
+  "sql-result": "SQL Result",
   stack: "异常栈",
   service: "服务区段"
 };

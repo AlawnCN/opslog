@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
-import { directChildLogFolds } from "../web/src/log-fold-hierarchy";
+import { directChildLogFolds, serviceFoldExpansionAnchor } from "../web/src/log-fold-hierarchy";
 import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../web/src/custom-marker-layout";
 import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeCustomLogMarkers } from "../web/src/custom-log-marker-transfer";
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
-import { formatStructuredLogPreview } from "../web/src/structured-log-preview";
+import { directChildStructuredPreviewFolds, formatStructuredLogPreview } from "../web/src/structured-log-preview";
 import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot, encodePortableLogSnapshot, portableLogFilename, PORTABLE_LOG_FORMAT } from "../web/src/portable-log-export-data";
 
 test("plain and regular-expression searches return exact highlight ranges", () => {
@@ -274,6 +274,22 @@ test("structured payloads remain foldable after SQL folding is removed", () => {
   assert.equal(analysis.outline.structured[0]?.line, 1);
 });
 
+test("JSON assigned with equals keeps its outer array instead of starting at a nested object", () => {
+  const payload = JSON.stringify([{
+    gda: { msg_cd: "URM00000", msg_inf: "Success", req_bus_no: "FT26258UA6CA" },
+    bda: { prd_set_cd: "M5", ci_no: 768550, customer: { name: "STEPHEN NZIVO MWANGANGI" } }
+  }]);
+  const content = `2026-09-15T05:54:51.002Z [ntc.p_0_25] [INFO] -> Call URM response=${payload}`;
+  const analysis = analyzeTransactionLog(content);
+  const fold = analysis.folds.find(({ kind }) => kind === "json");
+
+  assert.ok(fold);
+  assert.equal(fold.from, content.indexOf("[", content.indexOf("response=")));
+  assert.equal(fold.to, content.length);
+  assert.equal(content.slice(fold.from, fold.to), payload);
+  assert.equal(analysis.stats.structured, 1);
+});
+
 test("JSON and XML structure previews are formatted with semantic highlights", () => {
   const json = formatStructuredLogPreview("json", '{"request":{"amount":6400,"valid":true}}');
   const xml = formatStructuredLogPreview("xml", '<root><request id="1"><amount>6400</amount></request><empty/></root>');
@@ -284,7 +300,27 @@ test("JSON and XML structure previews are formatted with semantic highlights", (
   assert.equal(xml.content, '<root>\n  <request id="1">\n    <amount>6400</amount>\n  </request>\n  <empty/>\n</root>');
   assert.ok(xml.highlights.some(({ kind }) => kind === "xml-name"));
   assert.ok(xml.highlights.some(({ kind }) => kind === "xml-attribute"));
+  assert.equal(json.folds.length, 2);
+  assert.equal(xml.folds.length, 2);
+  assert.ok(json.folds.every(({ from, to }) => from < to));
+  assert.ok(xml.folds.every(({ from, to }) => from < to));
   assert.match(formatStructuredLogPreview("json", '{"incomplete":').error ?? "", /不完整/);
+});
+
+test("structured preview unfolding restores only the direct child folds", () => {
+  const preview = formatStructuredLogPreview("json", JSON.stringify({
+    request: { account: { number: "1001" }, amount: 6400 },
+    response: { code: "0" }
+  }));
+  const root = preview.folds.find((fold) => fold.lineFrom === 0);
+  assert.ok(root);
+  const children = directChildStructuredPreviewFolds(preview.folds, root);
+  assert.equal(children.length, 2);
+  assert.deepEqual(
+    children.map((fold) => preview.content.slice(fold.from - 1, fold.from)),
+    ["{", "{"]
+  );
+  assert.equal(directChildStructuredPreviewFolds(preview.folds, children[0]).length, 1);
 });
 
 test("expanding a folded range keeps only its direct child ranges folded", () => {
@@ -296,6 +332,14 @@ test("expanding a folded range keeps only its direct child ranges folded", () =>
 
   assert.deepEqual(directChildLogFolds([parent, child, grandchild, sibling, outside], parent), [child, sibling]);
   assert.deepEqual(directChildLogFolds([parent, child, grandchild, sibling, outside], child), [grandchild]);
+});
+
+test("expanding a service fold anchors its header while structure folds stay local", () => {
+  const service = { lineFrom: 24, from: 80, to: 1_000, kind: "service" as const };
+  const json = { lineFrom: 120, from: 160, to: 420, kind: "json" as const };
+
+  assert.equal(serviceFoldExpansionAnchor([service, json], service), service.lineFrom);
+  assert.equal(serviceFoldExpansionAnchor([service, json], json), undefined);
 });
 
 test("analysis builds lightweight outline entries for navigable log categories", () => {
@@ -359,6 +403,23 @@ test("plain parameter lists and source line numbers are not mistaken for JSON nu
   assert.equal(analysis.folds.filter(({ kind }) => kind === "json").length, 0);
 });
 
+test("SQL results use their log semantics instead of being classified as JSON", () => {
+  const fields = Array.from({ length: 14 }, (_, index) => `field_${index}=${index}`).join(", ");
+  const structuredContent = `2026-09-15T01:37:22.709Z [cte.p_0_23] [INFO] -> execute result:[{${fields}, active=true}]`;
+  const scalarContent = "2026-09-15T01:37:22.710Z [cte.p_0_23] [INFO] -> execute result:[2]";
+  const structured = analyzeTransactionLog(structuredContent);
+  const scalar = analyzeTransactionLog(scalarContent);
+
+  assert.ok(structured.folds.some(({ kind }) => kind === "sql-result"));
+  assert.equal(structured.folds.some(({ kind }) => kind === "json"), false);
+  assert.equal(structured.outline.structured[0]?.detail, "SQL Result");
+  assert.ok(structured.highlights.some(({ kind }) => kind === "sql-result-key"));
+  assert.ok(structured.highlights.some(({ kind }) => kind === "sql-result-number"));
+  assert.equal(scalar.folds.length, 0);
+  assert.equal(scalar.outline.structured[0]?.detail, "SQL Result");
+  assert.ok(scalar.highlights.some(({ kind }) => kind === "sql-result-number"));
+});
+
 test("nested SQL highlights every scope while keeping table names prominent", () => {
   const sql = "select count(1) from (select a.id, (select max(x.id) from audit_log x where x.id = a.id) last_id from account a left join customer c on c.id = a.customer_id where a.status = 'A' union all select id, 0 from archive_account where status = 'C') q where q.id > 0 order by q.id";
   const content = `2026-09-07T06:35:02.823Z [cte.p_0_21] [INFO] -> selectList sql:[${sql}]`;
@@ -403,4 +464,18 @@ test("XML structures keep semantic highlighting on opening and closing field nam
   assert.equal(highlightedFields.filter((field) => field === "msgInf").length, 2);
   assert.equal(highlightedFields.filter((field) => field === "msg_inf").length, 2);
   assert.equal(kinds.has("json-number"), false);
+});
+
+test("XML wrapped by an edb assignment is parsed as an XML structure", () => {
+  const xml = `<root><gda><req_bus_no>FT26258XYPKU</req_bus_no><msg_cd>SCM60001</msg_cd></gda><cache_edb><rsk_params_desc>${"security review ".repeat(12)}</rsk_params_desc></cache_edb></root>`;
+  const content = `2026-09-15T01:37:22.348Z [cte.p_0_23] [INFO] -> checkFactorParam start paramNo=[13], ruleFactor=[dormant_account_flag], edb=[${xml}]`;
+  const analysis = analyzeTransactionLog(content);
+  const fold = analysis.folds.find(({ kind }) => kind === "xml");
+
+  assert.ok(fold);
+  assert.equal(fold.from, content.indexOf("<root>"));
+  assert.equal(fold.to, content.indexOf("</root>") + "</root>".length);
+  assert.equal(content[fold.to], "]");
+  assert.equal(analysis.outline.structured[0]?.detail, "XML");
+  assert.ok(analysis.highlights.some(({ kind }) => kind === "xml-name"));
 });

@@ -1,5 +1,6 @@
 import type { LogFoldBlock, LogHighlight, LogLineStyle, LogOutline, LogOutlineCategory, TransactionLogAnalysis } from "./transaction-log-model";
 import { highlightSql } from "./transaction-log-sql";
+import { findSqlResultRange, highlightSqlResult } from "./transaction-log-sql-result";
 import { findStructuredRange, highlightJson, highlightXml } from "./transaction-log-structured";
 import { addRegexHighlights, highlightSemanticFields, parseLogHeader } from "./transaction-log-syntax";
 
@@ -110,7 +111,17 @@ export const analyzeTransactionLog = (content: string): TransactionLogAnalysis =
       failedResults += 1;
       addOutlineItem(outline, "failed-result", lineNumber, lineFrom, lineTo);
     }
-    const structure = lineFrom >= structuredUntil
+    const sqlResult = lineFrom >= structuredUntil
+      ? findSqlResultRange(content, line, lineFrom, lineTo, payloadFrom)
+      : undefined;
+    if (sqlResult) {
+      structuredUntil = Math.max(structuredUntil, sqlResult.end);
+      structured += 1;
+      highlightSqlResult(content, line, lineFrom, payloadFrom, sqlResult, highlights);
+      addInnerFold(folds, { lineFrom, from: sqlResult.start, to: sqlResult.end, kind: "sql-result" });
+      addOutlineItem(outline, "structured", lineNumber, lineFrom, lineTo, "SQL Result");
+    }
+    const structure = !sqlResult && lineFrom >= structuredUntil
       ? findStructuredRange(content, line, lineFrom, lineTo, payloadFrom)
       : undefined;
     if (structure) {
