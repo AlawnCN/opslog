@@ -337,7 +337,7 @@
       var foldLabels = { json: "JSON", xml: "XML", java: "Java 对象", "sql-result": "SQL Result", stack: "异常栈", service: "服务区段" };
       var open = button("", "… " + (foldLabels[foldEntry.fold.kind] || "折叠内容") + " · " + foldedLines + " 行", "展开折叠区域");
       open.dataset.fold = String(foldEntry.index);
-      var inspectable = foldEntry.fold.kind === "json" || foldEntry.fold.kind === "xml" || foldEntry.fold.kind === "java";
+      var inspectable = foldEntry.fold.kind === "json" || foldEntry.fold.kind === "xml" || foldEntry.fold.kind === "java" || foldEntry.fold.kind === "sql-result";
       var inspect;
       if (inspectable && globalThis.OpsLogPortablePreview) {
         inspect = button("fold-preview", "", "格式化预览 " + foldLabels[foldEntry.fold.kind]);

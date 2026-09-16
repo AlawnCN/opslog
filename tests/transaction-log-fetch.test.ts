@@ -2,11 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { OpsLogSessionCache, transactionLogCacheKey } from "../web/src/opslog-session-cache";
 import { RECENT_TRANSACTION_LOG_WINDOW_MS, transactionLogCanUseCache, transactionLogNeedsWiderWindow, transactionLogTimeWindows } from "../web/src/transaction-log-fetch";
+import { rollingNairobiRange, toUtcIso } from "../web/src/time";
 
 const fallback = {
   startTime: "2026-09-01T00:00:00.000Z",
   endTime: "2026-09-02T00:00:00.000Z"
 };
+
+test("快捷时间范围以每次查询时的当前时间重新计算", () => {
+  const first = rollingNairobiRange(1, new Date("2026-09-16T11:00:00.000Z"));
+  const refreshed = rollingNairobiRange(1, new Date("2026-09-16T14:25:00.000Z"));
+
+  assert.deepEqual(first, {
+    startLocal: "2026-09-15T14:00",
+    endLocal: "2026-09-16T14:00"
+  });
+  assert.deepEqual(refreshed, {
+    startLocal: "2026-09-15T17:25",
+    endLocal: "2026-09-16T17:25"
+  });
+  assert.equal(Date.parse(toUtcIso(refreshed.endLocal)) - Date.parse(toUtcIso(refreshed.startLocal)), 24 * 60 * 60 * 1000);
+});
 
 test("交易日志优先使用时间锚点的大窗口", () => {
   const windows = transactionLogTimeWindows({
@@ -48,7 +64,7 @@ test("时间锚点不可用时回退外层查询范围", () => {
   assert.deepEqual(transactionLogTimeWindows({}, fallback), [fallback]);
 });
 
-test("最新三分钟的交易日志不使用缓存", () => {
+test("最新二十分钟的交易日志不使用缓存", () => {
   const now = Date.parse("2026-09-14T12:00:00.000Z");
   assert.equal(transactionLogCanUseCache({
     "ecp.txn.timestamp": new Date(now - RECENT_TRANSACTION_LOG_WINDOW_MS + 1).toISOString()
@@ -58,7 +74,7 @@ test("最新三分钟的交易日志不使用缓存", () => {
   }, now), false);
 });
 
-test("达到三分钟的交易日志恢复缓存", () => {
+test("达到二十分钟的交易日志恢复缓存", () => {
   const now = Date.parse("2026-09-14T12:00:00.000Z");
   assert.equal(transactionLogCanUseCache({
     "ecp.txn.timestamp": new Date(now - RECENT_TRANSACTION_LOG_WINDOW_MS).toISOString()

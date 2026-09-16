@@ -1,4 +1,4 @@
-import { nairobiLocal } from "./time";
+import { rollingNairobiRange } from "./time";
 import type { SearchFilters } from "./types";
 
 export const PAGE_SIZE_KEY = "opslog.page-size.v1";
@@ -10,10 +10,9 @@ export const initialPageSize = (): number => {
 };
 
 export const initialFilters = (): SearchFilters => {
-  const end = new Date();
-  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  const range = rollingNairobiRange(1);
   return {
-    startLocal: nairobiLocal(start), endLocal: nairobiLocal(end), index: "", txnId: "", traceId: "",
+    ...range, index: "", txnId: "", traceId: "",
     txnNo: "", business: "", service: "", messageCode: "", messageInfo: "", status: "ALL",
     minDurationMs: "", node: "", keyword: "", level: "", file: "", application: ""
   };

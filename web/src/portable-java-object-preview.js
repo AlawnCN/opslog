@@ -93,10 +93,10 @@
     return [path].concat(node.members.flatMap(function (member, index) { return expandablePaths(member.value, path + "." + index); }));
   }
 
-  function mount(container, source) {
+  function mount(container, source, rootBadge, expandAllByDefault) {
     var root = parseValue(source, 0);
     var paths = expandablePaths(root, "root");
-    var expanded = new Set(["root"]);
+    var expanded = new Set(expandAllByDefault ? paths : ["root"]);
     function renderNode(fragment, node, fieldName, path, depth) {
       var expandable = node.kind !== "scalar";
       var opened = expanded.has(path);
@@ -113,7 +113,7 @@
         });
         row.append(toggle);
       } else row.append(element("span", "java-object-toggle-spacer"));
-      row.append(element("span", "java-object-kind " + (fieldName ? "is-field" : "is-class"), fieldName ? "f" : "C"));
+      row.append(element("span", "java-object-kind " + (fieldName ? "is-field" : "is-class"), fieldName ? "f" : (rootBadge || "C")));
       if (fieldName) row.append(element("span", "java-object-field", fieldName), element("span", "java-object-equals", "="));
       row.append(element("span", node.kind === "scalar" ? "java-object-value is-" + node.scalarKind : "java-object-type", nodeSummary(node)));
       fragment.append(row);

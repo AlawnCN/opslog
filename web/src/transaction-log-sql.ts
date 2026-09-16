@@ -66,19 +66,35 @@ const findMutedRanges = (sql: string, tokens: SqlToken[]): RelativeRange[] => {
       const to = boundary?.from ?? sql.length;
       if (to > token.to) ranges.push({ from: token.to, to });
     }
+    if (token.text === "insert") {
+      const into = findSameDepth(tokens, index, token.depth, new Set(["into"]));
+      if (into?.text !== "into") return;
+      const intoIndex = tokens.indexOf(into);
+      const values = findSameDepth(tokens, intoIndex, token.depth, new Set(["values"]));
+      const table = findTableAfterToken(sql, into);
+      if (!table || values?.text !== "values") return;
+      if (values.from > table.to) ranges.push({ from: table.to, to: values.from });
+      if (sql.length > values.to) ranges.push({ from: values.to, to: sql.length });
+    }
   });
   return ranges;
+};
+
+const findTableAfterToken = (sql: string, token: SqlToken): RelativeRange | undefined => {
+  let cursor = token.to;
+  while (/\s/.test(sql[cursor] ?? "")) cursor += 1;
+  if (sql[cursor] === "(") return undefined;
+  const table = /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*/.exec(sql.slice(cursor));
+  if (!table || KEYWORDS.has(table[0].toLowerCase())) return undefined;
+  return { from: cursor, to: cursor + table[0].length };
 };
 
 const findTableRanges = (sql: string, tokens: SqlToken[]): RelativeRange[] => {
   const ranges: RelativeRange[] = [];
   tokens.forEach((token) => {
     if (!TABLE_PRECEDERS.has(token.text)) return;
-    let cursor = token.to;
-    while (/\s/.test(sql[cursor] ?? "")) cursor += 1;
-    if (sql[cursor] === "(") return;
-    const table = /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*/.exec(sql.slice(cursor));
-    if (table && !KEYWORDS.has(table[0].toLowerCase())) ranges.push({ from: cursor, to: cursor + table[0].length });
+    const table = findTableAfterToken(sql, token);
+    if (table) ranges.push(table);
   });
   return ranges;
 };

@@ -7,7 +7,7 @@ const INITIAL_RADIUS_MS = 60 * 60 * 1000;
 const EXPANDED_RADIUS_MS = 6 * 60 * 60 * 1000;
 const DURATION_PADDING_MS = 30 * 60 * 1000;
 const BOUNDARY_MARGIN_MS = 60 * 1000;
-export const RECENT_TRANSACTION_LOG_WINDOW_MS = 3 * 60 * 1000;
+export const RECENT_TRANSACTION_LOG_WINDOW_MS = 20 * 60 * 1000;
 
 const scalar = (value: unknown): unknown => Array.isArray(value) ? value[0] : value;
 

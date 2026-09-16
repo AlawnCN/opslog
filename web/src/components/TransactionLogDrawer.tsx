@@ -16,6 +16,7 @@ import { JavaObjectPreviewDialog } from "./JavaObjectPreviewDialog";
 import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 import { StructuredLogPreviewDialog } from "./StructuredLogPreviewDialog";
+import { SqlResultPreviewDialog } from "./SqlResultPreviewDialog";
 
 const READER_WIDTH_KEY = "opslog.transaction-log-reader.width-ratio.v1";
 const DEFAULT_READER_WIDTH_RATIO = .5;
@@ -62,7 +63,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   const [activeCustomMarkerId, setActiveCustomMarkerId] = useState<string>();
   const [exportingPortable, setExportingPortable] = useState(false);
   const [portableExportNotice, setPortableExportNotice] = useState<string>();
-  const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind | "java"; source: string }>();
+  const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind | "java" | "sql-result"; source: string }>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +330,8 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
         />}
         {structuredPreview?.kind === "java"
           ? <JavaObjectPreviewDialog source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />
+          : structuredPreview?.kind === "sql-result"
+            ? <SqlResultPreviewDialog source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />
           : structuredPreview && <StructuredLogPreviewDialog kind={structuredPreview.kind} source={structuredPreview.source} onClose={() => setStructuredPreview(undefined)} />}
       </div>}
     </aside>

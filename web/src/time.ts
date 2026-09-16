@@ -7,6 +7,11 @@ export const nairobiLocal = (date: Date): string => {
   return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}T${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
 };
 
+export const rollingNairobiRange = (days: number, end = new Date()): { startLocal: string; endLocal: string } => ({
+  startLocal: nairobiLocal(new Date(end.getTime() - days * 86_400_000)),
+  endLocal: nairobiLocal(end)
+});
+
 export const toUtcIso = (nairobiValue: string): string => {
   const match = nairobiValue.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
   if (!match) throw new Error("时间格式无效");

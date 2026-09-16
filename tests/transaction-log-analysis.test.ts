@@ -9,6 +9,7 @@ import { clampCustomMarkerWidthRatio, CUSTOM_MARKER_WIDTH_RATIO_KEY, readCustomM
 import { CUSTOM_LOG_MARKER_EXPORT_FORMAT, mergeCustomLogMarkerImport, serializeCustomLogMarkers } from "../web/src/custom-log-marker-transfer";
 import { buildCustomLogMarkerOutline, cloneCustomLogMarker, combineCustomLogMarkers, createEmptyCustomLogMarker, CUSTOM_LOG_MARKERS_KEY, readCustomLogMarkers, reorderCustomLogMarkerRules, reorderCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../web/src/custom-log-markers";
 import { javaObjectSourceStart, parseJavaObjectPreview } from "../web/src/java-object-preview";
+import { parseSqlResultPreview } from "../web/src/sql-result-preview";
 import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
 import { directChildStructuredPreviewFolds, formatStructuredLogPreview } from "../web/src/structured-log-preview";
@@ -85,7 +86,7 @@ test("portable log snapshot uses lossless gzip compression when the platform sup
   assert.equal(decoded.content, content);
 });
 
-test("portable reader embeds equivalent structured and Java preview engines", () => {
+test("portable reader embeds equivalent structured, Java, and SQL Result preview engines", () => {
   const context: Record<string, unknown> = {};
   runInNewContext(readFileSync(new URL("../web/src/portable-structured-preview.js", import.meta.url), "utf8"), context);
   runInNewContext(readFileSync(new URL("../web/src/portable-java-object-preview.js", import.meta.url), "utf8"), context);
@@ -99,6 +100,7 @@ test("portable reader embeds equivalent structured and Java preview engines", ()
   const json = structured.format("json", '[{"gda":{"req_bus_no":"FT001"}}]');
   const xml = structured.format("xml", "<root><gda><req_bus_no>FT001</req_bus_no></gda></root>");
   const javaList = java.parse("[[RestrictionCode(rscCd=R01), RestrictionCode(rscCd=R02)]]");
+  const sqlRows = java.parse("[{lmt_no=LMTG785995, use_amt=0.00, active=true}]");
 
   assert.equal(json.error, undefined);
   assert.match(json.content, /^\{\n\s+"gda"/);
@@ -108,11 +110,27 @@ test("portable reader embeds equivalent structured and Java preview engines", ()
   assert.equal(javaList.kind, "list");
   assert.equal(javaList.members[0]?.value.kind, "list");
   assert.equal(javaList.members[0]?.value.members.length, 2);
+  assert.equal(sqlRows.kind, "list");
+  assert.equal(sqlRows.members[0]?.value.kind, "map");
+  assert.equal(sqlRows.members[0]?.value.members.length, 3);
 
   const exportSource = readFileSync(new URL("../web/src/portable-log-export.ts", import.meta.url), "utf8");
   assert.match(exportSource, /portableStructuredPreview/);
   assert.match(exportSource, /portableJavaPreview/);
   assert.match(exportSource, /portablePreviewRuntime/);
+  assert.match(readFileSync(new URL("../web/src/portable-log-runtime.js", import.meta.url), "utf8"), /kind === "sql-result"/);
+  assert.match(readFileSync(new URL("../web/src/portable-log-preview-runtime.js", import.meta.url), "utf8"), /kind === "sql-result"\);/);
+});
+
+test("SQL Result preview supports scalar and structured results", () => {
+  const scalar = parseSqlResultPreview("2");
+  const rows = parseSqlResultPreview("[{lmt_no=LMTG785995, use_amt=0.00, active=true}]");
+
+  assert.equal(scalar.kind, "scalar");
+  assert.equal(scalar.scalarKind, "number");
+  assert.equal(rows.kind, "list");
+  assert.equal(rows.members[0]?.value.kind, "map");
+  assert.deepEqual(rows.members[0]?.value.members.map(({ name }) => name), ["lmt_no", "use_amt", "active"]);
 });
 
 test("regular-expression search reports invalid patterns and skips empty matches", () => {
@@ -296,6 +314,21 @@ test("SQL keeps semantic highlighting without becoming foldable", () => {
   assert.ok(analysis.highlights.some(({ kind }) => kind === "sql-table"));
   assert.ok(analysis.highlights.some(({ kind }) => kind === "sql-muted"));
   assert.equal(analysis.folds.length, 0);
+});
+
+test("INSERT columns and values use the same muted treatment as SELECT fields", () => {
+  const sql = `insert into t_pub_txjnl(sys_cnl, req_bus_no, bus_ext_dat) values('OTH', 'FT001', '{"gda":{"amount":"500"}}')`;
+  const content = `2026-09-16T11:48:48.944Z [cte.d_0_21] [INFO] -> sql:[${sql}]`;
+  const analysis = analyzeTransactionLog(content);
+  const values = (kind: string) => analysis.highlights
+    .filter((highlight) => highlight.kind === kind)
+    .map(({ from, to }) => content.slice(from, to));
+  const mutedText = values("sql-muted").join("");
+
+  assert.deepEqual(values("sql-table"), ["t_pub_txjnl"]);
+  assert.match(mutedText, /sys_cnl, req_bus_no, bus_ext_dat/);
+  assert.match(mutedText, /'OTH', 'FT001'/);
+  assert.match(mutedText, /"amount":"500"/);
 });
 
 test("structured payloads remain foldable after SQL folding is removed", () => {

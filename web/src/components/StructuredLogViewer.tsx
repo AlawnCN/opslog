@@ -25,7 +25,7 @@ interface StructuredLogViewerProps {
   activeMatch: number;
   wrapLines: boolean;
   foldMode: LogReaderFoldMode;
-  onInspectStructure?: (kind: InspectableLogStructureKind | "java", source: string) => void;
+  onInspectStructure?: (kind: InspectableLogStructureKind | "java" | "sql-result", source: string) => void;
 }
 
 const setSemanticDecorations = StateEffect.define<DecorationSet>();
@@ -183,7 +183,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
         }),
         placeholderDOM: (view, _onUnfold, prepared) => {
           const fold = prepared as LogFoldPlaceholderData;
-          const inspectable = fold.kind === "json" || fold.kind === "xml" || fold.kind === "java" ? fold.kind : undefined;
+          const inspectable = fold.kind === "json" || fold.kind === "xml" || fold.kind === "java" || fold.kind === "sql-result" ? fold.kind : undefined;
           return createLogFoldPlaceholder(view, (event) => {
             event.preventDefault();
             unfoldOneLevel(view, fold, analysis.folds);

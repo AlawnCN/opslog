@@ -9,7 +9,7 @@ import { TraceDrawer } from "./components/TraceDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
-import { nairobiLocal, toUtcIso } from "./time";
+import { rollingNairobiRange, toUtcIso } from "./time";
 import type { Environment, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
 import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
@@ -147,11 +147,17 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
   }, [appUpdater, logResources]);
 
-  const runSearch = async (targetPage = 1, targetPageSize = pageSize, forceRefresh = false) => {
-    if (!request) { setNotice({ tone: "error", text: "请选择环境并填写有效时间范围" }); return; }
+  const runSearch = async (targetPage = 1, targetPageSize = pageSize, forceRefresh = false, refreshSelectedRange = false) => {
+    let activeRequest = request;
+    if (activeRequest && refreshSelectedRange && selectedRangeDays !== null) {
+      const range = rollingNairobiRange(selectedRangeDays);
+      setFilters((current) => ({ ...current, ...range }));
+      activeRequest = { ...activeRequest, startTime: toUtcIso(range.startLocal), endTime: toUtcIso(range.endLocal) };
+    }
+    if (!activeRequest) { setNotice({ tone: "error", text: "请选择环境并填写有效时间范围" }); return; }
     const runId = ++searchRunId.current;
     controller.current?.abort();
-    const nextRequest = { ...request, page: targetPage, pageSize: targetPageSize };
+    const nextRequest = { ...activeRequest, page: targetPage, pageSize: targetPageSize };
     const cacheKey = searchCacheKey(nextRequest);
     if (forceRefresh) sessionCache.current.clearSearch();
     const cached = forceRefresh ? undefined : sessionCache.current.getSearch(cacheKey);
@@ -206,9 +212,8 @@ export default function App() {
     void runSearch(1, next, true);
   };
   const setRange = (days: number) => {
-    const end = new Date();
     setSelectedRangeDays(days);
-    setFilters((current) => ({ ...current, startLocal: nairobiLocal(new Date(end.getTime() - days * 86_400_000)), endLocal: nairobiLocal(end) }));
+    setFilters((current) => ({ ...current, ...rollingNairobiRange(days) }));
   };
   const exportCurrent = async () => {
     if (!request) return;
@@ -224,7 +229,7 @@ export default function App() {
     <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onImportConfig={importConfig} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} />
     <main>
-      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true)} onExport={exportCurrent} onRange={setRange} />
+      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
       <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <select value={pageSize} disabled={loading} onChange={(event) => changePageSize(Number(event.target.value))}>{PAGE_SIZES.map((size) => <option key={size} value={size}>{size} 条</option>)}</select></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}
