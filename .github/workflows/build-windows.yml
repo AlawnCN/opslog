@@ -79,7 +79,9 @@ jobs:
 
       - name: Build OpsLog Reader for Windows
         env:
-          CARGO_TARGET_DIR: src-tauri/target/reader
+          # Cargo resolves this path relative to the Rust manifest directory
+          # (src-tauri), so use an absolute path to avoid src-tauri/src-tauri.
+          CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target/reader
         run: npm run reader:windows:setup
 
       - name: Create OpsLog Reader Windows packages
@@ -186,7 +188,9 @@ jobs:
 
       - name: Build OpsLog Reader for macOS
         env:
-          CARGO_TARGET_DIR: src-tauri/target/reader
+          # Cargo resolves this path relative to the Rust manifest directory
+          # (src-tauri), so use an absolute path to avoid src-tauri/src-tauri.
+          CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target/reader
         run: npm run reader:macos -- --target ${{ matrix.target }}
 
       - name: Create OpsLog Reader macOS portable archive
