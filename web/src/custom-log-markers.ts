@@ -1,5 +1,6 @@
 import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MATCHES, type LogSearchMatch } from "./transaction-log-search";
 import type { LogHighlight, LogOutlineItem } from "./transaction-log-model";
+import { readerSettingsStorage } from "./reader-settings-storage";
 
 export interface CustomLogMarkerRule {
   id: string;
@@ -76,7 +77,7 @@ export const normalizeCustomLogMarkers = (value: unknown, maximum = MAX_CUSTOM_L
     .slice(0, Math.max(0, maximum));
 };
 
-export const readCustomLogMarkers = (storage: MarkerStorage = localStorage): CustomLogMarker[] => {
+export const readCustomLogMarkers = (storage: MarkerStorage = readerSettingsStorage): CustomLogMarker[] => {
   try {
     const value = JSON.parse(storage.getItem(CUSTOM_LOG_MARKERS_KEY) ?? "[]") as unknown;
     return normalizeCustomLogMarkers(value);
@@ -85,7 +86,7 @@ export const readCustomLogMarkers = (storage: MarkerStorage = localStorage): Cus
   }
 };
 
-export const storeCustomLogMarkers = (markers: CustomLogMarker[], storage: MarkerStorage = localStorage): void => {
+export const storeCustomLogMarkers = (markers: CustomLogMarker[], storage: MarkerStorage = readerSettingsStorage): void => {
   try {
     storage.setItem(CUSTOM_LOG_MARKERS_KEY, JSON.stringify(markers.slice(0, MAX_CUSTOM_LOG_MARKERS)));
   } catch {

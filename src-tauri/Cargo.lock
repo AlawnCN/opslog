@@ -2493,10 +2493,11 @@ dependencies = [
 
 [[package]]
 name = "opslog"
-version = "3.0.27"
+version = "3.0.28"
 dependencies = [
  "axum",
  "chrono",
+ "core-foundation 0.10.1",
  "dirs",
  "futures-util",
  "getrandom 0.3.4",
@@ -2511,6 +2512,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "tokio",
+ "winreg",
 ]
 
 [[package]]

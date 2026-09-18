@@ -77,6 +77,30 @@ jobs:
           Copy-Item $installer.FullName "release/OpsLog_${packageVersion}_windows_x64_setup.exe"
           Copy-Item $installerSignature "release/OpsLog_${packageVersion}_windows_x64_setup.exe.sig"
 
+      - name: Build OpsLog Reader for Windows
+        env:
+          CARGO_TARGET_DIR: src-tauri/target/reader
+        run: npm run reader:windows:setup
+
+      - name: Create OpsLog Reader Windows packages
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json | ConvertFrom-Json).version
+          $portableRoot = "release/OpsLog Reader"
+          $executable = "src-tauri/target/reader/release/opslog-reader.exe"
+          $installer = Get-ChildItem "src-tauri/target/reader/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (!(Test-Path $executable)) {
+            throw "OpsLog Reader executable was not found: $executable"
+          }
+          if ($null -eq $installer) {
+            throw "OpsLog Reader NSIS installer was not found"
+          }
+          New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
+          Copy-Item $executable "$portableRoot/OpsLog Reader.exe"
+          Copy-Item README.md "$portableRoot/README.md"
+          Compress-Archive -Path $portableRoot -DestinationPath "release/OpsLog_Reader_${packageVersion}_windows_x64_portable.zip" -Force
+          Copy-Item $installer.FullName "release/OpsLog_Reader_${packageVersion}_windows_x64_setup.exe"
+
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
@@ -159,6 +183,25 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}_portable.zip"
           cp "$updater_archive" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz"
           cp "$updater_archive.sig" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz.sig"
+
+      - name: Build OpsLog Reader for macOS
+        env:
+          CARGO_TARGET_DIR: src-tauri/target/reader
+        run: npm run reader:macos -- --target ${{ matrix.target }}
+
+      - name: Create OpsLog Reader macOS portable archive
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          bundle_root="src-tauri/target/reader/${{ matrix.target }}/release/bundle"
+          dmg="$(find "$bundle_root/dmg" -type f -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          app_path="$bundle_root/macos/OpsLog Reader.app"
+          test -d "$app_path"
+          executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
+          file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
+          cp "$dmg" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}_portable.zip"
 
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4

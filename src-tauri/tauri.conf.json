@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "OpsLog",
-  "version": "3.0.27",
+  "version": "3.0.28",
   "identifier": "com.murong.opslog",
   "build": {
     "frontendDist": "../dist-web",
@@ -29,7 +29,10 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'",
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "plugins": {

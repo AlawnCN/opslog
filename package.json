@@ -1,6 +1,6 @@
 {
   "name": "opslog-web",
-  "version": "3.0.27",
+  "version": "3.0.28",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,8 +16,13 @@
     "desktop:windows": "tauri build --no-bundle",
     "desktop:portable": "npm run desktop:windows",
     "desktop:windows:setup": "tauri build --bundles nsis",
+    "reader:dev": "tauri dev --features reader-app --config src-tauri/tauri.reader.conf.json",
+    "reader:build": "tauri build --features reader-app --config src-tauri/tauri.reader.conf.json",
+    "reader:macos": "tauri build --features reader-app --bundles app,dmg --config src-tauri/tauri.reader.conf.json",
+    "reader:windows": "tauri build --features reader-app --no-bundle --config src-tauri/tauri.reader.conf.json",
+    "reader:windows:setup": "tauri build --features reader-app --bundles nsis --config src-tauri/tauri.reader.conf.json",
     "desktop:info": "tauri info",
-    "test": "npm run build && node --import tsx --test tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/routes.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-release-notes.test.ts",
+    "test": "npm run build && node --import tsx --test tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/reader-app.test.ts tests/routes.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-release-notes.test.ts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {

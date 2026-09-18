@@ -2,5 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    #[cfg(feature = "reader-app")]
+    opslog_lib::run_reader();
+
+    #[cfg(not(feature = "reader-app"))]
     opslog_lib::run();
 }

@@ -1,11 +1,15 @@
 [package]
 name = "opslog"
-version = "3.0.27"
+version = "3.0.28"
 description = "Portable M5/Faulu log query console"
 authors = ["MuRong Technology"]
 license = "Proprietary"
 edition = "2024"
 rust-version = "1.85"
+
+[features]
+default = []
+reader-app = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,3 +36,9 @@ tauri-plugin-log = "2"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-updater = "2.11.0"
 tokio = { version = "1", features = ["fs", "net", "sync"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.55"

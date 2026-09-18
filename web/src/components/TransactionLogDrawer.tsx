@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { forwardRef, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../custom-marker-layout";
 import { buildCustomLogMarkerOutline, createCustomLogMarker, MAX_CUSTOM_LOG_MARKERS, readCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../custom-log-markers";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
@@ -9,6 +9,7 @@ import { errorMessage, savePortableLogHtml } from "../api";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches, MAX_LOG_SEARCH_MATCHES } from "../transaction-log-search";
 import type { InspectableLogStructureKind } from "../structured-log-preview";
 import type { LogOutlineCategory } from "../transaction-log-model";
+import { readerSettingsStorage } from "../reader-settings-storage";
 import { CloseIcon, DownloadIcon, MarkerAddIcon, SearchIcon } from "./Icons";
 import { CustomLogMarkerShelf, type CustomLogMarkerShelfHandle } from "./CustomLogMarkerShelf";
 import { CustomMarkerSectionResizeHandle } from "./CustomMarkerSectionResizeHandle";
@@ -30,20 +31,25 @@ const clampReaderWidthRatio = (ratio: number): number => {
 
 const readReaderWidthRatio = (): number => {
   try {
-    const saved = Number.parseFloat(localStorage.getItem(READER_WIDTH_KEY) ?? "");
+    const saved = Number.parseFloat(readerSettingsStorage.getItem(READER_WIDTH_KEY) ?? "");
     return clampReaderWidthRatio(Number.isFinite(saved) ? saved : DEFAULT_READER_WIDTH_RATIO);
   } catch {
     return DEFAULT_READER_WIDTH_RATIO;
   }
 };
 
-interface TransactionLogDrawerProps {
+export interface LogReaderWorkspaceProps {
   logId?: string;
   content: string;
   loading: boolean;
   remoteDurationMs?: number;
   cached?: boolean;
   onClose: () => void;
+  presentation?: "drawer" | "standalone";
+  eyebrow?: string;
+  title?: string;
+  sourceLabel?: string;
+  headerAction?: ReactNode;
 }
 
 export interface TransactionLogDrawerHandle {
@@ -51,7 +57,7 @@ export interface TransactionLogDrawerHandle {
   focusSearch: () => void;
 }
 
-export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, TransactionLogDrawerProps>(({ logId, content, loading, remoteDurationMs, cached, onClose }, ref) => {
+export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogReaderWorkspaceProps>(({ logId, content, loading, remoteDurationMs, cached, onClose, presentation = "drawer", eyebrow = "TRANSACTION LOG", title = "日志阅读器", sourceLabel, headerAction }, ref) => {
   const [keyword, setKeyword] = useState("");
   const [activeMatch, setActiveMatch] = useState(0);
   const [readerPreferences, setReaderPreferences] = useState(readLogReaderPreferences);
@@ -150,7 +156,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       resizeStart.current = null;
       setIsResizing(false);
       try {
-        localStorage.setItem(READER_WIDTH_KEY, String(widthRatioRef.current));
+        readerSettingsStorage.setItem(READER_WIDTH_KEY, String(widthRatioRef.current));
       } catch {
         // The reader remains resizable if storage is disabled.
       }
@@ -191,7 +197,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
     else return;
     event.preventDefault();
     try {
-      localStorage.setItem(READER_WIDTH_KEY, String(widthRatioRef.current));
+      readerSettingsStorage.setItem(READER_WIDTH_KEY, String(widthRatioRef.current));
     } catch {
       // Keyboard resizing still applies for this view.
     }
@@ -267,10 +273,10 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   };
 
   if (!logId) return null;
-  return <div className="drawer-backdrop" onMouseDown={onClose}>
-    <aside className="drawer log-reader-drawer" style={{ width: `${widthRatio * 100}vw` }} onMouseDown={(event) => event.stopPropagation()}>
-      <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />
-      <div className="drawer-heading"><div><span className="eyebrow">TRANSACTION LOG</span><h2>日志阅读器</h2><div className="log-reader-title-line"><code>{logId}</code><button type="button" className="portable-log-export" disabled={loading || !content || exportingPortable} aria-busy={exportingPortable} title="导出可在浏览器中离线打开的只读日志页面" onClick={() => void exportPortableReader()}>{exportingPortable ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}<span>{exportingPortable ? "正在生成阅读页…" : "导出阅读页"}</span></button></div>{portableExportNotice && <span className="portable-log-export-notice" role="status">{portableExportNotice}</span>}</div><button title="关闭阅读器" aria-label="关闭阅读器" onClick={onClose}><CloseIcon /></button></div>
+  return <div className={presentation === "standalone" ? "standalone-reader-shell" : "drawer-backdrop"} onMouseDown={presentation === "drawer" ? onClose : undefined}>
+    <aside className={presentation === "standalone" ? "standalone-log-reader" : "drawer log-reader-drawer"} style={presentation === "drawer" ? { width: `${widthRatio * 100}vw` } : undefined} onMouseDown={(event) => event.stopPropagation()}>
+      {presentation === "drawer" && <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />}
+      <div className="drawer-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2><div className="log-reader-title-line"><code>{logId}</code><button type="button" className="portable-log-export" disabled={loading || !content || exportingPortable} aria-busy={exportingPortable} title="导出可在浏览器中离线打开的只读日志页面" onClick={() => void exportPortableReader()}>{exportingPortable ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}<span>{exportingPortable ? "正在生成阅读页…" : "导出阅读页"}</span></button>{headerAction}</div>{portableExportNotice && <span className="portable-log-export-notice" role="status">{portableExportNotice}</span>}</div>{presentation === "drawer" && <button title="关闭当前日志" aria-label="关闭当前日志" onClick={onClose}><CloseIcon /></button>}</div>
       <div className="log-reader-controls">
         <div className={`log-reader-search-group${searchResult.error ? " has-error" : ""}`}>
           <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder={regexSearch ? "输入正则表达式查询日志" : "查询日志内容"} aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" aria-invalid={Boolean(searchResult.error)} aria-describedby={searchResult.error ? "log-reader-search-error" : undefined} /></label>
@@ -285,7 +291,7 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
       {!loading && content && <div className="log-reader-insights-shell" onPointerDown={(event) => event.stopPropagation()}>
         <div className="log-reader-insights" aria-label="日志分析摘要">
           <div className="built-in-marker-track">
-            <span className="reader-performance" title="远程时间包含 Kibana 查询、VPN 传输和正文接收">{cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
+            <span className="reader-performance" title={sourceLabel ? "本地文件读取与正文解析耗时" : "远程时间包含 Kibana 查询、VPN 传输和正文接收"}>{sourceLabel ? <><b>{sourceLabel}</b> 本地</> : cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
             <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
             <button type="button" data-log-outline-trigger className={outlineCategory === "service" ? "is-active" : undefined} title="查看微服务入口 Outline" onClick={() => toggleOutline("service")}><b>{analysis.stats.services}</b> 微服务</button>
             <button type="button" data-log-outline-trigger className={outlineCategory === "call" ? "is-active" : undefined} title="查看调用标记 Outline" onClick={() => toggleOutline("call")}><b>{analysis.stats.calls}</b> 调用标记</button>
@@ -338,4 +344,5 @@ export const TransactionLogDrawer = forwardRef<TransactionLogDrawerHandle, Trans
   </div>;
 });
 
-TransactionLogDrawer.displayName = "TransactionLogDrawer";
+LogReaderWorkspace.displayName = "LogReaderWorkspace";
+export const TransactionLogDrawer = LogReaderWorkspace;

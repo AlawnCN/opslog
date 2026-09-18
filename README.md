@@ -51,6 +51,10 @@ OpsLog 直接连接现有 Kibana，查询、下载和导出均由本机完成，
   <img src="docs/images/opslog-custom-markers.webp" alt="OpsLog 自定义标记编辑器" width="78%">
 </p>
 
+### 独立 TRC 阅读器
+
+Release 同时提供独立的 OpsLog Reader。首次启动可自行选择是否关联 `.trc` 文件；不关联也可手动打开。阅读、搜索、折叠、结构预览和自定义标记沿用 OpsLog 的同一套实现，两端共享阅读偏好与标记配置。
+
 ### 可交互 HTML
 
 日志可导出为单个只读 HTML 文件，在浏览器中离线打开。文件保留语义高亮、结构折叠、普通及正则搜索、内置标记、自定义标记和 Outline 跳转，无需安装 OpsLog。
@@ -136,6 +140,7 @@ macOS 与 Windows 桌面端支持自动更新。更新窗口展示完整 Changel
 ```bash
 npm install
 npm run desktop:dev
+npm run reader:dev
 ```
 
 浏览器模式：
@@ -162,15 +167,17 @@ npm run dev:lan
 ```bash
 # macOS
 npm run desktop:macos
+npm run reader:macos
 ```
 
 ```powershell
 # Windows x64
 npm install
 npm run desktop:windows:setup
+npm run reader:windows:setup
 ```
 
-GitHub Release 包含 Windows x64 安装版及绿色 ZIP、macOS Apple Silicon / Intel DMG 及便携 ZIP、更新包、签名、`latest.json` 和 `SHA256SUMS`。
+GitHub Release 同时生成 OpsLog 与 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG 及便携 ZIP。OpsLog 的更新包、签名、`latest.json` 与全部资产校验汇总在同一 Release 中。
 
 </details>
 

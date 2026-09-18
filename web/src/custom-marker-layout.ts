@@ -11,7 +11,7 @@ export const MAX_CUSTOM_MARKER_WIDTH_RATIO = .58;
 export const clampCustomMarkerWidthRatio = (ratio: number): number =>
   Math.min(MAX_CUSTOM_MARKER_WIDTH_RATIO, Math.max(MIN_CUSTOM_MARKER_WIDTH_RATIO, ratio));
 
-export const readCustomMarkerWidthRatio = (storage: MarkerLayoutStorage = localStorage): number => {
+export const readCustomMarkerWidthRatio = (storage: MarkerLayoutStorage = readerSettingsStorage): number => {
   try {
     const ratio = Number.parseFloat(storage.getItem(CUSTOM_MARKER_WIDTH_RATIO_KEY) ?? "");
     return clampCustomMarkerWidthRatio(Number.isFinite(ratio) ? ratio : DEFAULT_CUSTOM_MARKER_WIDTH_RATIO);
@@ -20,10 +20,11 @@ export const readCustomMarkerWidthRatio = (storage: MarkerLayoutStorage = localS
   }
 };
 
-export const storeCustomMarkerWidthRatio = (ratio: number, storage: MarkerLayoutStorage = localStorage): void => {
+export const storeCustomMarkerWidthRatio = (ratio: number, storage: MarkerLayoutStorage = readerSettingsStorage): void => {
   try {
     storage.setItem(CUSTOM_MARKER_WIDTH_RATIO_KEY, String(clampCustomMarkerWidthRatio(ratio)));
   } catch {
     // Resizing remains available for the current session when storage is unavailable.
   }
 };
+import { readerSettingsStorage } from "./reader-settings-storage";

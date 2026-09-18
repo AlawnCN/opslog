@@ -1,0 +1,53 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "OpsLog Reader",
+  "mainBinaryName": "opslog-reader",
+  "identifier": "com.murong.opslog.reader",
+  "build": {
+    "frontendDist": "../dist-web",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run web:dev",
+    "beforeBuildCommand": "npm run web:build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "OpsLog Reader · TRC 日志阅读器",
+        "url": "reader.html",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 700,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "reader"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "reader-icons/32x32.png",
+      "reader-icons/128x128.png",
+      "reader-icons/128x128@2x.png",
+      "reader-icons/icon.icns",
+      "reader-icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "独立的 TRC 日志阅读器",
+    "longDescription": "与 OpsLog 共享阅读能力和偏好配置的本地 TRC 日志阅读器",
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "infoPlist": "reader.Info.plist"
+    }
+  }
+}

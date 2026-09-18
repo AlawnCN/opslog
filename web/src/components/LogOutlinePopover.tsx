@@ -8,6 +8,7 @@ import {
   type LogOutlineResizeDirection
 } from "../log-outline-geometry";
 import type { LogHighlight, LogOutlineCategory, LogOutlineItem } from "../transaction-log-model";
+import { readerSettingsStorage } from "../reader-settings-storage";
 import { CloseIcon } from "./Icons";
 import { LogOutlineList } from "./LogOutlineList";
 
@@ -48,7 +49,7 @@ interface OutlineInteraction {
 
 const readStoredGeometry = (): LogOutlineGeometry | undefined => {
   try {
-    const parsed = JSON.parse(localStorage.getItem(OUTLINE_GEOMETRY_KEY) ?? "null") as Partial<LogOutlineGeometry> | null;
+    const parsed = JSON.parse(readerSettingsStorage.getItem(OUTLINE_GEOMETRY_KEY) ?? "null") as Partial<LogOutlineGeometry> | null;
     if (!parsed || ![parsed.x, parsed.y, parsed.width, parsed.height].every(Number.isFinite)) return undefined;
     return parsed as LogOutlineGeometry;
   } catch {
@@ -58,7 +59,7 @@ const readStoredGeometry = (): LogOutlineGeometry | undefined => {
 
 const storeGeometry = (geometry: LogOutlineGeometry) => {
   try {
-    localStorage.setItem(OUTLINE_GEOMETRY_KEY, JSON.stringify(geometry));
+    readerSettingsStorage.setItem(OUTLINE_GEOMETRY_KEY, JSON.stringify(geometry));
   } catch {
     // Moving and resizing remain available when local storage is disabled.
   }

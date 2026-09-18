@@ -5,6 +5,18 @@ interface SavedFile {
   path: string;
 }
 
+export interface TrcDocument {
+  name: string;
+  path: string;
+  content: string;
+}
+
+export interface TrcAssociationStatus {
+  supported: boolean;
+  associated: boolean;
+  platform: string;
+}
+
 export interface LanShareStatus {
   enabled: boolean;
   url?: string | null;
@@ -209,6 +221,17 @@ export const loadTrace = async (
   if (!response.ok) return parseError(response);
   return (await response.json()).rows;
 };
+
+export const loadStartupTrcFile = async (): Promise<TrcDocument | undefined> =>
+  (await desktopInvoke<TrcDocument | null>("load_startup_trc_file")) ?? undefined;
+
+export const getTrcAssociationStatus = async (): Promise<TrcAssociationStatus> => {
+  if (!desktopMode) return { supported: false, associated: false, platform: "browser" };
+  return desktopInvoke<TrcAssociationStatus>("get_trc_association_status");
+};
+
+export const associateTrcFiles = async (): Promise<TrcAssociationStatus> =>
+  desktopInvoke<TrcAssociationStatus>("associate_trc_files");
 
 export const importEnvironmentConfig = async (contents: string): Promise<string> => {
   if (desktopMode) return (await desktopInvoke<SavedFile>("save_environment_config", { contents })).path;

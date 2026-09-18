@@ -37,7 +37,7 @@ const normalizePreferences = (value: unknown): LogReaderPreferences => {
   };
 };
 
-export const readLogReaderPreferences = (storage: ReaderPreferenceStorage = localStorage): LogReaderPreferences => {
+export const readLogReaderPreferences = (storage: ReaderPreferenceStorage = readerSettingsStorage): LogReaderPreferences => {
   try {
     return normalizePreferences(JSON.parse(storage.getItem(LOG_READER_PREFERENCES_KEY) ?? "null"));
   } catch {
@@ -47,7 +47,7 @@ export const readLogReaderPreferences = (storage: ReaderPreferenceStorage = loca
 
 export const storeLogReaderPreferences = (
   preferences: LogReaderPreferences,
-  storage: ReaderPreferenceStorage = localStorage
+  storage: ReaderPreferenceStorage = readerSettingsStorage
 ) => {
   try {
     storage.setItem(LOG_READER_PREFERENCES_KEY, JSON.stringify(preferences));
@@ -55,3 +55,4 @@ export const storeLogReaderPreferences = (
     // Reader controls remain usable when local storage is disabled.
   }
 };
+import { readerSettingsStorage } from "./reader-settings-storage";
