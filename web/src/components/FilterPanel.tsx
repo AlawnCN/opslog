@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Environment, LogKind, SearchFilters } from "../types";
 import { DownloadIcon, SearchIcon } from "./Icons";
+import { AppSelect } from "./AppSelect";
 
 interface FilterPanelProps {
   kind: LogKind;
@@ -91,12 +92,12 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
             <Field label="节点">{input("node", "ecp.txn.node")}</Field>
             <Field label="错误码">{input("messageCode", "message.code")}</Field>
             <Field label="错误信息">{input("messageInfo", "message.info")}</Field>
-            <Field label="交易状态"><select value={filters.status} onChange={(event) => onChange("status", event.target.value)}><option value="ALL">全部状态</option><option value="SUCCESS">成功</option><option value="FAIL">失败</option></select></Field>
+            <Field label="交易状态"><AppSelect value={filters.status} ariaLabel="交易状态" options={[{ value: "ALL", label: "全部状态" }, { value: "SUCCESS", label: "成功" }, { value: "FAIL", label: "失败" }]} onChange={(value) => onChange("status", value)} /></Field>
             <Field label="最小耗时（ms）">{input("minDurationMs", "例如 1000", "number")}</Field>
           </>}
 
           {(kind === "application" || kind === "ecp" || kind === "generic") && <>
-            {kind === "generic" && <Field label="日志索引"><select value={filters.index} onChange={(event) => onChange("index", event.target.value)}>{indexes.map((item) => <option key={item}>{item}</option>)}</select></Field>}
+            {kind === "generic" && <Field label="日志索引"><AppSelect value={filters.index} ariaLabel="日志索引" options={indexes.map((item) => ({ value: item, label: item }))} onChange={(value) => onChange("index", value)} /></Field>}
             <Field label="应用名">{input("application", "ecp.log.application")}</Field>
             {kind !== "generic" && <Field label="日志级别">{input("level", "ERROR / WARN / INFO")}</Field>}
             {kind === "ecp" && <Field label="日志文件">{input("file", "ecp.log.file")}</Field>}

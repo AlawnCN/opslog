@@ -5,6 +5,9 @@ import { DISPLAY_FIELDS, type LogKind, type SearchInput } from "./domain.js";
 import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvironment } from "./environment-store.js";
 import { runEsql } from "./kibana-client.js";
 import { buildSearchQuery, buildTraceQuery, buildTrcQuery, pageRows } from "./query-builders.js";
+import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
+import { activateAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
+import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
@@ -92,6 +95,47 @@ apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   const environments = await loadEnvironments();
   response.json(environments.map(toPublicEnvironment));
 }));
+
+apiRouter.get("/ai/configuration", asyncRoute(async (_request, response) => {
+  response.json(await loadAiConfiguration());
+}));
+
+apiRouter.post("/ai/configuration", asyncRoute(async (request, response) => {
+  response.json(await saveAiProfile(saveAiProfileSchema.parse(request.body)));
+}));
+
+apiRouter.post("/ai/configuration/active", asyncRoute(async (request, response) => {
+  const { id } = z.object({ id: z.string().min(1).max(100) }).parse(request.body);
+  response.json(await activateAiProfile(id));
+}));
+
+apiRouter.post("/ai/models", asyncRoute(async (request, response) => {
+  response.json(await discoverAiModels(discoverAiModelsSchema.parse(request.body)));
+}));
+
+apiRouter.post("/ai/analyze", (request, response, next) => {
+  void (async () => {
+    const input = analyzeLogSchema.parse(request.body);
+    if (!await isAiStreamingEnabled()) {
+      response.json(await analyzeLogWithAi(input));
+      return;
+    }
+    response.status(200);
+    response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    response.setHeader("Cache-Control", "no-cache, no-transform");
+    response.setHeader("X-Accel-Buffering", "no");
+    response.flushHeaders();
+    const send = (event: unknown): void => { response.write(`${JSON.stringify(event)}\n`); };
+    try {
+      const result = await analyzeLogWithAi(input, (content) => send({ type: "chunk", content }));
+      send({ type: "done", result });
+    } catch (error) {
+      send({ type: "error", error: error instanceof Error ? error.message : "AI 分析失败" });
+    } finally {
+      response.end();
+    }
+  })().catch(next);
+});
 
 apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
   const { contents } = environmentImportSchema.parse(request.body);

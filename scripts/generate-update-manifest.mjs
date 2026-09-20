@@ -24,22 +24,22 @@ const asset = async (platform, filename) => {
   }];
 };
 
-const platforms = Object.fromEntries(await Promise.all([
-  asset("windows-x86_64", `OpsLog_${version}_windows_x64_setup.exe`),
-  asset("darwin-aarch64", `OpsLog_${version}_macos_arm64.app.tar.gz`),
-  asset("darwin-x86_64", `OpsLog_${version}_macos_x64.app.tar.gz`)
-]));
-
 const notes = (await readFile(releaseNotesFile, "utf8"))
   .replace(/\r\n?/g, "\n")
   .replace(/\n$/, "");
 if (!notes.trim()) fail("release notes are required and cannot be empty");
 
-const manifest = {
-  version,
-  notes,
-  pub_date: new Date().toISOString(),
-  platforms
+const writeManifest = async (filename, prefix) => {
+  const platforms = Object.fromEntries(await Promise.all([
+    asset("windows-x86_64", `${prefix}_${version}_windows_x64_setup.exe`),
+    asset("darwin-aarch64", `${prefix}_${version}_macos_arm64.app.tar.gz`),
+    asset("darwin-x86_64", `${prefix}_${version}_macos_x64.app.tar.gz`)
+  ]));
+  const manifest = { version, notes, pub_date: new Date().toISOString(), platforms };
+  await writeFile(join(releaseDirectory, filename), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 };
 
-await writeFile(join(releaseDirectory, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+await Promise.all([
+  writeManifest("latest.json", "OpsLog"),
+  writeManifest("reader-latest.json", "OpsLog_Reader")
+]);

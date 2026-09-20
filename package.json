@@ -1,6 +1,6 @@
 {
   "name": "opslog-web",
-  "version": "3.0.29",
+  "version": "3.0.30",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,7 +22,7 @@
     "reader:windows": "tauri build --features reader-app --no-bundle --config src-tauri/tauri.reader.conf.json",
     "reader:windows:setup": "tauri build --features reader-app --bundles nsis --config src-tauri/tauri.reader.conf.json",
     "desktop:info": "tauri info",
-    "test": "npm run build && node --import tsx --test tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/reader-app.test.ts tests/routes.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-release-notes.test.ts",
+    "test": "npm run build && node --import tsx --test tests/ai-analysis-export.test.ts tests/ai-analysis-stream.test.ts tests/ai-log-analysis.test.ts tests/environment-store.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/query-builders.test.mjs tests/reader-app.test.ts tests/routes.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-manifest.test.mjs tests/update-release-notes.test.ts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {

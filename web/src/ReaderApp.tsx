@@ -5,6 +5,8 @@ import { isQueryFocusShortcut } from "./keyboard-shortcuts";
 import { ImportIcon } from "./components/Icons";
 import { LogReaderWorkspace, type TransactionLogDrawerHandle } from "./components/TransactionLogDrawer";
 import { TrcAssociationGuide } from "./components/TrcAssociationGuide";
+import { UpdateDialog } from "./components/UpdateDialog";
+import { useAppUpdater } from "./use-app-updater";
 
 const MAX_TRC_BYTES = 64 * 1024 * 1024;
 const ASSOCIATION_PROMPT_KEY = "opslog.reader.trc-association-prompt.v1";
@@ -24,6 +26,9 @@ export default function ReaderApp() {
   const [showAssociationGuide, setShowAssociationGuide] = useState(false);
   const [associating, setAssociating] = useState(false);
   const readerRef = useRef<TransactionLogDrawerHandle>(null);
+  const notifyCurrentVersion = useCallback(() => setNotice("当前已是最新版本。"), []);
+  const notifyUpdateError = useCallback((message: string) => setNotice(`检查更新失败：${message}`), []);
+  const appUpdater = useAppUpdater({ enabled: desktopMode, onCurrent: notifyCurrentVersion, onError: notifyUpdateError });
 
   const openPendingFile = useCallback(async () => {
     try {
@@ -64,18 +69,24 @@ export default function ReaderApp() {
 
   useEffect(() => {
     const handleKeyboard = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || !document) return;
+      if (event.defaultPrevented || event.isComposing) return;
       if (event.key === "Escape") {
+        if (appUpdater.state.visible) {
+          event.preventDefault();
+          appUpdater.dismissUpdater();
+          return;
+        }
+        if (!document) return;
         event.preventDefault();
         readerRef.current?.closeTopLayer();
-      } else if (isQueryFocusShortcut(event)) {
+      } else if (document && isQueryFocusShortcut(event)) {
         event.preventDefault();
         readerRef.current?.focusSearch();
       }
     };
     window.addEventListener("keydown", handleKeyboard);
     return () => window.removeEventListener("keydown", handleKeyboard);
-  }, [document]);
+  }, [appUpdater, document]);
 
   const openBrowserFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -129,7 +140,11 @@ export default function ReaderApp() {
     {!associationStatus.associated && <button type="button" onClick={() => setShowAssociationGuide(true)}>设置关联</button>}
   </section>;
 
+  const updateControl = desktopMode && <button type="button" className="reader-update-control" aria-busy={appUpdater.state.phase === "checking"} onClick={appUpdater.checkForUpdates}>{appUpdater.state.phase === "checking" ? "正在检查…" : "检查更新"}</button>;
+  const updateDialog = <UpdateDialog appName="OpsLog Reader" state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />;
+
   if (!document) return <div className="reader-empty-state">
+    {updateControl}
     <main className="reader-welcome-layout">
       <section className="reader-welcome-primary">
         <ReaderFamilyMark />
@@ -151,10 +166,12 @@ export default function ReaderApp() {
       </aside>
     </main>
     {notice && <div className="reader-file-notice" role="alert">{notice}<button onClick={() => setNotice(undefined)}>×</button></div>}
+    {updateDialog}
   </div>;
 
   const headerActions = <>
     {openControl}
+    {updateControl}
     {associationStatus?.supported && !associationStatus.associated && <button type="button" className="reader-association-shortcut" disabled={associating} onClick={() => void associateFiles()}>{associating ? "正在关联…" : "关联 .trc"}</button>}
   </>;
 
@@ -172,5 +189,6 @@ export default function ReaderApp() {
       headerAction={headerActions}
     />
     {notice && <div className="reader-file-notice" role="alert">{notice}<button onClick={() => setNotice(undefined)}>×</button></div>}
+    {updateDialog}
   </div>;
 }

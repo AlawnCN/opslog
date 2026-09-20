@@ -82,7 +82,7 @@ jobs:
           # Cargo resolves this path relative to the Rust manifest directory
           # (src-tauri), so use an absolute path to avoid src-tauri/src-tauri.
           CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target/reader
-        run: npm run reader:windows:setup
+        run: npm run reader:windows:setup -- --config src-tauri/tauri.release.conf.json
 
       - name: Create OpsLog Reader Windows packages
         shell: pwsh
@@ -97,11 +97,16 @@ jobs:
           if ($null -eq $installer) {
             throw "OpsLog Reader NSIS installer was not found"
           }
+          $installerSignature = "$($installer.FullName).sig"
+          if (!(Test-Path $installerSignature)) {
+            throw "OpsLog Reader signed updater artifact was not found: $installerSignature"
+          }
           New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
           Copy-Item $executable "$portableRoot/OpsLog Reader.exe"
           Copy-Item README.md "$portableRoot/README.md"
           Compress-Archive -Path $portableRoot -DestinationPath "release/OpsLog_Reader_${packageVersion}_windows_x64_portable.zip" -Force
           Copy-Item $installer.FullName "release/OpsLog_Reader_${packageVersion}_windows_x64_setup.exe"
+          Copy-Item $installerSignature "release/OpsLog_Reader_${packageVersion}_windows_x64_setup.exe.sig"
 
       - name: Upload Windows packages
         uses: actions/upload-artifact@v4
@@ -191,7 +196,7 @@ jobs:
           # Cargo resolves this path relative to the Rust manifest directory
           # (src-tauri), so use an absolute path to avoid src-tauri/src-tauri.
           CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target/reader
-        run: npm run reader:macos -- --target ${{ matrix.target }}
+        run: npm run reader:macos -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
       - name: Create OpsLog Reader macOS portable archive
         shell: bash
@@ -204,8 +209,13 @@ jobs:
           test -d "$app_path"
           executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
           file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
+          updater_archive="$(find "$bundle_root/macos" -type f -name '*.app.tar.gz' -print -quit)"
+          test -n "$updater_archive"
+          test -f "$updater_archive.sig"
           cp "$dmg" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.dmg"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}_portable.zip"
+          cp "$updater_archive" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.app.tar.gz"
+          cp "$updater_archive.sig" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.app.tar.gz.sig"
 
       - name: Upload macOS packages
         uses: actions/upload-artifact@v4

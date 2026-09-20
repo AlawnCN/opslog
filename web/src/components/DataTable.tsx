@@ -115,7 +115,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
   };
 
   if (!result && !loading) {
-    return <section className="empty-state"><div className="radar"><span /><span /><i /></div><h2>等待查询条件</h2><p>选择环境和时间范围，输入你已知的业务标识。</p></section>;
+    return <section className="empty-state"><div className="radar"><span /><span /><i /></div><h2>开始日志查询</h2><p>选择环境和时间范围，可按业务标识进一步筛选。</p></section>;
   }
 
   return (
@@ -147,7 +147,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
                   const tone = column === "ecp.txn.message.code" ? resultTone(row) : "";
                   return <td key={column} style={widthStyle(column)} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
                 })}
-                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="在线浏览交易日志" aria-label="在线浏览交易日志" onClick={(event) => { event.stopPropagation(); onReadTransactionLog(row); }}><TextReaderIcon /></button><button title="查看 Trace" aria-label="查看 Trace" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
+                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="打开日志阅读器" aria-label="打开日志阅读器" onClick={(event) => { event.stopPropagation(); onReadTransactionLog(row); }}><TextReaderIcon /></button><button title="查看调用链" aria-label="查看调用链" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
               </tr>;
             })}
           </tbody>

@@ -1,5 +1,7 @@
 #![cfg_attr(feature = "reader-app", allow(dead_code))]
 
+mod ai_analysis;
+mod ai_configuration;
 mod commands;
 mod domain;
 mod environment_store;
@@ -35,6 +37,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            ai_analysis::load_ai_configuration,
+            ai_analysis::save_ai_configuration,
+            ai_analysis::activate_ai_configuration,
+            ai_analysis::discover_ai_models,
+            ai_analysis::analyze_log_with_ai,
             commands::load_environments,
             commands::save_environment_config,
             commands::search_logs,
@@ -44,6 +51,7 @@ pub fn run() {
             commands::save_transaction_log,
             commands::save_custom_log_markers,
             commands::save_portable_log,
+            commands::save_ai_analysis,
             commands::load_trace,
             reader_settings::load_reader_settings,
             reader_settings::save_reader_setting,
@@ -61,6 +69,8 @@ pub fn run_reader() {
         reader_files::PendingTrcFile(std::sync::Mutex::new(reader_files::startup_trc_path()));
     let app = tauri::Builder::default()
         .manage(pending_file)
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -72,6 +82,11 @@ pub fn run_reader() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            ai_analysis::load_ai_configuration,
+            ai_analysis::save_ai_configuration,
+            ai_analysis::activate_ai_configuration,
+            ai_analysis::discover_ai_models,
+            ai_analysis::analyze_log_with_ai,
             reader_association::get_trc_association_status,
             reader_association::associate_trc_files,
             reader_files::load_startup_trc_file,
@@ -79,6 +94,8 @@ pub fn run_reader() {
             reader_settings::save_reader_setting,
             commands::save_custom_log_markers,
             commands::save_portable_log,
+            commands::save_ai_analysis,
+            update_release::load_update_release_notes,
         ])
         .build(tauri::generate_context!())
         .expect("OpsLog Reader application failed to build");

@@ -9,7 +9,7 @@ const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webDirectory = path.resolve(moduleDirectory, "../../dist-web");
 
 app.disable("x-powered-by");
-app.use(express.json({ limit: "256kb" }));
+app.use(express.json({ limit: "1500kb" }));
 app.use((_request, response, next) => {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");

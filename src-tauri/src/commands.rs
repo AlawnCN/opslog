@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use tauri::AppHandle;
 
@@ -15,6 +16,15 @@ const MAX_RANGE_DAYS: i64 = 31;
 const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CUSTOM_MARKERS_BYTES: usize = 1024 * 1024;
 const MAX_PORTABLE_LOG_BYTES: usize = 192 * 1024 * 1024;
+const MAX_AI_ANALYSIS_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAiAnalysisInput {
+    name: String,
+    contents: String,
+    format: String,
+}
 
 fn parse_range(start: &str, end: &str, enforce_maximum: bool) -> Result<(), String> {
     let start =
@@ -209,6 +219,20 @@ pub async fn save_portable_log(input: SavePortableLogInput) -> Result<DownloadRe
         return Err("离线阅读文件格式不合法".to_string());
     }
     export_files::save_named(&input.name, "html", input.contents.as_bytes()).await
+}
+
+#[tauri::command]
+pub async fn save_ai_analysis(input: SaveAiAnalysisInput) -> Result<DownloadResult, String> {
+    if input.name.trim().is_empty() || input.name.chars().count() > 220 {
+        return Err("分析结果文件名不合法".to_string());
+    }
+    if input.contents.len() > MAX_AI_ANALYSIS_BYTES {
+        return Err("分析结果超过 16 MB 安全上限".to_string());
+    }
+    if !matches!(input.format.as_str(), "md" | "html") {
+        return Err("分析结果导出格式不受支持".to_string());
+    }
+    export_files::save_named(&input.name, &input.format, input.contents.as_bytes()).await
 }
 
 #[tauri::command]

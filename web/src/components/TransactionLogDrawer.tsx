@@ -18,6 +18,7 @@ import { LogOutlinePopover } from "./LogOutlinePopover";
 import { StructuredLogViewer, type StructuredLogViewerHandle } from "./StructuredLogViewer";
 import { StructuredLogPreviewDialog } from "./StructuredLogPreviewDialog";
 import { SqlResultPreviewDialog } from "./SqlResultPreviewDialog";
+import { AiLogAssistant, type AiLogAssistantHandle } from "./AiLogAssistant";
 
 const READER_WIDTH_KEY = "opslog.transaction-log-reader.width-ratio.v1";
 const DEFAULT_READER_WIDTH_RATIO = .5;
@@ -71,6 +72,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
   const [portableExportNotice, setPortableExportNotice] = useState<string>();
   const [structuredPreview, setStructuredPreview] = useState<{ kind: InspectableLogStructureKind | "java" | "sql-result"; source: string }>();
   const viewerRef = useRef<StructuredLogViewerHandle>(null);
+  const aiAssistantRef = useRef<AiLogAssistantHandle>(null);
   const customMarkerShelfRef = useRef<CustomLogMarkerShelfHandle>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const logReaderBodyRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
 
   useImperativeHandle(ref, () => ({
     closeTopLayer: () => {
+      if (aiAssistantRef.current?.closeTopLayer()) return;
       if (structuredPreview) {
         setStructuredPreview(undefined);
         return;
@@ -276,7 +279,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
   return <div className={presentation === "standalone" ? "standalone-reader-shell" : "drawer-backdrop"} onMouseDown={presentation === "drawer" ? onClose : undefined}>
     <aside className={presentation === "standalone" ? "standalone-log-reader" : "drawer log-reader-drawer"} style={presentation === "drawer" ? { width: `${widthRatio * 100}vw` } : undefined} onMouseDown={(event) => event.stopPropagation()}>
       {presentation === "drawer" && <div className="log-reader-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整日志阅读器宽度" aria-valuemin={Math.round(Math.min(520 / window.innerWidth, .88) * 100)} aria-valuemax={88} aria-valuenow={Math.round(widthRatio * 100)} tabIndex={0} onPointerDown={startResize} onKeyDown={adjustReaderWidth} />}
-      <div className="drawer-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2><div className="log-reader-title-line"><code>{logId}</code><button type="button" className="portable-log-export" disabled={loading || !content || exportingPortable} aria-busy={exportingPortable} title="导出可在浏览器中离线打开的只读日志页面" onClick={() => void exportPortableReader()}>{exportingPortable ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}<span>{exportingPortable ? "正在生成阅读页…" : "导出阅读页"}</span></button>{headerAction}</div>{portableExportNotice && <span className="portable-log-export-notice" role="status">{portableExportNotice}</span>}</div>{presentation === "drawer" && <button title="关闭当前日志" aria-label="关闭当前日志" onClick={onClose}><CloseIcon /></button>}</div>
+      <div className="drawer-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2><div className="log-reader-title-line"><code>{logId}</code><button type="button" className="portable-log-export" disabled={loading || !content || exportingPortable} aria-busy={exportingPortable} title="导出可在浏览器中离线打开的只读日志页面" onClick={() => void exportPortableReader()}>{exportingPortable ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}<span>{exportingPortable ? "正在生成阅读页…" : "导出阅读页"}</span></button>{headerAction}</div>{portableExportNotice && <span className="portable-log-export-notice" role="status">{portableExportNotice}</span>}</div><div className="drawer-heading-actions"><AiLogAssistant ref={aiAssistantRef} logId={logId} content={content} analysis={analysis} customMarkers={customMarkers} disabled={loading || !content} />{presentation === "drawer" && <button type="button" className="drawer-close-action" title="关闭当前日志" aria-label="关闭当前日志" onClick={onClose}><CloseIcon /></button>}</div></div>
       <div className="log-reader-controls">
         <div className={`log-reader-search-group${searchResult.error ? " has-error" : ""}`}>
           <label className="log-reader-search"><SearchIcon /><input ref={searchInputRef} autoFocus value={keyword} onChange={(event) => setKeyword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); moveMatch(event.shiftKey ? -1 : 1); } }} placeholder={regexSearch ? "输入正则表达式查询日志" : "查询日志内容"} aria-label="查询日志内容" aria-keyshortcuts="Meta+F Alt+F" aria-invalid={Boolean(searchResult.error)} aria-describedby={searchResult.error ? "log-reader-search-error" : undefined} /></label>

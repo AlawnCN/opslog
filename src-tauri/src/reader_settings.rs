@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-const SETTINGS_DIRECTORY: &str = "OpsLog/shared-reader-settings";
+pub(crate) const SETTINGS_DIRECTORY: &str = "OpsLog/shared-reader-settings";
 const ALLOWED_SETTINGS: [(&str, &str); 5] = [
     (
         "opslog.transaction-log.custom-markers.v1",
@@ -34,7 +34,7 @@ pub struct ReaderSettingInput {
     value: String,
 }
 
-fn settings_directory() -> Result<PathBuf, String> {
+pub(crate) fn settings_directory() -> Result<PathBuf, String> {
     dirs::config_dir()
         .map(|directory| directory.join(SETTINGS_DIRECTORY))
         .ok_or_else(|| "无法定位阅读器共享配置目录".to_string())

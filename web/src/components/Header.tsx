@@ -4,6 +4,7 @@ import type { Environment } from "../types";
 import type { LanShareController } from "../use-lan-share";
 import { ImportIcon, PulseIcon } from "./Icons";
 import { LanShareControl } from "./LanShareControl";
+import { AppSelect } from "./AppSelect";
 
 interface HeaderProps {
   environments: Environment[];
@@ -52,10 +53,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
           <input ref={configInput} className="config-file-input" type="file" accept="application/json,.json" onChange={(event) => void selectConfig(event.currentTarget.files)} />
         </>}
         <div className="environment-control">
-          <label htmlFor="environment">运行环境</label>
-          <select id="environment" value={selected} onChange={(event) => onSelect(event.target.value)}>
-            {environments.map((item) => <option key={item.name}>{item.name}</option>)}
-          </select>
+          <span>运行环境</span>
+          <AppSelect value={selected} ariaLabel="运行环境" options={environments.map((item) => ({ value: item.name, label: item.name }))} onChange={onSelect} />
         </div>
         <div className={`connection-state ${environment?.insecureTls ? "warning" : ""}`}>
           <i />
@@ -63,8 +62,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.29<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.29</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.30<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.30</div>}
       </div>
     </header>
   );

@@ -1,11 +1,12 @@
 use std::{
+    convert::Infallible,
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
 
 use axum::{
     Json, Router,
-    body::Body,
+    body::{Body, Bytes},
     extract::{DefaultBodyLimit, State},
     http::{HeaderName, HeaderValue, Request, StatusCode, Uri, header},
     middleware::{self, Next},
@@ -24,7 +25,7 @@ use tokio::{
 };
 
 use crate::{
-    commands,
+    ai_analysis, ai_configuration, commands,
     domain::{DownloadInput, SearchInput, display_fields},
     environment_store, export_files,
     kibana_client::run_esql,
@@ -32,7 +33,7 @@ use crate::{
 };
 
 const MAX_CONCURRENT_QUERIES: usize = 4;
-const REQUEST_BODY_LIMIT: usize = 256 * 1024;
+const REQUEST_BODY_LIMIT: usize = 1_500 * 1024;
 const ACCESS_KEY_HEADER: HeaderName = HeaderName::from_static("x-opslog-lan-key");
 
 #[derive(Debug, Clone, Serialize)]
@@ -184,7 +185,8 @@ fn api_error(message: String) -> Response {
         || message.starts_with("环境配置")
         || message.contains("索引")
         || message.contains("不合法")
-        || message.contains("不完整");
+        || message.contains("不完整")
+        || message.starts_with("请先");
     (
         if client_error {
             StatusCode::BAD_REQUEST
@@ -218,6 +220,68 @@ async fn environments(State(state): State<LanApiState>) -> Response {
         Ok(environments) => Json(environments).into_response(),
         Err(error) => api_error(error),
     }
+}
+
+async fn ai_configuration() -> Response {
+    match ai_analysis::load_ai_configuration().await {
+        Ok(mut configuration) => {
+            configuration.can_configure = false;
+            Json(configuration).into_response()
+        }
+        Err(error) => api_error(error),
+    }
+}
+
+async fn analyze_log(
+    State(state): State<LanApiState>,
+    Json(input): Json<ai_analysis::AiAnalyzeInput>,
+) -> Response {
+    let Ok(permit) = query_permit(&state).await else {
+        return api_error("局域网查询服务已停止".to_string());
+    };
+    let stream_response = match ai_configuration::load_state()
+        .await
+        .and_then(|state| state.active())
+    {
+        Ok(configuration) => configuration.stream_response,
+        Err(error) => return api_error(error),
+    };
+    if !stream_response {
+        return match ai_analysis::analyze_log(input, None).await {
+            Ok(result) => Json(result).into_response(),
+            Err(error) => api_error(error),
+        };
+    }
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    tokio::spawn(async move {
+        let _permit = permit;
+        let chunk_sender = sender.clone();
+        let sink: ai_analysis::AiChunkSink = Arc::new(move |content| {
+            let event = json!({ "type": "chunk", "content": content });
+            let _ = chunk_sender.send(format!("{event}\n").into_bytes());
+        });
+        let event = match ai_analysis::analyze_log(input, Some(sink)).await {
+            Ok(result) => json!({ "type": "done", "result": result }),
+            Err(error) => json!({ "type": "error", "error": error }),
+        };
+        let _ = sender.send(format!("{event}\n").into_bytes());
+    });
+    let body_stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+        receiver
+            .recv()
+            .await
+            .map(|bytes| (Ok::<Bytes, Infallible>(Bytes::from(bytes)), receiver))
+    });
+    let mut response = Response::new(Body::from_stream(body_stream));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/x-ndjson; charset=utf-8"),
+    );
+    response.headers_mut().insert(
+        HeaderName::from_static("x-accel-buffering"),
+        HeaderValue::from_static("no"),
+    );
+    response
 }
 
 async fn search(State(state): State<LanApiState>, Json(input): Json<SearchInput>) -> Response {
@@ -368,6 +432,8 @@ fn router(state: LanApiState) -> Router {
     Router::new()
         .route("/api/runtime", get(runtime_info))
         .route("/api/environments", get(environments))
+        .route("/api/ai/configuration", get(ai_configuration))
+        .route("/api/ai/analyze", post(analyze_log))
         .route("/api/search", post(search))
         .route("/api/export", post(export))
         .route("/api/transaction-log", post(transaction_log))

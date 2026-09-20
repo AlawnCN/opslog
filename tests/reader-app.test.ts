@@ -29,8 +29,8 @@ test("reader asks before setting the trc default application", async () => {
   const readerApp = await readFile("web/src/ReaderApp.tsx", "utf8");
   const associationGuide = await readFile("web/src/components/TrcAssociationGuide.tsx", "utf8");
   const association = await readFile("src-tauri/src/reader_association.rs", "utf8");
-  assert.match(associationGuide, /是否关联 TRC 文件/);
-  assert.match(associationGuide, /暂不关联/);
+  assert.match(associationGuide, /设置 TRC 默认打开方式/);
+  assert.match(associationGuide, /稍后设置/);
   assert.match(readerApp, /ASSOCIATION_PROMPT_KEY/);
   assert.match(association, /associate_trc_files/);
 });
@@ -42,4 +42,17 @@ test("release workflow builds both OpsLog applications", async () => {
   assert.match(workflow, /npm run desktop:macos/);
   assert.match(workflow, /npm run reader:macos/);
   assert.match(workflow, /OpsLog_Reader_/);
+  assert.match(workflow, /OpsLog_Reader_\$\{packageVersion\}_windows_x64_setup\.exe\.sig/);
+  assert.match(workflow, /OpsLog_Reader_\$\{package_version\}_macos_\$\{\{ matrix\.arch \}\}\.app\.tar\.gz/);
+});
+
+test("standalone reader uses its own signed update channel", async () => {
+  const config = await readJson("src-tauri/tauri.reader.conf.json");
+  const plugins = config.plugins as { updater?: { endpoints?: string[] } };
+  assert.deepEqual(plugins.updater?.endpoints, [
+    "https://github.com/AlawnCN/opslog/releases/latest/download/reader-latest.json"
+  ]);
+
+  const manifestGenerator = await readFile("scripts/generate-update-manifest.mjs", "utf8");
+  assert.match(manifestGenerator, /writeManifest\("reader-latest\.json", "OpsLog_Reader"\)/);
 });

@@ -1,4 +1,5 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { readAiAnalysisStream } from "./ai-analysis-stream";
 import type { Environment, SearchRequest, SearchResponse } from "./types";
 
 interface SavedFile {
@@ -29,6 +30,57 @@ export interface WebRuntimeInfo {
   canImportConfig: boolean;
   requiresPasscode?: boolean;
 }
+
+export type AiProtocol = "openai-compatible" | "gemini-native" | "ollama-native";
+
+export interface AiProfile {
+  id: string;
+  name: string;
+  provider: string;
+  protocol: AiProtocol;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  configured: boolean;
+  systemPrompt: string;
+  temperature: number;
+  maxOutputTokens: number;
+  maxLogCharacters: number;
+  streamResponse: boolean;
+}
+
+export interface AiConfiguration {
+  version: 2;
+  activeProfileId: string;
+  profiles: AiProfile[];
+  canConfigure: boolean;
+}
+
+export interface SaveAiConfigurationInput extends Omit<AiProfile, "hasApiKey" | "configured"> {
+  apiKey?: string;
+  clearApiKey?: boolean;
+  setActive?: boolean;
+}
+
+export interface AiModelDescriptor {
+  id: string;
+  label: string;
+  contextTokens?: number;
+  maxOutputTokens?: number;
+  recommendedLogCharacters?: number;
+  limitsSource?: string;
+}
+
+export interface AiAnalyzeResult {
+  content: string;
+  provider: string;
+  model: string;
+  durationMs: number;
+  inputCharacters: number;
+  truncated: boolean;
+}
+
+const safeExportName = (value: string): string => value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim().slice(0, 160) || "log";
 
 export const desktopMode = isTauri();
 
@@ -232,6 +284,64 @@ export const getTrcAssociationStatus = async (): Promise<TrcAssociationStatus> =
 
 export const associateTrcFiles = async (): Promise<TrcAssociationStatus> =>
   desktopInvoke<TrcAssociationStatus>("associate_trc_files");
+
+export const loadAiConfiguration = async (): Promise<AiConfiguration> => {
+  if (desktopMode) return desktopInvoke<AiConfiguration>("load_ai_configuration");
+  const response = await webFetch("/api/ai/configuration");
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export const saveAiConfiguration = async (input: SaveAiConfigurationInput): Promise<AiConfiguration> => {
+  if (desktopMode) return desktopInvoke<AiConfiguration>("save_ai_configuration", { input });
+  const response = await webFetch("/api/ai/configuration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export const activateAiConfiguration = async (id: string): Promise<AiConfiguration> => {
+  if (desktopMode) return desktopInvoke<AiConfiguration>("activate_ai_configuration", { id });
+  const response = await webFetch("/api/ai/configuration/active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export const discoverAiModels = async (input: Pick<SaveAiConfigurationInput, "id" | "provider" | "protocol" | "baseUrl" | "apiKey">): Promise<AiModelDescriptor[]> => {
+  const payload = { profileId: input.id, provider: input.provider, protocol: input.protocol, baseUrl: input.baseUrl, apiKey: input.apiKey };
+  if (desktopMode) return desktopInvoke<AiModelDescriptor[]>("discover_ai_models", { input: payload });
+  const response = await webFetch("/api/ai/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export const analyzeLogWithAi = async (prompt: string, inputCharacters: number, truncated: boolean, onChunk?: (content: string) => void): Promise<AiAnalyzeResult> => {
+  const input = { prompt, inputCharacters, truncated };
+  if (desktopMode) {
+    const onEvent = new Channel<{ type: "chunk"; content: string }>();
+    onEvent.onmessage = (event) => { if (event.type === "chunk") onChunk?.(event.content); };
+    return desktopInvoke<AiAnalyzeResult>("analyze_log_with_ai", { input, onEvent });
+  }
+  const response = await webFetch("/api/ai/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) return parseError(response);
+  return response.headers.get("Content-Type")?.includes("application/x-ndjson")
+    ? readAiAnalysisStream(response, onChunk)
+    : response.json();
+};
+
+export const saveAiAnalysisResult = async (logId: string, format: "md" | "html", contents: string): Promise<string | undefined> => {
+  const name = `AI-analysis-${safeExportName(logId)}`;
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_ai_analysis", { input: { name, contents, format } })).path;
+  saveBrowserBlob(new Blob([contents], { type: format === "html" ? "text/html;charset=utf-8" : "text/markdown;charset=utf-8" }), `${name}.${format}`);
+  return undefined;
+};
 
 export const importEnvironmentConfig = async (contents: string): Promise<string> => {
   if (desktopMode) return (await desktopInvoke<SavedFile>("save_environment_config", { contents })).path;

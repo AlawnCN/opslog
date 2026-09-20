@@ -11,6 +11,7 @@ interface UpdateDialogProps {
   state: AppUpdateState;
   onInstall: () => void;
   onDismiss: () => void;
+  appName?: string;
 }
 
 const progress = (state: AppUpdateState): number | undefined => {
@@ -26,7 +27,7 @@ const statusCopy = (state: AppUpdateState): string => {
   return `发现新版本 ${state.version ?? ""}`;
 };
 
-export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps) => {
+export const UpdateDialog = ({ state, onInstall, onDismiss, appName = "OpsLog" }: UpdateDialogProps) => {
   if (!state.visible) return null;
   const percentage = progress(state);
   const busy = state.phase === "checking" || state.phase === "downloading" || state.phase === "installing";
@@ -38,7 +39,7 @@ export const UpdateDialog = ({ state, onInstall, onDismiss }: UpdateDialogProps)
     <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title" aria-busy={busy}>
       <header>
         <div className="update-emblem" aria-hidden="true"><DownloadIcon /></div>
-        <div><span className="eyebrow">SECURE UPDATE</span><h2 id="update-title">OpsLog 自动更新</h2></div>
+        <div><span className="eyebrow">SECURE UPDATE</span><h2 id="update-title">{appName} 自动更新</h2></div>
         {!busy && <button className="update-close" title="稍后更新" aria-label="稍后更新" onClick={onDismiss}><CloseIcon /></button>}
       </header>
       <div className="update-dialog-body">
