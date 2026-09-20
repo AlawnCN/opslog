@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { formatStructuredLogPreview, type InspectableLogStructureKind } from "../structured-log-preview";
 import { CloseIcon } from "./Icons";
 import { StructuredLogPreviewEditor, type StructuredLogPreviewEditorHandle } from "./StructuredLogPreviewEditor";
+import { useMovableDialog } from "./useMovableDialog";
 
 interface StructuredLogPreviewDialogProps {
   kind: InspectableLogStructureKind;
@@ -10,15 +11,15 @@ interface StructuredLogPreviewDialogProps {
 }
 
 export const StructuredLogPreviewDialog = ({ kind, source, onClose }: StructuredLogPreviewDialogProps) => {
-  const dialogRef = useRef<HTMLElement>(null);
+  const movable = useMovableDialog<HTMLElement>();
   const editorRef = useRef<StructuredLogPreviewEditorHandle>(null);
   const preview = useMemo(() => formatStructuredLogPreview(kind, source), [kind, source]);
 
-  useEffect(() => dialogRef.current?.focus(), []);
+  useEffect(() => movable.dialogRef.current?.focus(), [movable.dialogRef]);
 
   return <div className="structured-preview-backdrop" onMouseDown={onClose}>
-    <section ref={dialogRef} className="structured-preview-dialog" role="dialog" aria-modal="true" aria-label={`${kind.toUpperCase()} 格式化预览`} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-      <header>
+    <section ref={movable.dialogRef} style={movable.dialogStyle} className="structured-preview-dialog movable-dialog" role="dialog" aria-modal="true" aria-label={`${kind.toUpperCase()} 格式化预览`} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+      <header onPointerDown={movable.startMove}>
         <div><span>STRUCTURED PREVIEW</span><strong>{kind.toUpperCase()} 格式化预览</strong></div>
         <button type="button" aria-label="关闭格式化预览" title="关闭" onClick={onClose}><CloseIcon /></button>
       </header>

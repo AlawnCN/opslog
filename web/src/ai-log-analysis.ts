@@ -2,7 +2,9 @@ import type { AiProfile, AiProtocol } from "./api";
 import { compactLogForAi } from "./ai-log-compaction";
 import type { CustomLogMarker } from "./custom-log-markers";
 import type { TransactionLogAnalysis } from "./transaction-log-model";
+import { aiResponseLanguageInstruction } from "../../shared/ai-response-language";
 export { DEFAULT_AI_SYSTEM_PROMPT } from "../../shared/ai-log-prompt";
+export { AI_RESPONSE_LANGUAGE_OPTIONS, DEFAULT_AI_RESPONSE_LANGUAGE } from "../../shared/ai-response-language";
 
 export interface AiProviderPreset {
   id: string;
@@ -58,6 +60,7 @@ const markerRules = (markers: CustomLogMarker[]): string => {
 export const buildAiLogPrompt = ({ logId, content, analysis, customMarkers, configuration }: BuildAiLogPromptInput): AiLogPrompt => {
   const bounded = compactLogForAi(content, customMarkers, configuration.maxLogCharacters);
   const summary = [
+    aiResponseLanguageInstruction(configuration.responseLanguage),
     `日志 ID：${logId}`,
     `总行数：${analysis.stats.lines}`,
     `微服务：${analysis.stats.services}`,

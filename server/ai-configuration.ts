@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { DEFAULT_AI_SYSTEM_PROMPT, upgradeDefaultAiSystemPrompt } from "../shared/ai-log-prompt.js";
+import { DEFAULT_AI_RESPONSE_LANGUAGE } from "../shared/ai-response-language.js";
 
 export const DEFAULT_SYSTEM_PROMPT = DEFAULT_AI_SYSTEM_PROMPT;
 export const protocolSchema = z.enum(["openai-compatible", "gemini-native", "ollama-native"]);
@@ -14,7 +15,8 @@ const profileFields = {
   systemPrompt: z.string().trim().min(1).max(20_000), temperature: z.number().min(0).max(2),
   maxOutputTokens: z.number().int().min(1).max(10_000_000),
   maxLogCharacters: z.number().int().min(1).max(100_000_000),
-  streamResponse: z.boolean().default(true)
+  streamResponse: z.boolean().default(true),
+  responseLanguage: z.string().trim().min(1).max(40).default(DEFAULT_AI_RESPONSE_LANGUAGE)
 };
 
 const validateUrl = (value: { baseUrl: string }, context: z.RefinementCtx): void => {
@@ -34,7 +36,7 @@ type StoredAiState = z.infer<typeof storedStateSchema>;
 export type PublicAiProfile = Omit<StoredAiProfile, "apiKey"> & { hasApiKey: boolean; configured: boolean };
 export interface PublicAiState { version: 2; activeProfileId: string; profiles: PublicAiProfile[]; canConfigure: boolean }
 
-const defaultProfile = (): StoredAiProfile => ({ id: "openai-default", name: "OpenAI", provider: "openai", protocol: "openai-compatible", baseUrl: "https://api.openai.com/v1", model: "gpt-5-mini", apiKey: null, systemPrompt: DEFAULT_SYSTEM_PROMPT, temperature: .2, maxOutputTokens: 8_192, maxLogCharacters: 120_000, streamResponse: true });
+const defaultProfile = (): StoredAiProfile => ({ id: "openai-default", name: "OpenAI", provider: "openai", protocol: "openai-compatible", baseUrl: "https://api.openai.com/v1", model: "gpt-5-mini", apiKey: null, systemPrompt: DEFAULT_SYSTEM_PROMPT, temperature: .2, maxOutputTokens: 8_192, maxLogCharacters: 120_000, streamResponse: true, responseLanguage: DEFAULT_AI_RESPONSE_LANGUAGE });
 const requiresApiKey = (provider: string): boolean => !["ollama", "lm-studio"].includes(provider);
 export const isAiProfileConfigured = (profile: StoredAiProfile): boolean => Boolean(profile.baseUrl && profile.model && (!requiresApiKey(profile.provider) || profile.apiKey));
 const publicProfile = (profile: StoredAiProfile): PublicAiProfile => {
@@ -97,6 +99,17 @@ export const activateAiProfile = async (id: string): Promise<PublicAiState> => {
   const state = await loadStoredAiState();
   if (!state.profiles.some((profile) => profile.id === id)) throw new Error("所选模型配置不存在");
   const next = { ...state, activeProfileId: id };
+  await persist(next);
+  return publicAiState(next);
+};
+
+export const deleteAiProfile = async (id: string): Promise<PublicAiState> => {
+  const state = await loadStoredAiState();
+  if (state.profiles.length <= 1) throw new Error("至少保留一个模型连接");
+  if (!state.profiles.some((profile) => profile.id === id)) throw new Error("所选模型配置不存在");
+  const profiles = state.profiles.filter((profile) => profile.id !== id);
+  const activeProfileId = state.activeProfileId === id ? profiles[0]!.id : state.activeProfileId;
+  const next = storedStateSchema.parse({ version: 2, activeProfileId, profiles });
   await persist(next);
   return publicAiState(next);
 };

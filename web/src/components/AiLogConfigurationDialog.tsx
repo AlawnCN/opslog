@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AI_PROVIDER_PRESETS, DEFAULT_AI_SYSTEM_PROMPT } from "../ai-log-analysis";
+import { AI_PROVIDER_PRESETS, AI_RESPONSE_LANGUAGE_OPTIONS, DEFAULT_AI_RESPONSE_LANGUAGE, DEFAULT_AI_SYSTEM_PROMPT } from "../ai-log-analysis";
 import { discoverAiModels, type AiConfiguration, type AiModelDescriptor, type AiProtocol, type SaveAiConfigurationInput } from "../api";
 import { AppSelect } from "./AppSelect";
 import { CloseIcon } from "./Icons";
 import { NumericInput } from "./NumericInput";
+import { useMovableDialog } from "./useMovableDialog";
+import { AiProfileDeleteConfirmation } from "./AiProfileDeleteConfirmation";
 
 interface Props {
   configuration: AiConfiguration; saving: boolean; analyzeAfterSave: boolean; error?: string;
   onCancel: () => void; onSave: (input: SaveAiConfigurationInput) => void; onActivate: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
   onImport: (profiles: SaveAiConfigurationInput[], activeProfileId?: string) => Promise<void>;
 }
 
@@ -15,7 +18,7 @@ const editable = (profile: AiConfiguration["profiles"][number]): SaveAiConfigura
 const requiresApiKey = (provider: string): boolean => !["ollama", "lm-studio"].includes(provider);
 const newProfile = (provider: string): SaveAiConfigurationInput => {
   const preset = AI_PROVIDER_PRESETS.find(({ id }) => id === provider) ?? AI_PROVIDER_PRESETS[0];
-  return { id: `${preset.id}-${crypto.randomUUID()}`, name: preset.label, provider: preset.id, protocol: preset.protocol, baseUrl: preset.baseUrl, model: preset.model, apiKey: "", systemPrompt: DEFAULT_AI_SYSTEM_PROMPT, temperature: .2, maxOutputTokens: 8_192, maxLogCharacters: 120_000, streamResponse: true };
+  return { id: `${preset.id}-${crypto.randomUUID()}`, name: preset.label, provider: preset.id, protocol: preset.protocol, baseUrl: preset.baseUrl, model: preset.model, apiKey: "", systemPrompt: DEFAULT_AI_SYSTEM_PROMPT, temperature: .2, maxOutputTokens: 8_192, maxLogCharacters: 120_000, streamResponse: true, responseLanguage: DEFAULT_AI_RESPONSE_LANGUAGE };
 };
 const protocolOptions = [
   { value: "openai-compatible", label: "OpenAI 兼容接口" },
@@ -24,17 +27,19 @@ const protocolOptions = [
 ];
 const profileChanged = (draft: SaveAiConfigurationInput, saved?: AiConfiguration["profiles"][number]): boolean => {
   if (!saved || draft.apiKey?.trim() || draft.clearApiKey) return true;
-  return ["name", "provider", "protocol", "baseUrl", "model", "systemPrompt", "temperature", "maxOutputTokens", "maxLogCharacters", "streamResponse"]
+  return ["name", "provider", "protocol", "baseUrl", "model", "systemPrompt", "temperature", "maxOutputTokens", "maxLogCharacters", "streamResponse", "responseLanguage"]
     .some((field) => draft[field as keyof SaveAiConfigurationInput] !== saved[field as keyof typeof saved]);
 };
 
-export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSave, error, onCancel, onSave, onActivate, onImport }: Props) => {
+export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSave, error, onCancel, onSave, onActivate, onDelete, onImport }: Props) => {
   const [selectedId, setSelectedId] = useState(configuration.activeProfileId || configuration.profiles[0]?.id);
   const [drafts, setDrafts] = useState<Record<string, SaveAiConfigurationInput>>(() => Object.fromEntries(configuration.profiles.map((profile) => [profile.id, editable(profile)])));
   const [models, setModels] = useState<AiModelDescriptor[]>([]);
   const [modelStatus, setModelStatus] = useState<string>();
   const [loadingModels, setLoadingModels] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const movable = useMovableDialog<HTMLFormElement>();
   const form = drafts[selectedId];
   const saved = configuration.profiles.find(({ id }) => id === selectedId);
 
@@ -44,7 +49,23 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
 
   const update = (patch: Partial<SaveAiConfigurationInput>) => setDrafts((current) => ({ ...current, [selectedId]: { ...current[selectedId], ...patch } }));
   const add = (provider: string) => { const profile = newProfile(provider); setDrafts((current) => ({ ...current, [profile.id]: profile })); setSelectedId(profile.id); setModels([]); setModelStatus(undefined); };
-  const select = (id: string) => { setSelectedId(id); setModels([]); setModelStatus(undefined); };
+  const select = (id: string) => { setSelectedId(id); setModels([]); setModelStatus(undefined); setDeleteConfirmation(false); };
+
+  const remove = async () => {
+    if (Object.keys(drafts).length <= 1) return;
+    if (!saved) {
+      const remaining = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== selectedId));
+      setDrafts(remaining); setSelectedId(Object.keys(remaining)[0]); setDeleteConfirmation(false);
+      return;
+    }
+    try {
+      await onDelete(selectedId);
+    } catch {
+      return;
+    }
+    const remaining = Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== selectedId));
+    setDrafts(remaining); setSelectedId(Object.keys(remaining)[0]); setDeleteConfirmation(false);
+  };
 
   const loadModels = async () => {
     if (!form) return;
@@ -73,7 +94,7 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
     try {
       const value = JSON.parse(await file.text()) as { activeProfileId?: string; profiles?: SaveAiConfigurationInput[] };
       if (!Array.isArray(value.profiles) || !value.profiles.length) throw new Error("导入文件中没有模型配置");
-      const profiles = value.profiles.map((profile) => ({ ...profile, streamResponse: profile.streamResponse ?? true, apiKey: "", clearApiKey: false }));
+      const profiles = value.profiles.map((profile) => ({ ...profile, streamResponse: profile.streamResponse ?? true, responseLanguage: profile.responseLanguage ?? DEFAULT_AI_RESPONSE_LANGUAGE, apiKey: "", clearApiKey: false }));
       const imported = Object.fromEntries(profiles.map((profile) => [profile.id, profile]));
       const activeProfileId = value.activeProfileId && imported[value.activeProfileId] ? value.activeProfileId : profiles[0].id;
       await onImport(profiles, activeProfileId);
@@ -99,11 +120,11 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
     : "同步并选择模型后，将采用服务明确返回的能力值；服务未提供时不会猜测。";
 
   return <div className="ai-dialog-backdrop" role="presentation" onMouseDown={onCancel}>
-    <form className="ai-config-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-config-title" onSubmit={(event: FormEvent) => { event.preventDefault(); onSave({ ...form, setActive: active || analyzeAfterSave }); }} onMouseDown={(event) => event.stopPropagation()}>
-      <header><div><span className="eyebrow">AI ANALYSIS · CONFIGURATION</span><h2 id="ai-config-title">AI 分析配置</h2><p>管理模型连接，并指定日志分析使用的默认模型。</p></div><button type="button" aria-label="关闭 AI 配置" onClick={onCancel}><CloseIcon /></button></header>
+    <form ref={movable.dialogRef} style={movable.dialogStyle} className="ai-config-dialog movable-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-config-title" onSubmit={(event: FormEvent) => { event.preventDefault(); onSave({ ...form, setActive: active || analyzeAfterSave }); }} onMouseDown={(event) => event.stopPropagation()}>
+      <header onPointerDown={movable.startMove}><div><span className="eyebrow">AI ANALYSIS · CONFIGURATION</span><h2 id="ai-config-title">AI 分析配置</h2><p>管理模型连接，并指定日志分析使用的默认模型。</p></div><button type="button" aria-label="关闭 AI 配置" onClick={onCancel}><CloseIcon /></button></header>
       <div className="ai-config-workspace">
         <aside className="ai-profile-sidebar"><div className="ai-profile-heading"><span>模型连接</span><small>{Object.keys(drafts).length}</small></div><div className="ai-profile-list">{Object.values(drafts).map((profile) => <button type="button" key={profile.id} className={selectedId === profile.id ? "is-active" : undefined} onClick={() => select(profile.id)}><strong>{profile.name}</strong><span>{profile.model || "未选择模型"}</span>{configuration.activeProfileId === profile.id && <i>默认</i>}</button>)}</div><div className="ai-add-profile"><span>添加模型</span><AppSelect value="" placeholder="选择服务商" ariaLabel="选择 AI 服务商" options={AI_PROVIDER_PRESETS.map((preset) => ({ value: preset.id, label: preset.label, description: preset.description }))} onChange={add} /></div><div className="ai-config-transfer"><button type="button" onClick={exportConfiguration}>导出配置</button><button type="button" onClick={() => importRef.current?.click()}>导入配置</button><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event.target.files?.[0])} /></div></aside>
-        <div className="ai-config-body"><div className="ai-profile-toolbar"><div><strong>{form.name}</strong><span>{!saved ? "未保存" : dirty ? "有未保存更改" : "已保存"}</span></div>{active ? <span className="ai-active-badge">默认模型</span> : <button type="button" onClick={() => onActivate(selectedId)} disabled={!saved || dirty}>设为默认</button>}</div>
+        <div className="ai-config-body"><div className="ai-profile-toolbar"><div><strong>{form.name}</strong><span>{!saved ? "未保存" : dirty ? "有未保存更改" : "已保存"}</span></div><div className="ai-profile-actions">{active ? <span className="ai-active-badge">默认模型</span> : <button type="button" onClick={() => onActivate(selectedId)} disabled={!saved || dirty}>设为默认</button>}</div></div>
           <div className="ai-config-fields">
             <label><span>配置名称</span><input required value={form.name} onChange={(event) => update({ name: event.target.value })} /></label>
             <label><span>接口协议</span><AppSelect value={form.protocol} ariaLabel="选择接口协议" options={protocolOptions} onChange={(value) => update({ protocol: value as AiProtocol })} /></label>
@@ -115,15 +136,18 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
             <label><span>API Key</span><input type="password" autoComplete="off" required={requiresApiKey(form.provider) && !savedKey} value={form.apiKey ?? ""} placeholder={savedKey ? "留空以保留现有密钥" : requiresApiKey(form.provider) ? "输入 API Key" : "本地服务无需填写"} onChange={(event) => update({ apiKey: event.target.value, clearApiKey: false })} /></label>
             {saved?.hasApiKey && <label className="ai-clear-key"><input type="checkbox" checked={form.clearApiKey} onChange={(event) => update({ clearApiKey: event.target.checked, apiKey: "" })} /><span>清除已保存的 API Key</span></label>}
             <label><span>生成随机性</span><NumericInput integer={false} minimum={0} maximum={2} value={form.temperature} onChange={(temperature) => update({ temperature })} ariaLabel="生成随机性" /></label>
+            <label><span>回复语言</span><AppSelect value={form.responseLanguage} ariaLabel="选择 AI 回复语言" options={AI_RESPONSE_LANGUAGE_OPTIONS.map((option) => ({ ...option }))} onChange={(responseLanguage) => update({ responseLanguage })} /><small>分析结论、说明和建议将使用所选语言；日志原文、SQL 与标识符保持不变。</small></label>
             <label><span>输出长度上限（Token）</span><NumericInput minimum={1} maximum={10_000_000} value={form.maxOutputTokens} onChange={(maxOutputTokens) => update({ maxOutputTokens })} ariaLabel="输出长度上限" /><small>{limitsHint}</small></label>
             <label><span>日志输入上限（字符）</span><NumericInput minimum={1} maximum={100_000_000} value={form.maxLogCharacters} onChange={(maxLogCharacters) => update({ maxLogCharacters })} ariaLabel="日志输入上限" /><small>超过上限时自动合并重复内容，并优先保留异常、SQL、调用链与标记命中。</small></label>
             <div className="is-wide ai-stream-setting"><div><span>实时呈现分析结果</span><small>开启后，模型生成的内容会逐步显示；关闭后将在完整响应返回后统一显示。</small></div><button type="button" role="switch" aria-checked={form.streamResponse} className={form.streamResponse ? "is-on" : undefined} onClick={() => update({ streamResponse: !form.streamResponse })}><i /><span>{form.streamResponse ? "已开启" : "已关闭"}</span></button></div>
             <label className="is-wide ai-prompt-field"><span>系统提示词</span><textarea required rows={7} value={form.systemPrompt} onChange={(event) => update({ systemPrompt: event.target.value })} /><small>日志摘要、内置规则和自定义标记会在请求时自动附加。</small></label>
           </div>
           <p className="ai-data-notice">使用云端模型时，日志内容将发送至所选服务。导出文件不包含 API Key。</p>{error && <p className="ai-config-error" role="alert">{error}</p>}
+          <section className="ai-delete-zone" aria-labelledby="ai-delete-zone-title"><div><strong id="ai-delete-zone-title">危险操作</strong><span>{Object.keys(drafts).length <= 1 ? "至少需要保留一个模型连接。" : "永久删除当前模型连接及其本地凭据。"}</span></div><button type="button" onClick={() => setDeleteConfirmation(true)} disabled={saving || Object.keys(drafts).length <= 1}>删除此连接</button></section>
         </div>
       </div>
       <footer><button type="button" onClick={onCancel}>取消</button><button type="submit" className="primary" disabled={saving}>{saving ? "保存中…" : analyzeAfterSave ? "保存并分析" : "保存"}</button></footer>
     </form>
+    {deleteConfirmation && <AiProfileDeleteConfirmation profile={form} active={active} saving={saving} error={error} onCancel={() => setDeleteConfirmation(false)} onConfirm={() => void remove()} />}
   </div>;
 };

@@ -6,7 +6,7 @@ import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvir
 import { runEsql } from "./kibana-client.js";
 import { buildSearchQuery, buildTraceQuery, buildTrcQuery, pageRows } from "./query-builders.js";
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
-import { activateAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
+import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
 
 const optionalText = z.string().trim().max(500).optional();
@@ -109,15 +109,25 @@ apiRouter.post("/ai/configuration/active", asyncRoute(async (request, response) 
   response.json(await activateAiProfile(id));
 }));
 
+apiRouter.delete("/ai/configuration/:id", asyncRoute(async (request, response) => {
+  const { id } = z.object({ id: z.string().min(1).max(100) }).parse(request.params);
+  response.json(await deleteAiProfile(id));
+}));
+
 apiRouter.post("/ai/models", asyncRoute(async (request, response) => {
   response.json(await discoverAiModels(discoverAiModelsSchema.parse(request.body)));
 }));
 
 apiRouter.post("/ai/analyze", (request, response, next) => {
+  const controller = new AbortController();
+  const abort = (): void => controller.abort();
+  request.once("aborted", abort);
+  response.once("close", abort);
   void (async () => {
     const input = analyzeLogSchema.parse(request.body);
     if (!await isAiStreamingEnabled()) {
-      response.json(await analyzeLogWithAi(input));
+      const result = await analyzeLogWithAi(input, undefined, controller.signal);
+      if (!response.destroyed) response.json(result);
       return;
     }
     response.status(200);
@@ -125,16 +135,23 @@ apiRouter.post("/ai/analyze", (request, response, next) => {
     response.setHeader("Cache-Control", "no-cache, no-transform");
     response.setHeader("X-Accel-Buffering", "no");
     response.flushHeaders();
-    const send = (event: unknown): void => { response.write(`${JSON.stringify(event)}\n`); };
+    const send = (event: unknown): void => {
+      if (!response.destroyed && !response.writableEnded) response.write(`${JSON.stringify(event)}\n`);
+    };
     try {
-      const result = await analyzeLogWithAi(input, (content) => send({ type: "chunk", content }));
+      const result = await analyzeLogWithAi(input, (content) => send({ type: "chunk", content }), controller.signal);
       send({ type: "done", result });
     } catch (error) {
-      send({ type: "error", error: error instanceof Error ? error.message : "AI 分析失败" });
+      if (!controller.signal.aborted) send({ type: "error", error: error instanceof Error ? error.message : "AI 分析失败" });
     } finally {
-      response.end();
+      if (!response.destroyed && !response.writableEnded) response.end();
     }
-  })().catch(next);
+  })().catch((error) => {
+    if (!controller.signal.aborted) next(error);
+  }).finally(() => {
+    request.off("aborted", abort);
+    response.off("close", abort);
+  });
 });
 
 apiRouter.post("/environments/import", asyncRoute(async (request, response) => {

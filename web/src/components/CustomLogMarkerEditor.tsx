@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CustomLogMarker, CustomLogMarkerRule } from "../custom-log-markers";
 import { CloseIcon } from "./Icons";
+import { useMovableDialog } from "./useMovableDialog";
 import { CustomLogMarkerRuleEditor } from "./CustomLogMarkerRuleEditor";
 
 interface CustomLogMarkerEditorProps {
@@ -25,6 +26,7 @@ const validateRule = (rule: CustomLogMarkerRule): string | undefined => {
 
 export const CustomLogMarkerEditor = ({ marker, aliasOnly, creating = false, onCancel, onDelete, onSave }: CustomLogMarkerEditorProps) => {
   const hostRef = useRef<HTMLDivElement>(null);
+  const movable = useMovableDialog<HTMLDivElement>();
   const [draft, setDraft] = useState(marker);
   const error = aliasOnly ? undefined : draft.rules.map(validateRule).find(Boolean);
 
@@ -43,8 +45,8 @@ export const CustomLogMarkerEditor = ({ marker, aliasOnly, creating = false, onC
     onSave({ ...draft, label, rules });
   };
 
-  return <div className="custom-marker-editor" ref={hostRef} role="dialog" aria-label={aliasOnly ? "修改标记别名" : "编辑自定义标记"}>
-    <header><div><span>{creating ? "NEW CUSTOM MARKER" : "CUSTOM MARKER"}</span><strong>{aliasOnly ? "修改名称" : creating ? "创建标记" : "编辑标记"}</strong></div><button type="button" aria-label="关闭编辑器" onClick={onCancel}><CloseIcon /></button></header>
+  return <div className="custom-marker-editor movable-dialog" ref={(node) => { hostRef.current = node; movable.dialogRef.current = node; }} style={movable.dialogStyle} role="dialog" aria-label={aliasOnly ? "修改标记别名" : "编辑自定义标记"}>
+    <header onPointerDown={movable.startMove}><div><span>{creating ? "NEW CUSTOM MARKER" : "CUSTOM MARKER"}</span><strong>{aliasOnly ? "修改名称" : creating ? "创建标记" : "编辑标记"}</strong></div><button type="button" aria-label="关闭编辑器" onClick={onCancel}><CloseIcon /></button></header>
     <label className="custom-marker-name"><span>标记名称</span><input autoFocus value={draft.label} maxLength={40} onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") save(); }} /></label>
     {!aliasOnly && <CustomLogMarkerRuleEditor rules={draft.rules} onChange={(rules) => setDraft((current) => ({ ...current, rules }))} />}
     {error && <p className="custom-marker-error">{error}</p>}

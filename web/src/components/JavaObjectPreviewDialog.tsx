@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { parseJavaObjectPreview, type JavaObjectPreviewNode } from "../java-object-preview";
 import { CloseIcon } from "./Icons";
+import { useMovableDialog } from "./useMovableDialog";
 
 interface JavaObjectPreviewDialogProps {
   source: string;
@@ -66,11 +67,11 @@ const JavaObjectTreeNode = ({ depth, expanded, fieldName, node, path, rootBadge,
 };
 
 export const ObjectTreePreviewDialog = ({ closeLabel, description, eyebrow, expandAllByDefault = false, root, rootBadge, title, onClose }: ObjectTreePreviewDialogProps) => {
-  const dialogRef = useRef<HTMLElement>(null);
+  const movable = useMovableDialog<HTMLElement>();
   const paths = useMemo(() => expandablePaths(root), [root]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(expandAllByDefault ? paths : ["root"]));
 
-  useEffect(() => dialogRef.current?.focus(), []);
+  useEffect(() => movable.dialogRef.current?.focus(), [movable.dialogRef]);
   useEffect(() => setExpanded(new Set(expandAllByDefault ? paths : ["root"])), [expandAllByDefault, paths]);
 
   const toggle = (path: string) => setExpanded((current) => {
@@ -81,8 +82,8 @@ export const ObjectTreePreviewDialog = ({ closeLabel, description, eyebrow, expa
   });
 
   return <div className="structured-preview-backdrop" onMouseDown={onClose}>
-    <section ref={dialogRef} className="structured-preview-dialog java-object-preview-dialog" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
-      <header>
+    <section ref={movable.dialogRef} style={movable.dialogStyle} className="structured-preview-dialog java-object-preview-dialog movable-dialog" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
+      <header onPointerDown={movable.startMove}>
         <div><span>{eyebrow}</span><strong>{title}</strong></div>
         <button type="button" aria-label={closeLabel} title="关闭" onClick={onClose}><CloseIcon /></button>
       </header>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { activeAiProfile, isAiProfileConfigured, type StoredAiProfile } from "./ai-configuration.js";
+import { aiResponseLanguageInstruction } from "../shared/ai-response-language.js";
 
 export const analyzeLogSchema = z.object({
   prompt: z.string().trim().min(1).max(1_200_000),
@@ -25,13 +26,14 @@ const requestHeaders = (configuration: StoredAiProfile): Headers => {
 };
 
 const requestPayload = (configuration: StoredAiProfile, prompt: string): { url: URL; body: unknown } => {
+  const systemPrompt = `${configuration.systemPrompt}\n\n## 当前回复语言\n${aiResponseLanguageInstruction(configuration.responseLanguage)}`;
   if (configuration.protocol === "gemini-native") return {
     url: endpoint(configuration.baseUrl, `models/${encodeURIComponent(configuration.model)}:${configuration.streamResponse ? "streamGenerateContent?alt=sse" : "generateContent"}`),
-    body: { system_instruction: { parts: [{ text: configuration.systemPrompt }] }, contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: configuration.temperature, maxOutputTokens: configuration.maxOutputTokens } }
+    body: { system_instruction: { parts: [{ text: systemPrompt }] }, contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: configuration.temperature, maxOutputTokens: configuration.maxOutputTokens } }
   };
   if (configuration.protocol === "ollama-native") return {
     url: endpoint(configuration.baseUrl, "api/chat"),
-    body: { model: configuration.model, messages: [{ role: "system", content: configuration.systemPrompt }, { role: "user", content: prompt }], stream: configuration.streamResponse, options: { temperature: configuration.temperature, num_predict: configuration.maxOutputTokens } }
+    body: { model: configuration.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }], stream: configuration.streamResponse, options: { temperature: configuration.temperature, num_predict: configuration.maxOutputTokens } }
   };
   const outputLimit = configuration.provider === "openai"
     ? { max_completion_tokens: configuration.maxOutputTokens }
@@ -41,7 +43,7 @@ const requestPayload = (configuration: StoredAiProfile, prompt: string): { url: 
     : {};
   return {
     url: endpoint(configuration.baseUrl, "chat/completions"),
-    body: { model: configuration.model, messages: [{ role: "system", content: configuration.systemPrompt }, { role: "user", content: prompt }], temperature: configuration.temperature, stream: configuration.streamResponse, ...outputLimit, ...providerOptions }
+    body: { model: configuration.model, messages: [{ role: "system", content: systemPrompt }, { role: "user", content: prompt }], temperature: configuration.temperature, stream: configuration.streamResponse, ...outputLimit, ...providerOptions }
   };
 };
 
@@ -91,12 +93,14 @@ const parseStreamingResponse = async (response: Response, protocol: StoredAiProf
 
 export const isAiStreamingEnabled = async (): Promise<boolean> => (await activeAiProfile()).streamResponse;
 
-export const analyzeLogWithAi = async (input: AnalyzeLogInput, onChunk?: (content: string) => void) => {
+export const analyzeLogWithAi = async (input: AnalyzeLogInput, onChunk?: (content: string) => void, externalSignal?: AbortSignal) => {
   const configuration = await activeAiProfile();
   if (!isAiProfileConfigured(configuration)) throw new Error("当前日志分析模型尚未完成配置");
   const request = requestPayload(configuration, input.prompt);
   const startedAt = performance.now();
-  const response = await fetch(request.url, { method: "POST", headers: requestHeaders(configuration), body: JSON.stringify(request.body), signal: AbortSignal.timeout(240_000) });
+  const timeoutSignal = AbortSignal.timeout(240_000);
+  const signal = externalSignal ? AbortSignal.any([timeoutSignal, externalSignal]) : timeoutSignal;
+  const response = await fetch(request.url, { method: "POST", headers: requestHeaders(configuration), body: JSON.stringify(request.body), signal });
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`AI 服务返回 HTTP ${response.status}：${body.slice(0, 1_200)}`);

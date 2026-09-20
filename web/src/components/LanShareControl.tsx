@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LanShareController } from "../use-lan-share";
+import { useMovableDialog } from "./useMovableDialog";
 
 interface LanShareControlProps {
   controller: LanShareController;
@@ -22,6 +23,7 @@ export const LanShareControl = ({ controller }: LanShareControlProps) => {
   const [panelOpen, setPanelOpen] = useState(false);
   const [requirePasscode, setRequirePasscode] = useState(false);
   const controlRef = useRef<HTMLDivElement>(null);
+  const movable = useMovableDialog<HTMLDivElement>();
 
   useEffect(() => {
     setPanelOpen(controller.enabled || Boolean(controller.error));
@@ -90,7 +92,7 @@ export const LanShareControl = ({ controller }: LanShareControlProps) => {
       aria-expanded={panelOpen}
       onClick={() => setPanelOpen((current) => !current)}
     >URL</button>}
-    {panelOpen && <div className="lan-share-panel" role="dialog" aria-label={controller.enabled ? "局域网分享详情" : "开启局域网分享"}>
+    {panelOpen && <div ref={movable.dialogRef} style={movable.dialogStyle} className="lan-share-panel movable-dialog" role="dialog" aria-label={controller.enabled ? "局域网分享详情" : "开启局域网分享"} onPointerDown={movable.startMove}>
       <button className="lan-share-panel-close" type="button" aria-label="关闭局域网分享详情" onClick={() => setPanelOpen(false)}>×</button>
       <span className="eyebrow">LOCAL NETWORK SHARE</span>
       <strong>{controller.enabled ? "局域网访问已开启" : controller.error ? "局域网分享启动失败" : "选择访问保护方式"}</strong>

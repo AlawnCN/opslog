@@ -57,6 +57,11 @@ pub async fn activate_ai_configuration(id: String) -> Result<PublicAiConfigurati
     Ok(ai_configuration::activate_profile(&id).await?.public())
 }
 
+#[tauri::command]
+pub async fn delete_ai_configuration(id: String) -> Result<PublicAiConfigurationState, String> {
+    Ok(ai_configuration::delete_profile(&id).await?.public())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverAiModelsInput {
@@ -256,6 +261,32 @@ async fn request_analysis(
     }
 }
 
+fn response_language_label(value: &str) -> &str {
+    match value {
+        "zh-CN" => "简体中文",
+        "zh-TW" => "繁體中文",
+        "en-US" => "English",
+        "ja-JP" => "日本語",
+        "ko-KR" => "한국어",
+        "fr-FR" => "Français",
+        "de-DE" => "Deutsch",
+        "es-ES" => "Español",
+        "pt-BR" => "Português",
+        "sw-KE" => "Kiswahili",
+        "ar" => "العربية",
+        other => other,
+    }
+}
+
+fn system_prompt(configuration: &AiProfileRecord) -> String {
+    format!(
+        "{}\n\n## 当前回复语言\n回复语言：必须使用 {}（{}）完成全部分析。除日志原文、代码、SQL、字段名、标识符、错误消息和专有名词外，不得切换为其他语言。本要求优先于其他提示词中的固定语言要求。",
+        configuration.system_prompt,
+        response_language_label(&configuration.response_language),
+        configuration.response_language
+    )
+}
+
 fn endpoint(base_url: &str, suffix: &str) -> Result<Url, String> {
     let normalized = if base_url.ends_with(suffix) {
         base_url.to_string()
@@ -275,10 +306,11 @@ async fn request_openai_compatible(
     prompt: &str,
 ) -> Result<Response, String> {
     let url = endpoint(&configuration.base_url, "chat/completions")?;
+    let system_prompt = system_prompt(configuration);
     let mut body = json!({
         "model": configuration.model,
         "messages": [
-            { "role": "system", "content": configuration.system_prompt },
+            { "role": "system", "content": system_prompt },
             { "role": "user", "content": prompt }
         ],
         "temperature": configuration.temperature,
@@ -324,8 +356,9 @@ async fn request_gemini(
         format!("models/{}:generateContent", configuration.model)
     };
     let url = endpoint(&configuration.base_url, &suffix)?;
+    let system_prompt = system_prompt(configuration);
     let mut request = client.post(url).json(&json!({
-        "system_instruction": { "parts": [{ "text": configuration.system_prompt }] },
+        "system_instruction": { "parts": [{ "text": system_prompt }] },
         "contents": [{ "role": "user", "parts": [{ "text": prompt }] }],
         "generationConfig": {
             "temperature": configuration.temperature,
@@ -344,12 +377,13 @@ async fn request_ollama(
     prompt: &str,
 ) -> Result<Response, String> {
     let url = endpoint(&configuration.base_url, "api/chat")?;
+    let system_prompt = system_prompt(configuration);
     client
         .post(url)
         .json(&json!({
             "model": configuration.model,
             "messages": [
-                { "role": "system", "content": configuration.system_prompt },
+                { "role": "system", "content": system_prompt },
                 { "role": "user", "content": prompt }
             ],
             "stream": configuration.stream_response,

@@ -47,6 +47,7 @@ export interface AiProfile {
   maxOutputTokens: number;
   maxLogCharacters: number;
   streamResponse: boolean;
+  responseLanguage: string;
 }
 
 export interface AiConfiguration {
@@ -310,6 +311,13 @@ export const activateAiConfiguration = async (id: string): Promise<AiConfigurati
   return response.json();
 };
 
+export const deleteAiConfiguration = async (id: string): Promise<AiConfiguration> => {
+  if (desktopMode) return desktopInvoke<AiConfiguration>("delete_ai_configuration", { id });
+  const response = await webFetch(`/api/ai/configuration/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
 export const discoverAiModels = async (input: Pick<SaveAiConfigurationInput, "id" | "provider" | "protocol" | "baseUrl" | "apiKey">): Promise<AiModelDescriptor[]> => {
   const payload = { profileId: input.id, provider: input.provider, protocol: input.protocol, baseUrl: input.baseUrl, apiKey: input.apiKey };
   if (desktopMode) return desktopInvoke<AiModelDescriptor[]>("discover_ai_models", { input: payload });
@@ -318,17 +326,20 @@ export const discoverAiModels = async (input: Pick<SaveAiConfigurationInput, "id
   return response.json();
 };
 
-export const analyzeLogWithAi = async (prompt: string, inputCharacters: number, truncated: boolean, onChunk?: (content: string) => void): Promise<AiAnalyzeResult> => {
+export const analyzeLogWithAi = async (prompt: string, inputCharacters: number, truncated: boolean, onChunk?: (content: string) => void, signal?: AbortSignal): Promise<AiAnalyzeResult> => {
   const input = { prompt, inputCharacters, truncated };
   if (desktopMode) {
     const onEvent = new Channel<{ type: "chunk"; content: string }>();
-    onEvent.onmessage = (event) => { if (event.type === "chunk") onChunk?.(event.content); };
-    return desktopInvoke<AiAnalyzeResult>("analyze_log_with_ai", { input, onEvent });
+    onEvent.onmessage = (event) => { if (!signal?.aborted && event.type === "chunk") onChunk?.(event.content); };
+    const result = await desktopInvoke<AiAnalyzeResult>("analyze_log_with_ai", { input, onEvent });
+    if (signal?.aborted) throw new DOMException("AI analysis was cancelled", "AbortError");
+    return result;
   }
   const response = await webFetch("/api/ai/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    signal
   });
   if (!response.ok) return parseError(response);
   return response.headers.get("Content-Type")?.includes("application/x-ndjson")

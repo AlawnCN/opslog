@@ -71,6 +71,10 @@ fn default_stream_response() -> bool {
     true
 }
 
+fn default_response_language() -> String {
+    "zh-CN".into()
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProfileRecord {
@@ -87,6 +91,8 @@ pub struct AiProfileRecord {
     pub max_log_characters: usize,
     #[serde(default = "default_stream_response")]
     pub stream_response: bool,
+    #[serde(default = "default_response_language")]
+    pub response_language: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -117,6 +123,8 @@ pub struct SaveAiProfileInput {
     pub max_log_characters: usize,
     #[serde(default = "default_stream_response")]
     pub stream_response: bool,
+    #[serde(default = "default_response_language")]
+    pub response_language: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -135,6 +143,7 @@ pub struct PublicAiProfile {
     pub max_output_tokens: u32,
     pub max_log_characters: usize,
     pub stream_response: bool,
+    pub response_language: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -161,6 +170,7 @@ impl Default for AiProfileRecord {
             max_output_tokens: 8_192,
             max_log_characters: 120_000,
             stream_response: true,
+            response_language: default_response_language(),
         }
     }
 }
@@ -187,6 +197,7 @@ impl AiProfileRecord {
             max_output_tokens: self.max_output_tokens,
             max_log_characters: self.max_log_characters,
             stream_response: self.stream_response,
+            response_language: self.response_language.clone(),
         }
     }
 }
@@ -264,6 +275,9 @@ fn validate(record: &AiProfileRecord) -> Result<(), String> {
     if !(1..=100_000_000).contains(&record.max_log_characters) {
         return Err("日志输入上限必须在 1 到 100000000 字符之间".into());
     }
+    if record.response_language.trim().is_empty() || record.response_language.len() > 40 {
+        return Err("回复语言不能为空且不能超过 40 个字符".into());
+    }
     Ok(())
 }
 
@@ -290,6 +304,7 @@ fn parse_state(value: &str) -> Result<AiConfigurationState, String> {
         max_output_tokens: legacy.max_output_tokens,
         max_log_characters: legacy.max_log_characters,
         stream_response: true,
+        response_language: default_response_language(),
     };
     Ok(AiConfigurationState {
         version: 2,
@@ -364,6 +379,7 @@ pub async fn save_profile(input: SaveAiProfileInput) -> Result<AiConfigurationSt
         max_output_tokens: input.max_output_tokens,
         max_log_characters: input.max_log_characters,
         stream_response: input.stream_response,
+        response_language: input.response_language.trim().into(),
     };
     validate(&profile)?;
     state.profiles.retain(|existing| existing.id != profile.id);
@@ -381,6 +397,22 @@ pub async fn activate_profile(id: &str) -> Result<AiConfigurationState, String> 
         return Err("所选模型配置不存在".into());
     }
     state.active_profile_id = id.into();
+    persist(&state).await?;
+    Ok(state)
+}
+
+pub async fn delete_profile(id: &str) -> Result<AiConfigurationState, String> {
+    let mut state = load_state().await?;
+    if state.profiles.len() <= 1 {
+        return Err("至少保留一个模型连接".into());
+    }
+    if !state.profiles.iter().any(|profile| profile.id == id) {
+        return Err("所选模型配置不存在".into());
+    }
+    state.profiles.retain(|profile| profile.id != id);
+    if state.active_profile_id == id {
+        state.active_profile_id = state.profiles[0].id.clone();
+    }
     persist(&state).await?;
     Ok(state)
 }

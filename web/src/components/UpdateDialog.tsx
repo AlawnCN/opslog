@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import type { AppUpdateState } from "../use-app-updater";
 import { CloseIcon, DownloadIcon } from "./Icons";
+import { useMovableDialog } from "./useMovableDialog";
 
 const ReleaseNotesMarkdown = lazy(async () => {
   const module = await import("./ReleaseNotesMarkdown");
@@ -28,6 +29,7 @@ const statusCopy = (state: AppUpdateState): string => {
 };
 
 export const UpdateDialog = ({ state, onInstall, onDismiss, appName = "OpsLog" }: UpdateDialogProps) => {
+  const movable = useMovableDialog<HTMLElement>();
   if (!state.visible) return null;
   const percentage = progress(state);
   const busy = state.phase === "checking" || state.phase === "downloading" || state.phase === "installing";
@@ -36,8 +38,8 @@ export const UpdateDialog = ({ state, onInstall, onDismiss, appName = "OpsLog" }
     || (state.notesLoading ? "正在读取完整更新内容…" : state.notesError || "本次版本未提供更新说明。");
 
   return <div className="update-dialog-backdrop" role="presentation">
-    <section className="update-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title" aria-busy={busy}>
-      <header>
+    <section ref={movable.dialogRef} style={movable.dialogStyle} className="update-dialog movable-dialog" role="dialog" aria-modal="true" aria-labelledby="update-title" aria-busy={busy}>
+      <header onPointerDown={movable.startMove}>
         <div className="update-emblem" aria-hidden="true"><DownloadIcon /></div>
         <div><span className="eyebrow">SECURE UPDATE</span><h2 id="update-title">{appName} 自动更新</h2></div>
         {!busy && <button className="update-close" title="稍后更新" aria-label="稍后更新" onClick={onDismiss}><CloseIcon /></button>}
