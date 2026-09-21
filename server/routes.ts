@@ -96,6 +96,10 @@ apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   response.json(environments.map(toPublicEnvironment));
 }));
 
+apiRouter.get("/environments/configuration", asyncRoute(async (_request, response) => {
+  response.json(await loadEnvironments());
+}));
+
 apiRouter.get("/ai/configuration", asyncRoute(async (_request, response) => {
   response.json(await loadAiConfiguration());
 }));

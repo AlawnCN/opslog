@@ -29,7 +29,7 @@ pub enum SearchStatus {
     Fail,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentConfig {
     pub name: String,
@@ -39,7 +39,9 @@ pub struct EnvironmentConfig {
     pub txnlst_index: String,
     pub txntrc_index: String,
     pub applog_index: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub apm_index: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_insecure_tls: Option<bool>,
 }
 

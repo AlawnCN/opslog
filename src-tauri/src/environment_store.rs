@@ -104,7 +104,7 @@ pub async fn load(app: &AppHandle) -> Result<Vec<EnvironmentConfig>, String> {
     let path = candidate_paths(app)
         .into_iter()
         .find(|path| path.is_file())
-        .ok_or_else(|| "未找到 opslog-envs.json，请点击“导入配置”选择配置文件".to_string())?;
+        .ok_or_else(|| "未找到 opslog-envs.json，请打开“配置”创建或导入运行环境".to_string())?;
     let contents = tokio::fs::read_to_string(&path)
         .await
         .map_err(|error| format!("无法读取环境配置 {}：{error}", path.display()))?;

@@ -1,8 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { type PointerEvent as ReactPointerEvent } from "react";
 import type { Environment } from "../types";
 import type { LanShareController } from "../use-lan-share";
-import { ImportIcon, PulseIcon } from "./Icons";
+import { PulseIcon, SettingsIcon } from "./Icons";
 import { LanShareControl } from "./LanShareControl";
 import { AppSelect } from "./AppSelect";
 
@@ -14,23 +14,15 @@ interface HeaderProps {
   desktopMode: boolean;
   canImportConfig: boolean;
   lanShare: LanShareController;
-  onImportConfig: (file: File) => Promise<void>;
+  onConfigure: () => void;
   updateAvailable: boolean;
   updateBusy: boolean;
   onCheckForUpdates: () => void;
 }
 
-export const Header = ({ environments, selected, onSelect, loading, desktopMode, canImportConfig, lanShare, onImportConfig, updateAvailable, updateBusy, onCheckForUpdates }: HeaderProps) => {
+export const Header = ({ environments, selected, onSelect, loading, desktopMode, canImportConfig, lanShare, onConfigure, updateAvailable, updateBusy, onCheckForUpdates }: HeaderProps) => {
   const environment = environments.find((item) => item.name === selected);
-  const configInput = useRef<HTMLInputElement>(null);
   const macDesktop = desktopMode && navigator.userAgent.includes("Macintosh");
-
-  const selectConfig = async (files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) return;
-    await onImportConfig(file);
-    if (configInput.current) configInput.current.value = "";
-  };
 
   const startWindowDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (!macDesktop || event.button !== 0) return;
@@ -48,10 +40,7 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
       </div>
       <div className="topbar-context">
-        {canImportConfig && <>
-          <button className="config-import" type="button" disabled={loading} onClick={() => configInput.current?.click()}><ImportIcon />导入配置</button>
-          <input ref={configInput} className="config-file-input" type="file" accept="application/json,.json" onChange={(event) => void selectConfig(event.currentTarget.files)} />
-        </>}
+        {canImportConfig && <button className="config-import" type="button" disabled={loading} onClick={onConfigure}><SettingsIcon />配置</button>}
         <div className="environment-control">
           <span>运行环境</span>
           <AppSelect value={selected} ariaLabel="运行环境" options={environments.map((item) => ({ value: item.name, label: item.name }))} onChange={onSelect} />
@@ -62,8 +51,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.31<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.31</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.32<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.32</div>}
       </div>
     </header>
   );

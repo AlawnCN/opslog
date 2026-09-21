@@ -1,17 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironments, loadWebRuntimeInfo, searchLogs } from "./api";
+import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironmentConfiguration, loadEnvironments, loadWebRuntimeInfo, searchLogs } from "./api";
 import { initialFilters, initialPageSize, PAGE_SIZE_KEY, PAGE_SIZES } from "./app-defaults";
 import { DataTable } from "./components/DataTable";
 import { AppSelect } from "./components/AppSelect";
 import { FilterPanel, type FilterPanelHandle } from "./components/FilterPanel";
 import { Header } from "./components/Header";
+import { EnvironmentConfigurationDialog } from "./components/EnvironmentConfigurationDialog";
 import { Navigation } from "./components/Navigation";
 import { TraceDrawer } from "./components/TraceDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
 import { rollingNairobiRange, toUtcIso } from "./time";
-import type { Environment, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
+import type { Environment, EnvironmentConfiguration, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
 import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
 import { isEditableFocusTarget, isQueryFocusShortcut } from "./keyboard-shortcuts";
@@ -33,7 +34,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [searchPerformance, setSearchPerformance] = useState<{ durationMs: number; cached: boolean }>();
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
-  const [canImportConfig, setCanImportConfig] = useState(true);
+  const [canImportConfig, setCanImportConfig] = useState(desktopMode);
+  const [environmentConfigOpen, setEnvironmentConfigOpen] = useState(false);
+  const [environmentConfiguration, setEnvironmentConfiguration] = useState<EnvironmentConfiguration[]>([]);
+  const [environmentConfigLoading, setEnvironmentConfigLoading] = useState(false);
+  const [environmentConfigSaving, setEnvironmentConfigSaving] = useState(false);
+  const [environmentConfigError, setEnvironmentConfigError] = useState<string>();
   const controller = useRef<AbortController | undefined>(undefined);
   const searchRunId = useRef(0);
   const sessionCache = useRef(new OpsLogSessionCache());
@@ -73,13 +79,32 @@ export default function App() {
     }
   }, []);
 
-  const importConfig = async (file: File) => {
+  const openEnvironmentConfiguration = async () => {
+    setEnvironmentConfigOpen(true);
+    setEnvironmentConfigLoading(true);
+    setEnvironmentConfigError(undefined);
     try {
-      const path = await importEnvironmentConfig(await file.text());
-      await reloadEnvironments();
-      setNotice({ tone: "info", text: `环境配置已导入：${path}` });
+      setEnvironmentConfiguration(await loadEnvironmentConfiguration());
     } catch (error) {
-      setNotice({ tone: "error", text: errorMessage(error) });
+      setEnvironmentConfigError(errorMessage(error));
+    } finally {
+      setEnvironmentConfigLoading(false);
+    }
+  };
+
+  const saveEnvironmentConfiguration = async (items: EnvironmentConfiguration[]) => {
+    setEnvironmentConfigSaving(true);
+    setEnvironmentConfigError(undefined);
+    try {
+      const path = await importEnvironmentConfig(JSON.stringify(items, null, 2));
+      setEnvironmentConfiguration(items);
+      await reloadEnvironments();
+      setEnvironmentConfigOpen(false);
+      setNotice({ tone: "info", text: `运行环境配置已保存：${path}` });
+    } catch (error) {
+      setEnvironmentConfigError(errorMessage(error));
+    } finally {
+      setEnvironmentConfigSaving(false);
     }
   };
 
@@ -126,6 +151,11 @@ export default function App() {
           appUpdater.dismissUpdater();
           return;
         }
+        if (environmentConfigOpen) {
+          event.preventDefault();
+          if (!environmentConfigSaving) setEnvironmentConfigOpen(false);
+          return;
+        }
         if (logResources.transactionLog) {
           event.preventDefault();
           transactionLogDrawerRef.current?.closeTopLayer();
@@ -146,7 +176,7 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyboardShortcut);
     return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-  }, [appUpdater, logResources]);
+  }, [appUpdater, environmentConfigOpen, environmentConfigSaving, logResources]);
 
   const runSearch = async (targetPage = 1, targetPageSize = pageSize, forceRefresh = false, refreshSelectedRange = false) => {
     let activeRequest = request;
@@ -227,7 +257,7 @@ export default function App() {
     finally { setLoading(false); }
   };
   return <div className="app-shell">
-    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onImportConfig={importConfig} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
+    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} />
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
@@ -237,6 +267,7 @@ export default function App() {
     </main>
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} />
     {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
+    {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
     <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />
   </div>;
 }

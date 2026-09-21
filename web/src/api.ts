@@ -1,6 +1,6 @@
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { readAiAnalysisStream } from "./ai-analysis-stream";
-import type { Environment, SearchRequest, SearchResponse } from "./types";
+import type { Environment, EnvironmentConfiguration, SearchRequest, SearchResponse } from "./types";
 
 interface SavedFile {
   path: string;
@@ -138,6 +138,13 @@ const webFetch = (input: RequestInfo | URL, init: RequestInit = {}): Promise<Res
 export const loadEnvironments = async (): Promise<Environment[]> => {
   if (desktopMode) return desktopInvoke<Environment[]>("load_environments");
   const response = await webFetch("/api/environments");
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export const loadEnvironmentConfiguration = async (): Promise<EnvironmentConfiguration[]> => {
+  if (desktopMode) return desktopInvoke<EnvironmentConfiguration[]>("load_environment_configuration");
+  const response = await webFetch("/api/environments/configuration");
   if (!response.ok) return parseError(response);
   return response.json();
 };

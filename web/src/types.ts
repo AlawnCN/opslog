@@ -10,6 +10,18 @@ export interface Environment {
   insecureTls: boolean;
 }
 
+export interface EnvironmentConfiguration {
+  name: string;
+  kibanaUrl: string;
+  username: string;
+  password: string;
+  txnlstIndex: string;
+  txntrcIndex: string;
+  applogIndex: string;
+  apmIndex?: string;
+  allowInsecureTls?: boolean;
+}
+
 export interface SearchFilters {
   startLocal: string;
   endLocal: string;

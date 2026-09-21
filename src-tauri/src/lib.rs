@@ -44,6 +44,7 @@ pub fn run() {
             ai_analysis::discover_ai_models,
             ai_analysis::analyze_log_with_ai,
             commands::load_environments,
+            commands::load_environment_configuration,
             commands::save_environment_config,
             commands::search_logs,
             commands::export_logs,

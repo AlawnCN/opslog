@@ -4,8 +4,8 @@ use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::domain::{
-    DownloadInput, DownloadResult, PublicEnvironment, SaveCustomMarkersInput, SavePortableLogInput,
-    SaveTransactionLogInput, SearchInput, SearchResponse, display_fields,
+    DownloadInput, DownloadResult, EnvironmentConfig, PublicEnvironment, SaveCustomMarkersInput,
+    SavePortableLogInput, SaveTransactionLogInput, SearchInput, SearchResponse, display_fields,
 };
 use crate::environment_store;
 use crate::export_files;
@@ -99,6 +99,13 @@ pub async fn load_environments(app: AppHandle) -> Result<Vec<PublicEnvironment>,
         .into_iter()
         .map(environment_store::to_public)
         .collect())
+}
+
+#[tauri::command]
+pub async fn load_environment_configuration(
+    app: AppHandle,
+) -> Result<Vec<EnvironmentConfig>, String> {
+    environment_store::load(&app).await
 }
 
 #[tauri::command]
