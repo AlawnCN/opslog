@@ -40,10 +40,12 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
       </div>
       <div className="topbar-context">
-        {canImportConfig && <button className="config-import" type="button" disabled={loading} onClick={onConfigure}><SettingsIcon />配置</button>}
         <div className="environment-control">
           <span>运行环境</span>
-          <AppSelect value={selected} ariaLabel="运行环境" options={environments.map((item) => ({ value: item.name, label: item.name }))} onChange={onSelect} />
+          <div className="environment-composite-control">
+            <AppSelect value={selected} ariaLabel="运行环境" options={environments.map((item) => ({ value: item.name, label: item.name }))} onChange={onSelect} />
+            {canImportConfig && <button className="environment-config-trigger" type="button" disabled={loading} title="管理运行环境" onClick={onConfigure}><SettingsIcon /><span>配置</span></button>}
+          </div>
         </div>
         <div className={`connection-state ${environment?.insecureTls ? "warning" : ""}`}>
           <i />
@@ -51,8 +53,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.32<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.32</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.33<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.0.33</div>}
       </div>
     </header>
   );
