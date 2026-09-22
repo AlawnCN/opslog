@@ -26,10 +26,8 @@ use tokio::{
 
 use crate::{
     ai_analysis, ai_configuration, commands,
-    domain::{DownloadInput, SearchInput, display_fields},
+    domain::{DownloadInput, SearchInput},
     environment_store, export_files,
-    kibana_client::run_esql,
-    query_builders::build_search_query,
 };
 
 const MAX_CONCURRENT_QUERIES: usize = 4;
@@ -305,18 +303,11 @@ async fn export(State(state): State<LanApiState>, Json(input): Json<SearchInput>
         Ok(environment) => environment,
         Err(error) => return api_error(error),
     };
-    let query = match build_search_query(&input, &environment, true) {
-        Ok(query) => query,
-        Err(error) => return api_error(error),
-    };
-    let result = match run_esql(&environment, &query, 300).await {
+    let result = match commands::execute_source_search(&environment, &input, true, 300).await {
         Ok(result) => result,
         Err(error) => return api_error(error),
     };
-    let columns = display_fields(input.kind)
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
+    let columns = &result.columns;
     let filename = format!(
         "{}-{}.csv",
         input.kind.as_str(),
@@ -325,7 +316,7 @@ async fn export(State(state): State<LanApiState>, Json(input): Json<SearchInput>
     download_response(
         "text/csv; charset=utf-8",
         &filename,
-        export_files::csv(&columns, &result.rows).into_bytes(),
+        export_files::csv(columns, &result.rows).into_bytes(),
     )
 }
 

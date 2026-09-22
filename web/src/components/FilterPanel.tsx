@@ -84,8 +84,9 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
       <div className={`filter-conditions${collapsed ? " is-collapsed" : ""}`}>
         <div className="filter-grid">
           {kind === "transaction" && <>
+            {environment?.sourceType === "ssh" && <Field label="监控应用"><AppSelect value={filters.application || environment.sshApplications[0] || ""} ariaLabel="监控应用" options={environment.sshApplications.map((item) => ({ value: item, label: item }))} onChange={(value) => onChange("application", value)} /></Field>}
             <Field label="日志 ID">{input("txnId", "支持片段匹配")}</Field>
-            <Field label="Trace ID">{input("traceId", "链路标识")}</Field>
+            {environment?.sourceType !== "ssh" && <Field label="Trace ID">{input("traceId", "链路标识")}</Field>}
             <Field label="流水号">{input("txnNo", "ecp.txn.no")}</Field>
             <Field label="业务 Key">{input("business", "ecp.txn.business")}</Field>
             <Field label="交易码">{input("service", "ecp.txn.service")}</Field>
@@ -97,8 +98,10 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
           </>}
 
           {(kind === "application" || kind === "ecp" || kind === "generic") && <>
-            {kind === "generic" && <Field label="日志索引"><AppSelect value={filters.index} ariaLabel="日志索引" options={indexes.map((item) => ({ value: item, label: item }))} onChange={(value) => onChange("index", value)} /></Field>}
-            <Field label="应用名">{input("application", "ecp.log.application")}</Field>
+            {kind === "generic" && environment?.sourceType !== "ssh" && <Field label="日志索引"><AppSelect value={filters.index} ariaLabel="日志索引" options={indexes.map((item) => ({ value: item, label: item }))} onChange={(value) => onChange("index", value)} /></Field>}
+            {environment?.sourceType === "ssh"
+              ? <Field label="监控应用"><AppSelect value={filters.application || environment.sshApplications[0] || ""} ariaLabel="监控应用" options={environment.sshApplications.map((item) => ({ value: item, label: item }))} onChange={(value) => onChange("application", value)} /></Field>
+              : <Field label="应用名">{input("application", "ecp.log.application")}</Field>}
             {kind !== "generic" && <Field label="日志级别">{input("level", "ERROR / WARN / INFO")}</Field>}
             {kind === "ecp" && <Field label="日志文件">{input("file", "ecp.log.file")}</Field>}
             <Field label="关键词" wide>{input("keyword", "跨 message、thread、trace 等规范字段检索")}</Field>
@@ -106,7 +109,7 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
         </div>
       </div>
       <div className="filter-actions">
-        <div className="index-hint"><i /> INDEX <code>{kind === "transaction" ? environment?.txnlstIndex : kind === "generic" ? filters.index : environment?.applogIndex}</code></div>
+        <div className="index-hint"><i /> {environment?.sourceType === "ssh" ? "SSH SOURCE" : "INDEX"} <code>{environment?.sourceType === "ssh" ? `${environment.name} / ${filters.application || environment.sshApplications[0] || "—"}` : kind === "transaction" ? environment?.txnlstIndex : kind === "generic" ? filters.index : environment?.applogIndex}</code></div>
         <button type="button" className={`filter-collapse-toggle${collapsed ? " is-collapsed" : ""}`} aria-expanded={!collapsed} aria-label={collapsed ? "展开筛选条件" : "收起筛选条件"} title={collapsed ? "展开筛选条件" : "收起筛选条件"} onClick={toggleCollapsed}>
           <svg viewBox="0 0 24 14" aria-hidden="true">
             <path d="m4 10 8-7 8 7" />

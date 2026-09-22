@@ -1,19 +1,152 @@
+use std::collections::HashSet;
+
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use tauri::AppHandle;
 
 use crate::domain::{
-    DownloadInput, DownloadResult, EnvironmentConfig, PublicEnvironment, SaveCustomMarkersInput,
-    SavePortableLogInput, SaveTransactionLogInput, SearchInput, SearchResponse, display_fields,
+    DownloadInput, DownloadResult, EnvironmentConfig, EnvironmentSource, LogKind,
+    PublicEnvironment, QueryResult, SaveCustomMarkersInput, SavePortableLogInput,
+    SaveTransactionLogInput, SearchInput, SearchResponse, SearchStatus, display_fields,
 };
 use crate::environment_store;
 use crate::export_files;
 use crate::kibana_client::run_esql;
-use crate::query_builders::{build_search_query, build_trace_query, build_trc_query};
+use crate::query_builders::{
+    build_search_query, build_search_query_with_omitted_fields, build_trace_query, build_trc_query,
+    log_keyword_fields,
+};
+use crate::ssh_log_source;
 
 const MAX_RANGE_DAYS: i64 = 31;
 const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
+
+fn unknown_columns(error: &str) -> Vec<String> {
+    let normalized = error.to_ascii_lowercase();
+    let marker = "unknown column [";
+    let mut cursor = 0;
+    let mut fields = Vec::new();
+    while let Some(relative_start) = normalized[cursor..].find(marker) {
+        let start = cursor + relative_start + marker.len();
+        let Some(relative_end) = normalized[start..].find(']') else {
+            break;
+        };
+        let end = start + relative_end;
+        let field = normalized[start..end].trim().to_string();
+        if !field.is_empty() && !fields.contains(&field) {
+            fields.push(field);
+        }
+        cursor = end + 1;
+    }
+    fields
+}
+
+fn constrained_fields(input: &SearchInput) -> HashSet<String> {
+    let mut fields = HashSet::from([
+        if matches!(input.kind, LogKind::Generic | LogKind::Transaction) {
+            "@timestamp".to_string()
+        } else {
+            "ecp.log.timestamp".to_string()
+        },
+    ]);
+    let mut add = |field: &str, value: Option<&str>| {
+        if value.is_some_and(|value| !value.trim().is_empty()) {
+            fields.insert(field.to_string());
+        }
+    };
+    if input.kind == LogKind::Transaction {
+        add("ecp.txn.id", input.txn_id.as_deref());
+        add("ecp.txn.trace", input.trace_id.as_deref());
+        add("ecp.txn.no", input.txn_no.as_deref());
+        add("ecp.txn.business", input.business.as_deref());
+        add("ecp.txn.service", input.service.as_deref());
+        add("ecp.txn.message.code", input.message_code.as_deref());
+        add("ecp.txn.message.info", input.message_info.as_deref());
+        add("ecp.txn.node", input.node.as_deref());
+        if matches!(
+            input.status,
+            Some(SearchStatus::Success | SearchStatus::Fail)
+        ) {
+            fields.insert("ecp.txn.message.code".to_string());
+        }
+        if input.min_duration_ms.is_some_and(|value| value > 0) {
+            fields.insert("ecp.txn.duration".to_string());
+        }
+        return fields;
+    }
+    add("ecp.log.application", input.application.as_deref());
+    add("ecp.log.level", input.level.as_deref());
+    if input.kind == LogKind::Ecp {
+        add("ecp.log.file", input.file.as_deref());
+    }
+    fields
+}
+
+fn available_columns(input: &SearchInput, omitted: &HashSet<String>) -> Vec<String> {
+    display_fields(input.kind)
+        .iter()
+        .filter(|field| !omitted.contains(**field))
+        .map(ToString::to_string)
+        .collect()
+}
+
+pub(crate) async fn execute_source_search(
+    environment: &EnvironmentConfig,
+    input: &SearchInput,
+    export_all: bool,
+    timeout_seconds: u64,
+) -> Result<QueryResult, String> {
+    if environment.source_type == EnvironmentSource::Ssh {
+        return ssh_log_source::search(environment, input, export_all).await;
+    }
+    let mut omitted = HashSet::new();
+    let required = constrained_fields(input);
+    for _ in 0..32 {
+        let columns = available_columns(input, &omitted);
+        let keyword_unavailable = input.kind != LogKind::Transaction
+            && input
+                .keyword
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            && log_keyword_fields(input.kind)
+                .iter()
+                .all(|field| omitted.contains(*field));
+        if columns.is_empty() || keyword_unavailable {
+            return Ok(QueryResult {
+                columns,
+                rows: Vec::new(),
+            });
+        }
+        let query = if omitted.is_empty() {
+            build_search_query(input, environment, export_all)?
+        } else {
+            build_search_query_with_omitted_fields(input, environment, export_all, &omitted)?
+        };
+        match run_esql(environment, &query, timeout_seconds).await {
+            Ok(result) => return Ok(result),
+            Err(error) => {
+                let missing = unknown_columns(&error);
+                if missing.is_empty() {
+                    return Err(error);
+                }
+                let learned = missing.iter().any(|field| !omitted.contains(field));
+                omitted.extend(missing.iter().cloned());
+                let columns = available_columns(input, &omitted);
+                if !learned || missing.iter().any(|field| required.contains(field)) {
+                    return Ok(QueryResult {
+                        columns,
+                        rows: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(QueryResult {
+        columns: available_columns(input, &omitted),
+        rows: Vec::new(),
+    })
+}
 const MAX_CUSTOM_MARKERS_BYTES: usize = 1024 * 1024;
 const MAX_PORTABLE_LOG_BYTES: usize = 192 * 1024 * 1024;
 const MAX_AI_ANALYSIS_BYTES: usize = 16 * 1024 * 1024;
@@ -123,10 +256,10 @@ pub async fn save_environment_config(
 pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchResponse, String> {
     validate_search(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
-    let query = build_search_query(&input, &environment, false)?;
-    let result = run_esql(&environment, &query, 120).await?;
+    let result = execute_source_search(&environment, &input, false, 120).await?;
     let row_count = result.rows.len();
     let has_columns = !result.columns.is_empty();
+    let columns = result.columns;
     let start = input.page.saturating_sub(1) * input.page_size;
     let rows = result
         .rows
@@ -135,10 +268,7 @@ pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchRes
         .take(input.page_size)
         .collect();
     Ok(SearchResponse {
-        columns: display_fields(input.kind)
-            .iter()
-            .map(ToString::to_string)
-            .collect(),
+        columns,
         rows,
         page: input.page,
         page_size: input.page_size,
@@ -152,13 +282,9 @@ pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchRes
 pub async fn export_logs(app: AppHandle, input: SearchInput) -> Result<DownloadResult, String> {
     validate_search(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
-    let query = build_search_query(&input, &environment, true)?;
-    let result = run_esql(&environment, &query, 300).await?;
-    let columns = display_fields(input.kind)
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    let contents = export_files::csv(&columns, &result.rows);
+    let result = execute_source_search(&environment, &input, true, 300).await?;
+    let columns = &result.columns;
+    let contents = export_files::csv(columns, &result.rows);
     export_files::save(input.kind.as_str(), "csv", contents.as_bytes()).await
 }
 
@@ -169,6 +295,17 @@ pub async fn download_transaction_log(
 ) -> Result<DownloadResult, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
+    if environment.source_type == EnvironmentSource::Ssh {
+        let contents = ssh_log_source::read_transaction(
+            &environment,
+            &input.id,
+            &input.start_time,
+            &input.end_time,
+            input.application.as_deref(),
+        )
+        .await?;
+        return export_files::save_named(&input.id, "trc", contents.as_bytes()).await;
+    }
     let query = build_trc_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     let result = run_esql(&environment, &query, 300).await?;
     let contents = export_files::trc(&result.rows);
@@ -179,6 +316,16 @@ pub async fn download_transaction_log(
 pub async fn read_transaction_log(app: AppHandle, input: DownloadInput) -> Result<String, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
+    if environment.source_type == EnvironmentSource::Ssh {
+        return ssh_log_source::read_transaction(
+            &environment,
+            &input.id,
+            &input.start_time,
+            &input.end_time,
+            input.application.as_deref(),
+        )
+        .await;
+    }
     let query = build_trc_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     let result = run_esql(&environment, &query, 300).await?;
     Ok(export_files::trc(&result.rows))
@@ -249,6 +396,9 @@ pub async fn load_trace(
 ) -> Result<Vec<Map<String, Value>>, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
+    if environment.source_type == EnvironmentSource::Ssh {
+        return Err("SSH 直连环境不提供 APM Trace 调用链".to_string());
+    }
     let query = build_trace_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     Ok(run_esql(&environment, &query, 300).await?.rows)
 }

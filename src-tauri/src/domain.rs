@@ -29,32 +29,60 @@ pub enum SearchStatus {
     Fail,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EnvironmentSource {
+    #[default]
+    Elk,
+    Ssh,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentConfig {
     pub name: String,
+    #[serde(default)]
+    pub source_type: EnvironmentSource,
+    #[serde(default)]
     pub kibana_url: String,
+    #[serde(default)]
     pub username: String,
+    #[serde(default)]
     pub password: String,
+    #[serde(default)]
     pub txnlst_index: String,
+    #[serde(default)]
     pub txntrc_index: String,
+    #[serde(default)]
     pub applog_index: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub apm_index: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_insecure_tls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_base_directory: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ssh_applications: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_connect_timeout_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_log_time_offset: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicEnvironment {
     pub name: String,
+    pub source_type: EnvironmentSource,
     pub kibana_url: String,
     pub txnlst_index: String,
     pub txntrc_index: String,
     pub applog_index: String,
     pub apm_index: String,
     pub insecure_tls: bool,
+    pub ssh_applications: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -90,6 +118,7 @@ pub struct DownloadInput {
     pub id: String,
     pub start_time: String,
     pub end_time: String,
+    pub application: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

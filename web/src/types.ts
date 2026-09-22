@@ -1,17 +1,21 @@
 export type LogKind = "transaction" | "application" | "ecp" | "generic";
+export type EnvironmentSource = "elk" | "ssh";
 
 export interface Environment {
   name: string;
+  sourceType: EnvironmentSource;
   kibanaUrl: string;
   txnlstIndex: string;
   txntrcIndex: string;
   applogIndex: string;
   apmIndex: string;
   insecureTls: boolean;
+  sshApplications: string[];
 }
 
 export interface EnvironmentConfiguration {
   name: string;
+  sourceType: EnvironmentSource;
   kibanaUrl: string;
   username: string;
   password: string;
@@ -20,6 +24,11 @@ export interface EnvironmentConfiguration {
   applogIndex: string;
   apmIndex?: string;
   allowInsecureTls?: boolean;
+  sshHost?: string;
+  sshBaseDirectory?: string;
+  sshApplications?: string[];
+  sshConnectTimeoutSeconds?: number;
+  sshLogTimeOffset?: string;
 }
 
 export interface SearchFilters {

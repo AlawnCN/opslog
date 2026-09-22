@@ -14,6 +14,7 @@ mod reader_association;
 #[cfg(feature = "reader-app")]
 mod reader_files;
 mod reader_settings;
+mod ssh_log_source;
 mod update_release;
 
 #[cfg(feature = "reader-app")]

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager};
 
-use crate::domain::{EnvironmentConfig, PublicEnvironment};
+use crate::domain::{EnvironmentConfig, EnvironmentSource, PublicEnvironment};
 
 const CONFIG_FILE: &str = "opslog-envs.json";
 const LEGACY_KIBANA_URLS: [(&str, &str); 2] = [
@@ -69,22 +69,61 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
         return Err("环境配置至少需要包含一个环境".to_string());
     }
     for environment in environments {
-        let required = [
-            (&environment.name, "name"),
-            (&environment.kibana_url, "kibanaUrl"),
-            (&environment.username, "username"),
-            (&environment.password, "password"),
-            (&environment.txnlst_index, "txnlstIndex"),
-            (&environment.txntrc_index, "txntrcIndex"),
-            (&environment.applog_index, "applogIndex"),
-        ];
+        let required = if environment.source_type == EnvironmentSource::Ssh {
+            vec![
+                (&environment.name, "name"),
+                (
+                    environment
+                        .ssh_host
+                        .as_ref()
+                        .unwrap_or(&environment.kibana_url),
+                    "sshHost",
+                ),
+                (
+                    environment
+                        .ssh_base_directory
+                        .as_ref()
+                        .unwrap_or(&environment.kibana_url),
+                    "sshBaseDirectory",
+                ),
+            ]
+        } else {
+            vec![
+                (&environment.name, "name"),
+                (&environment.kibana_url, "kibanaUrl"),
+                (&environment.username, "username"),
+                (&environment.password, "password"),
+                (&environment.txnlst_index, "txnlstIndex"),
+                (&environment.txntrc_index, "txntrcIndex"),
+                (&environment.applog_index, "applogIndex"),
+            ]
+        };
         if let Some((_, field)) = required.iter().find(|(value, _)| value.trim().is_empty()) {
             return Err(format!("环境 {} 的 {field} 不能为空", environment.name));
         }
-        if !(environment.kibana_url.starts_with("https://")
-            || environment.kibana_url.starts_with("http://"))
+        if environment.source_type == EnvironmentSource::Elk
+            && !(environment.kibana_url.starts_with("https://")
+                || environment.kibana_url.starts_with("http://"))
         {
             return Err(format!("环境 {} 的 kibanaUrl 不合法", environment.name));
+        }
+        if environment.source_type == EnvironmentSource::Ssh {
+            if environment.ssh_applications.is_empty() {
+                return Err(format!(
+                    "环境 {} 至少需要配置一个监控应用",
+                    environment.name
+                ));
+            }
+            if !environment
+                .ssh_base_directory
+                .as_deref()
+                .is_some_and(|path| path.starts_with('/'))
+            {
+                return Err(format!(
+                    "环境 {} 的 SSH 基础目录必须是绝对路径",
+                    environment.name
+                ));
+            }
         }
     }
     Ok(())
@@ -148,6 +187,7 @@ pub async fn find(app: &AppHandle, name: &str) -> Result<EnvironmentConfig, Stri
 pub fn to_public(environment: EnvironmentConfig) -> PublicEnvironment {
     PublicEnvironment {
         name: environment.name,
+        source_type: environment.source_type,
         kibana_url: environment.kibana_url,
         txnlst_index: environment.txnlst_index,
         txntrc_index: environment.txntrc_index,
@@ -156,6 +196,7 @@ pub fn to_public(environment: EnvironmentConfig) -> PublicEnvironment {
             .apm_index
             .unwrap_or_else(|| "traces-apm*".to_string()),
         insecure_tls: environment.allow_insecure_tls.unwrap_or(false),
+        ssh_applications: environment.ssh_applications,
     }
 }
 

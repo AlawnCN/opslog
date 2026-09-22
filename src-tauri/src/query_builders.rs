@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::domain::{EnvironmentConfig, LogKind, SearchInput, SearchStatus, display_fields};
 
 const MAX_PAGE_DEPTH: usize = 10_000;
@@ -139,7 +141,20 @@ fn transaction_conditions(input: &SearchInput) -> Vec<String> {
     conditions
 }
 
-fn log_conditions(input: &SearchInput) -> Vec<String> {
+pub fn log_keyword_fields(kind: LogKind) -> &'static [&'static str] {
+    if kind == LogKind::Generic {
+        &[
+            "message",
+            "ecp.log.application",
+            "ecp.log.thread",
+            "trace.id",
+        ]
+    } else {
+        &["message", "ecp.log.thread", "trace.id", "host.name"]
+    }
+}
+
+fn log_conditions(input: &SearchInput, omitted_fields: &HashSet<String>) -> Vec<String> {
     let timestamp = if input.kind == LogKind::Generic {
         "@timestamp"
     } else {
@@ -161,19 +176,10 @@ fn log_conditions(input: &SearchInput) -> Vec<String> {
         .as_deref()
         .filter(|value| !value.trim().is_empty())
     {
-        let fields: &[&str] = if input.kind == LogKind::Generic {
-            &[
-                "message",
-                "ecp.log.application",
-                "ecp.log.thread",
-                "trace.id",
-            ]
-        } else {
-            &["message", "ecp.log.thread", "trace.id", "host.name"]
-        };
         let keyword = literal(keyword);
-        let parts = fields
+        let parts = log_keyword_fields(input.kind)
             .iter()
+            .filter(|field| !omitted_fields.contains(**field))
             .map(|field| format!("{field} LIKE \"*{keyword}*\""))
             .collect::<Vec<_>>();
         conditions.push(format!("({})", parts.join(" OR ")));
@@ -186,11 +192,20 @@ pub fn build_search_query(
     environment: &EnvironmentConfig,
     export_all: bool,
 ) -> Result<String, String> {
+    build_search_query_with_omitted_fields(input, environment, export_all, &HashSet::new())
+}
+
+pub fn build_search_query_with_omitted_fields(
+    input: &SearchInput,
+    environment: &EnvironmentConfig,
+    export_all: bool,
+    omitted_fields: &HashSet<String>,
+) -> Result<String, String> {
     let source = resolve_index(input, environment)?;
     let conditions = if input.kind == LogKind::Transaction {
         transaction_conditions(input)
     } else {
-        log_conditions(input)
+        log_conditions(input, omitted_fields)
     };
     let timestamp = match input.kind {
         LogKind::Generic => "@timestamp",
@@ -201,11 +216,21 @@ pub fn build_search_query(
     } else {
         (input.page * input.page_size).min(MAX_PAGE_DEPTH)
     };
-    let keep = display_fields(input.kind).join(", ");
+    let keep = display_fields(input.kind)
+        .iter()
+        .filter(|field| !omitted_fields.contains(**field))
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
     if input.kind == LogKind::Transaction {
+        let normalize_timestamp = if omitted_fields.contains("ecp.txn.timestamp") {
+            ""
+        } else {
+            " | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp)"
+        };
         return Ok(format!(
-            "FROM {source} | WHERE {} | SORT @timestamp DESC | LIMIT {limit} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | KEEP {keep}",
-            conditions.join(" AND ")
+            "FROM {source} | WHERE {} | SORT @timestamp DESC | LIMIT {limit}{normalize_timestamp} | KEEP {keep}",
+            conditions.join(" AND "),
         ));
     }
 
@@ -252,6 +277,7 @@ mod tests {
     fn environment() -> EnvironmentConfig {
         EnvironmentConfig {
             name: "test".into(),
+            source_type: crate::domain::EnvironmentSource::Elk,
             kibana_url: "https://kibana.example.test".into(),
             username: "reader".into(),
             password: "secret".into(),
@@ -260,6 +286,11 @@ mod tests {
             applog_index: "logs-ecp.log.*".into(),
             apm_index: None,
             allow_insecure_tls: None,
+            ssh_host: None,
+            ssh_base_directory: None,
+            ssh_applications: Vec::new(),
+            ssh_connect_timeout_seconds: None,
+            ssh_log_time_offset: None,
         }
     }
 

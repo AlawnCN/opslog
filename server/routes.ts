@@ -1,16 +1,72 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { toCsv } from "./csv.js";
-import { DISPLAY_FIELDS, type LogKind, type SearchInput } from "./domain.js";
+import { DISPLAY_FIELDS, type EnvironmentConfig, type LogKind, type QueryResult, type SearchInput } from "./domain.js";
 import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvironment } from "./environment-store.js";
 import { runEsql } from "./kibana-client.js";
-import { buildSearchQuery, buildTraceQuery, buildTrcQuery, pageRows } from "./query-builders.js";
+import { buildSearchQuery, buildSearchQueryWithOmittedFields, buildTraceQuery, buildTrcQuery, logKeywordFields, pageRows } from "./query-builders.js";
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
+import { readSshTransactionLog, searchSshLogs } from "./ssh-log-source.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
+
+const unknownColumns = (error: unknown): string[] => error instanceof Error
+  ? [...error.message.matchAll(/unknown column \[([^\]]+)\]/gi)].map((match) => match[1]!.trim())
+  : [];
+
+const constrainedFields = (input: SearchInput): Set<string> => {
+  const fields = new Set([input.kind === "generic" || input.kind === "transaction" ? "@timestamp" : "ecp.log.timestamp"]);
+  const add = (field: string, value: unknown): void => { if (String(value ?? "").trim()) fields.add(field); };
+  if (input.kind === "transaction") {
+    add("ecp.txn.id", input.txnId);
+    add("ecp.txn.trace", input.traceId);
+    add("ecp.txn.no", input.txnNo);
+    add("ecp.txn.business", input.business);
+    add("ecp.txn.service", input.service);
+    add("ecp.txn.message.code", input.messageCode);
+    add("ecp.txn.message.info", input.messageInfo);
+    add("ecp.txn.node", input.node);
+    if (input.status && input.status !== "ALL") fields.add("ecp.txn.message.code");
+    if (input.minDurationMs && input.minDurationMs > 0) fields.add("ecp.txn.duration");
+    return fields;
+  }
+  add("ecp.log.application", input.application);
+  add("ecp.log.level", input.level);
+  if (input.kind === "ecp") add("ecp.log.file", input.file);
+  return fields;
+};
+
+const availableColumns = (input: SearchInput, omitted: ReadonlySet<string>): string[] =>
+  DISPLAY_FIELDS[input.kind].filter((field) => !omitted.has(field));
+
+const searchElkLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll = false): Promise<QueryResult> => {
+  const omitted = new Set<string>();
+  const required = constrainedFields(input);
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const columns = availableColumns(input, omitted);
+    if (!columns.length || (input.kind !== "transaction" && input.keyword?.trim() && logKeywordFields(input.kind).every((field) => omitted.has(field)))) return { columns, rows: [] };
+    try {
+      const query = omitted.size
+        ? buildSearchQueryWithOmittedFields(input, environment, exportAll, omitted)
+        : buildSearchQuery(input, environment, exportAll);
+      return await runEsql(environment, query, exportAll ? 300_000 : 120_000);
+    } catch (error) {
+      const missing = unknownColumns(error);
+      if (!missing.length) throw error;
+      let learned = false;
+      for (const field of missing) {
+        if (!omitted.has(field)) learned = true;
+        omitted.add(field);
+      }
+      const columns = availableColumns(input, omitted);
+      if (!learned || missing.some((field) => required.has(field))) return { columns, rows: [] };
+    }
+  }
+  return { columns: availableColumns(input, omitted), rows: [] };
+};
 const searchSchema = z.object({
   environment: z.string().trim().min(1).max(100),
   kind: z.enum(["transaction", "application", "ecp", "generic"]),
@@ -48,7 +104,8 @@ const downloadSchema = z.object({
   environment: z.string().trim().min(1).max(100),
   id: z.string().trim().min(1).max(500),
   startTime: dateTime,
-  endTime: dateTime
+  endTime: dateTime,
+  application: optionalText
 });
 
 const environmentImportSchema = z.object({
@@ -167,11 +224,12 @@ apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
 apiRouter.post("/search", asyncRoute(async (request, response) => {
   const input = searchSchema.parse(request.body) as SearchInput;
   const environment = await findEnvironment(input.environment);
-  const query = buildSearchQuery(input, environment);
-  const result = await runEsql(environment, query);
+  const result = environment.sourceType === "ssh"
+    ? await searchSshLogs(environment, input)
+    : await searchElkLogs(environment, input);
   const rows = pageRows(result.rows, input.page, input.pageSize);
   response.json({
-    columns: DISPLAY_FIELDS[input.kind],
+    columns: result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind],
     rows,
     page: input.page,
     pageSize: input.pageSize,
@@ -184,8 +242,10 @@ apiRouter.post("/search", asyncRoute(async (request, response) => {
 apiRouter.post("/export", asyncRoute(async (request, response) => {
   const input = searchSchema.parse({ ...request.body, page: 1 }) as SearchInput;
   const environment = await findEnvironment(input.environment);
-  const result = await runEsql(environment, buildSearchQuery(input, environment, true), 300_000);
-  const columns = DISPLAY_FIELDS[input.kind];
+  const result = environment.sourceType === "ssh"
+    ? await searchSshLogs(environment, input, true)
+    : await searchElkLogs(environment, input, true);
+  const columns = result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind];
   response
     .status(200)
     .setHeader("Content-Type", "text/csv; charset=utf-8")
@@ -197,11 +257,12 @@ apiRouter.post("/export", asyncRoute(async (request, response) => {
 apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
-  const result = await runEsql(
-    environment,
-    buildTrcQuery(environment, input.id, input.startTime, input.endTime),
-    300_000
-  );
+  if (environment.sourceType === "ssh") {
+    const content = await readSshTransactionLog(environment, input.id, input.startTime, input.endTime, input.application);
+    response.status(200).setHeader("Content-Type", "text/plain; charset=utf-8").setHeader("Content-Disposition", `attachment; filename="${transactionLogFilename(input.id)}"`).send(content);
+    return;
+  }
+  const result = await runEsql(environment, buildTrcQuery(environment, input.id, input.startTime, input.endTime), 300_000);
   response
     .status(200)
     .setHeader("Content-Type", "text/plain; charset=utf-8")
@@ -212,17 +273,19 @@ apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
 apiRouter.post("/transaction-log/content", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
-  const result = await runEsql(
-    environment,
-    buildTrcQuery(environment, input.id, input.startTime, input.endTime),
-    300_000
-  );
+  if (environment.sourceType === "ssh") {
+    const content = await readSshTransactionLog(environment, input.id, input.startTime, input.endTime, input.application);
+    response.json({ id: input.id, content });
+    return;
+  }
+  const result = await runEsql(environment, buildTrcQuery(environment, input.id, input.startTime, input.endTime), 300_000);
   response.json({ id: input.id, content: trcText(result.rows) });
 }));
 
 apiRouter.post("/trace", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
+  if (environment.sourceType === "ssh") throw new Error("SSH 直连环境不提供 APM Trace 调用链");
   const result = await runEsql(
     environment,
     buildTraceQuery(environment, input.id, input.startTime, input.endTime),

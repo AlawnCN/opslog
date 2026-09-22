@@ -49,12 +49,12 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         <div className={`connection-state ${environment?.insecureTls ? "warning" : ""}`}>
           <i />
-          {loading ? "正在查询" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
+          {loading ? "正在查询" : environment?.sourceType === "ssh" ? "SSH 日志源就绪" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪"}
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.0.33<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.0.33</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.0<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.0</div>}
       </div>
     </header>
   );

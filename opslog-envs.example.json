@@ -1,6 +1,7 @@
 [
   {
     "name": "faulu-m5-prd",
+    "sourceType": "elk",
     "kibanaUrl": "https://kibana.example.internal",
     "username": "replace-me",
     "password": "replace-me",
@@ -9,5 +10,20 @@
     "applogIndex": "logs-ecp.app.pr*",
     "apmIndex": "traces-apm*",
     "allowInsecureTls": false
+  },
+  {
+    "name": "faulu-m5-uat-ssh",
+    "sourceType": "ssh",
+    "kibanaUrl": "",
+    "username": "",
+    "password": "",
+    "txnlstIndex": "",
+    "txntrcIndex": "",
+    "applogIndex": "",
+    "sshHost": "m5.uat",
+    "sshBaseDirectory": "/home/coradm",
+    "sshApplications": ["cte"],
+    "sshConnectTimeoutSeconds": 10,
+    "sshLogTimeOffset": "+03:00"
   }
 ]

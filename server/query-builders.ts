@@ -70,7 +70,11 @@ const buildTransactionConditions = (input: SearchInput): string[] => {
   return conditions;
 };
 
-const buildLogConditions = (input: SearchInput): string[] => {
+export const logKeywordFields = (kind: LogKind): string[] => kind === "generic"
+  ? ["message", "ecp.log.application", "ecp.log.thread", "trace.id"]
+  : ["message", "ecp.log.thread", "trace.id", "host.name"];
+
+const buildLogConditions = (input: SearchInput, omittedFields: ReadonlySet<string>): string[] => {
   const timestamp = input.kind === "generic" ? "@timestamp" : "ecp.log.timestamp";
   const conditions = [timeRange(timestamp, input)];
   addLike(conditions, "ecp.log.application", input.application);
@@ -78,9 +82,7 @@ const buildLogConditions = (input: SearchInput): string[] => {
   if (input.kind === "ecp") addLike(conditions, "ecp.log.file", input.file);
 
   if (input.keyword?.trim()) {
-    const fields = input.kind === "generic"
-      ? ["message", "ecp.log.application", "ecp.log.thread", "trace.id"]
-      : ["message", "ecp.log.thread", "trace.id", "host.name"];
+    const fields = logKeywordFields(input.kind).filter((field) => !omittedFields.has(field));
     const keywordConditions = fields.map((field) => `${field} LIKE "*${literal(input.keyword!)}*"`);
     conditions.push(`(${keywordConditions.join(" OR ")})`);
   }
@@ -91,21 +93,31 @@ export const buildSearchQuery = (
   input: SearchInput,
   environment: EnvironmentConfig,
   exportAll = false
+): string => buildSearchQueryWithOmittedFields(input, environment, exportAll, new Set());
+
+export const buildSearchQueryWithOmittedFields = (
+  input: SearchInput,
+  environment: EnvironmentConfig,
+  exportAll: boolean,
+  omittedFields: ReadonlySet<string>
 ): string => {
   const source = resolveIndex(input, environment);
   const conditions = input.kind === "transaction"
     ? buildTransactionConditions(input)
-    : buildLogConditions(input);
+    : buildLogConditions(input, omittedFields);
   const timestamp = input.kind === "generic" ? "@timestamp" : "ecp.log.timestamp";
   const limit = exportAll
     ? 20_000
     : Math.min(input.page * input.pageSize, MAX_PAGE_DEPTH);
-  const keep = DISPLAY_FIELDS[input.kind].join(", ");
+  const keep = DISPLAY_FIELDS[input.kind].filter((field) => !omittedFields.has(field)).join(", ");
 
   if (input.kind === "transaction") {
     // Keep the familiar business-time column populated when legacy UAT records
     // contain only the canonical ingest timestamp.
-    return `FROM ${source} | WHERE ${conditions.join(" AND ")} | SORT @timestamp DESC | LIMIT ${limit} | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp) | KEEP ${keep}`;
+    const normalizeTimestamp = omittedFields.has("ecp.txn.timestamp")
+      ? ""
+      : " | EVAL ecp.txn.timestamp = COALESCE(ecp.txn.timestamp, @timestamp)";
+    return `FROM ${source} | WHERE ${conditions.join(" AND ")} | SORT @timestamp DESC | LIMIT ${limit}${normalizeTimestamp} | KEEP ${keep}`;
   }
 
   return `FROM ${source} | WHERE ${conditions.join(" AND ")} | SORT ${timestamp} DESC | LIMIT ${limit} | KEEP ${keep}`;

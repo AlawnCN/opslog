@@ -112,7 +112,12 @@ export default function App() {
     setResult(undefined);
     setSearchPerformance(undefined);
     setPage(1);
-    if (kind === "generic" && environment) setFilters((current) => ({ ...current, index: environment.applogIndex }));
+    if (environment) setFilters((current) => ({
+      ...current,
+      ...(kind === "generic" ? { index: environment.applogIndex } : {}),
+      application: environment.sourceType === "ssh" ? environment.sshApplications[0] ?? "" : "",
+      ...(environment.sourceType === "ssh" ? { traceId: "" } : {})
+    }));
   }, [kind, environmentName]);
 
   const request = useMemo<SearchRequest | undefined>(() => {
@@ -262,7 +267,7 @@ export default function App() {
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
-      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} />
+      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <AppSelect value={String(pageSize)} disabled={loading} ariaLabel="每页记录数" options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} 条` }))} onChange={(value) => changePageSize(Number(value))} /></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}
     </main>
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} />

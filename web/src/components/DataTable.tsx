@@ -51,9 +51,10 @@ interface DataTableProps {
   onTransactionLog: (row: Record<string, unknown>) => Promise<void>;
   onReadTransactionLog: (row: Record<string, unknown>) => void;
   onTrace: (row: Record<string, unknown>) => void;
+  traceEnabled?: boolean;
 }
 
-export const DataTable = ({ kind, result, loading, queryPerformance, onTransactionLog, onReadTransactionLog, onTrace }: DataTableProps) => {
+export const DataTable = ({ kind, result, loading, queryPerformance, onTransactionLog, onReadTransactionLog, onTrace, traceEnabled = true }: DataTableProps) => {
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
   const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
   const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
@@ -147,7 +148,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
                   const tone = column === "ecp.txn.message.code" ? resultTone(row) : "";
                   return <td key={column} style={widthStyle(column)} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
                 })}
-                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="打开日志阅读器" aria-label="打开日志阅读器" onClick={(event) => { event.stopPropagation(); onReadTransactionLog(row); }}><TextReaderIcon /></button><button title="查看调用链" aria-label="查看调用链" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button></td>}
+                {kind === "transaction" && <td className="row-actions"><button className={downloading ? "downloading" : ""} title={downloading ? "正在下载…" : "下载交易日志"} aria-label={downloading ? "正在下载交易日志" : "下载交易日志"} aria-busy={downloading} disabled={downloading} onClick={(event) => { event.stopPropagation(); void downloadTransactionLog(row, rowKey); }}>{downloading ? <span className="button-spinner" aria-hidden="true" /> : <DownloadIcon />}</button><button title="打开日志阅读器" aria-label="打开日志阅读器" onClick={(event) => { event.stopPropagation(); onReadTransactionLog(row); }}><TextReaderIcon /></button>{traceEnabled && <button title="查看调用链" aria-label="查看调用链" disabled={!row["ecp.txn.trace"]} onClick={(event) => { event.stopPropagation(); onTrace(row); }}><TraceIcon /></button>}</td>}
               </tr>;
             })}
           </tbody>

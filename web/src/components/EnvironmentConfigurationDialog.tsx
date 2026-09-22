@@ -3,6 +3,7 @@ import { createEnvironmentConfiguration, parseEnvironmentConfigurationFile, vali
 import type { EnvironmentConfiguration } from "../types";
 import { CloseIcon, ImportIcon, TrashIcon } from "./Icons";
 import { useMovableDialog } from "./useMovableDialog";
+import { AppSelect } from "./AppSelect";
 
 interface EnvironmentConfigurationDialogProps {
   environments: EnvironmentConfiguration[];
@@ -13,7 +14,7 @@ interface EnvironmentConfigurationDialogProps {
   onSave: (environments: EnvironmentConfiguration[]) => void;
 }
 
-const clone = (items: EnvironmentConfiguration[]): EnvironmentConfiguration[] => items.map((item) => ({ ...item }));
+const clone = (items: EnvironmentConfiguration[]): EnvironmentConfiguration[] => items.map((item) => ({ ...item, sshApplications: [...(item.sshApplications ?? [])] }));
 
 export const EnvironmentConfigurationDialog = ({ environments, loading, saving, error, onClose, onSave }: EnvironmentConfigurationDialogProps) => {
   const [drafts, setDrafts] = useState<EnvironmentConfiguration[]>(() => clone(environments));
@@ -65,7 +66,14 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
     event.preventDefault();
     const validation = validateEnvironmentConfigurations(drafts);
     if (validation) { setLocalError(validation); return; }
-    onSave(drafts.map((item) => ({ ...item, name: item.name.trim(), kibanaUrl: item.kibanaUrl.trim() })));
+    onSave(drafts.map((item) => ({
+      ...item,
+      name: item.name.trim(),
+      kibanaUrl: item.kibanaUrl.trim(),
+      sshHost: item.sshHost?.trim(),
+      sshBaseDirectory: item.sshBaseDirectory?.trim(),
+      sshApplications: item.sshApplications?.map((application) => application.trim()).filter(Boolean)
+    })));
   };
 
   return <div className="environment-config-backdrop" role="presentation" onMouseDown={saving ? undefined : onClose}>
@@ -77,23 +85,33 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
       <div className="environment-config-workspace">
         <aside>
           <div className="environment-config-list-heading"><span>运行环境</span><small>{drafts.length}</small></div>
-          <div className="environment-config-list">{drafts.map((item, index) => <button type="button" key={`${index}-${item.name}`} className={selected === index ? "is-active" : undefined} onClick={() => { setSelected(index); setConfirmRemove(false); }}><strong>{item.name || "未命名环境"}</strong><span>{item.kibanaUrl || "尚未配置服务地址"}</span></button>)}</div>
+          <div className="environment-config-list">{drafts.map((item, index) => <button type="button" key={`${index}-${item.name}`} className={selected === index ? "is-active" : undefined} onClick={() => { setSelected(index); setConfirmRemove(false); }}><strong>{item.name || "未命名环境"}</strong><span>{item.sourceType === "ssh" ? `SSH · ${item.sshHost || "尚未配置主机"}` : `ELK · ${item.kibanaUrl || "尚未配置服务地址"}`}</span></button>)}</div>
           <button className="environment-add-button" type="button" onClick={addEnvironment}>＋ 添加环境</button>
           <div className="environment-import-area"><button type="button" onClick={() => importRef.current?.click()}><ImportIcon />导入 JSON 配置</button><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event.currentTarget.files?.[0])} /><small>导入后可先检查内容，再统一保存。</small></div>
         </aside>
         <section className="environment-config-body">
           {loading && <div className="environment-config-loading">正在读取当前配置…</div>}
           {!loading && current && <>
-            <div className="environment-config-section-title"><div><strong>{current.name || "未命名环境"}</strong><span>连接与索引</span></div></div>
+            <div className="environment-config-section-title"><div><strong>{current.name || "未命名环境"}</strong><span>{current.sourceType === "ssh" ? "SSH 直连日志源" : "ELK 查询网关"}</span></div></div>
             <div className="environment-config-fields">
               <label><span>配置名称</span><input value={current.name} onChange={(event) => update({ name: event.target.value })} placeholder="例如 faulu-m5-dr" /></label>
-              <label><span>Kibana 地址</span><input inputMode="url" value={current.kibanaUrl} onChange={(event) => update({ kibanaUrl: event.target.value })} placeholder="https://example.com/kibana" /></label>
-              <label><span>用户名</span><input autoComplete="off" value={current.username} onChange={(event) => update({ username: event.target.value })} /></label>
-              <label><span>密码</span><input type="password" autoComplete="new-password" value={current.password} onChange={(event) => update({ password: event.target.value })} /></label>
-              <div className="environment-config-group-title"><span>日志索引</span><small>支持 Elasticsearch 通配符表达式</small></div>
-              <label><span>交易日志索引</span><input value={current.txnlstIndex} onChange={(event) => update({ txnlstIndex: event.target.value })} placeholder="logs-ecp.txn.lst.dr*" /></label>
-              <label><span>Trace 日志索引</span><input value={current.txntrcIndex} onChange={(event) => update({ txntrcIndex: event.target.value })} placeholder="logs-ecp.txn.trc.dr*" /></label>
-              <label className="is-wide"><span>应用日志索引</span><input value={current.applogIndex} onChange={(event) => update({ applogIndex: event.target.value })} placeholder="logs-ecp.app.dr*" /></label>
+              <label><span>日志来源</span><AppSelect value={current.sourceType} ariaLabel="日志来源" options={[{ value: "elk", label: "ELK 查询" }, { value: "ssh", label: "SSH 直连" }]} onChange={(sourceType) => update({ sourceType: sourceType as "elk" | "ssh" })} /></label>
+              {current.sourceType === "elk" ? <>
+                <label className="is-wide"><span>Kibana 地址</span><input inputMode="url" value={current.kibanaUrl} onChange={(event) => update({ kibanaUrl: event.target.value })} placeholder="https://example.com/kibana" /></label>
+                <label><span>用户名</span><input autoComplete="off" value={current.username} onChange={(event) => update({ username: event.target.value })} /></label>
+                <label><span>密码</span><input type="password" autoComplete="new-password" value={current.password} onChange={(event) => update({ password: event.target.value })} /></label>
+                <div className="environment-config-group-title"><span>日志索引</span><small>支持 Elasticsearch 通配符表达式</small></div>
+                <label><span>交易日志索引</span><input value={current.txnlstIndex} onChange={(event) => update({ txnlstIndex: event.target.value })} placeholder="logs-ecp.txn.lst.dr*" /></label>
+                <label><span>Trace 日志索引</span><input value={current.txntrcIndex} onChange={(event) => update({ txntrcIndex: event.target.value })} placeholder="logs-ecp.txn.trc.dr*" /></label>
+                <label className="is-wide"><span>应用日志索引</span><input value={current.applogIndex} onChange={(event) => update({ applogIndex: event.target.value })} placeholder="logs-ecp.app.dr*" /></label>
+              </> : <>
+                <label><span>SSH 主机</span><input value={current.sshHost ?? ""} onChange={(event) => update({ sshHost: event.target.value })} placeholder="SSH Config 别名，例如 m5.uat" /></label>
+                <label><span>连接超时（秒）</span><input type="number" min="3" max="60" value={current.sshConnectTimeoutSeconds ?? 10} onChange={(event) => update({ sshConnectTimeoutSeconds: Number(event.target.value) })} /></label>
+                <label className="is-wide"><span>日志基础目录</span><input value={current.sshBaseDirectory ?? ""} onChange={(event) => update({ sshBaseDirectory: event.target.value })} placeholder="/home/coradm" /></label>
+                <label className="is-wide"><span>监控应用</span><input value={(current.sshApplications ?? []).join(", ")} onChange={(event) => update({ sshApplications: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} placeholder="cte, act, eps" /><small>填写应用目录简称，多个应用使用英文逗号分隔。</small></label>
+                <label><span>日志时区</span><input value={current.sshLogTimeOffset ?? "+03:00"} onChange={(event) => update({ sshLogTimeOffset: event.target.value })} placeholder="+03:00" /></label>
+                <div className="environment-config-ssh-note is-wide"><strong>连接说明</strong><span>使用系统 SSH 配置与密钥连接；只读取所选日期对应的 log/01～31 与 trc/01～31 目录。凭据不会写入环境配置。</span></div>
+              </>}
             </div>
             <div className="environment-remove-zone"><div><strong>移除运行环境</strong><span>移除后仅在点击“保存配置”时生效。</span></div>{confirmRemove
               ? <div className="environment-remove-confirm"><span>确认移除“{current.name || "未命名环境"}”？</span><button type="button" onClick={() => setConfirmRemove(false)}>取消</button><button type="button" className="danger" onClick={removeEnvironment}>确认移除</button></div>

@@ -221,9 +221,10 @@ export const downloadTransactionLog = (
   environment: string,
   id: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  application?: string
 ): Promise<string | undefined> => {
-  const input = { environment, id, startTime, endTime };
+  const input = { environment, id, startTime, endTime, application };
   if (desktopMode) return desktopInvoke<SavedFile>("download_transaction_log", { input }).then((result) => result.path);
   return download("/api/transaction-log", input);
 };
@@ -232,9 +233,10 @@ export const readTransactionLog = async (
   environment: string,
   id: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  application?: string
 ): Promise<string> => {
-  const input = { environment, id, startTime, endTime };
+  const input = { environment, id, startTime, endTime, application };
   if (desktopMode) return desktopInvoke<string>("read_transaction_log", { input });
   const response = await webFetch("/api/transaction-log/content", {
     method: "POST",

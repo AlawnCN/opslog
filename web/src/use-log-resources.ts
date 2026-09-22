@@ -42,18 +42,19 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
   const loadLog = (row: Record<string, unknown>) => {
     if (!request) return Promise.reject(new Error("查询时间范围不可用"));
     const id = transactionId(row);
+    const application = String(row["opslog.source.application"] ?? request.application ?? "");
     if (!id) return Promise.reject(new Error("日志 ID 不可用"));
     const windows = transactionLogTimeWindows(row, request);
     // ecp.txn.id identifies the transaction log resource. The row timestamp and
     // outer query range only help locate it in ES and must not fragment the cache.
-    const key = transactionLogCacheKey(environmentName, id);
+    const key = transactionLogCacheKey(`${environmentName}:${application}`, id);
     const allowCache = transactionLogCanUseCache(row);
     return cache.loadTransactionLog(
       key,
       async () => {
         let content = "";
         for (const [position, window] of windows.entries()) {
-          content = await readTransactionLog(environmentName, id, window.startTime, window.endTime);
+          content = await readTransactionLog(environmentName, id, window.startTime, window.endTime, application);
           const hasFallback = position < windows.length - 1;
           if (!hasFallback || !transactionLogNeedsWiderWindow(content, window)) return content;
         }
