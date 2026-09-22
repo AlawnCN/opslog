@@ -37,6 +37,40 @@ pub enum EnvironmentSource {
     Ssh,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SshAuthentication {
+    SshConfig,
+    Password,
+    PrivateKey,
+}
+
+impl Default for SshAuthentication {
+    fn default() -> Self {
+        Self::SshConfig
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshServerConfig {
+    pub name: String,
+    pub host: String,
+    pub port: Option<u16>,
+    pub username: Option<String>,
+    #[serde(default)]
+    pub authentication: SshAuthentication,
+    pub password: Option<String>,
+    pub private_key_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshApplicationConfig {
+    pub name: String,
+    pub directory: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentConfig {
@@ -60,6 +94,8 @@ pub struct EnvironmentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allow_insecure_tls: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_base_directory: Option<String>,
@@ -69,6 +105,16 @@ pub struct EnvironmentConfig {
     pub ssh_connect_timeout_seconds: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_log_time_offset: Option<String>,
+    #[serde(default = "default_true", skip_serializing_if = "Option::is_none")]
+    pub ssh_auto_detect_time_zone: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ssh_servers: Vec<SshServerConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ssh_monitored_applications: Vec<SshApplicationConfig>,
+}
+
+fn default_true() -> Option<bool> {
+    Some(true)
 }
 
 #[derive(Debug, Serialize)]
@@ -83,6 +129,9 @@ pub struct PublicEnvironment {
     pub apm_index: String,
     pub insecure_tls: bool,
     pub ssh_applications: Vec<String>,
+    pub time_zone: String,
+    pub time_zone_offset: String,
+    pub time_zone_source: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

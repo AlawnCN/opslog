@@ -1,6 +1,7 @@
 import type { LogHighlight, StructuredLogRange } from "./transaction-log-model";
+import { decodeJsonLogEscapeLayer, parseJsonLogSource } from "./log-json-source";
 
-const STRUCTURE_MARKER = /\b(?:request(?:BO|EDB|Body|Root)?|response(?:BO|EDB|Body|Root)?|rspRoot|req|rsp|body|edb|object|argument|result|params?)\b[^:=>]{0,40}(?::|=>|=|>>>|<<<)/i;
+const STRUCTURE_MARKER = /\b(?:(?:request|response|req(?!BusNo\b)|rsp|body|edb)\w*|object|argument|result|params?)\b[^:=>]{0,40}(?::|=>|=|>>>|<<<)/i;
 const WRAPPED_XML_ASSIGNMENT = /\b(?:request|response|req|rsp|body|edb)\w*\s*=\s*\[?\s*(?=<)/i;
 const JAVA_OBJECT = /\b[A-Z][\w$]*(?:<[^>\n]+>)?\s*\(/g;
 const JSON_PRIMITIVE = /(?:-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)\b/y;
@@ -19,9 +20,9 @@ const findBalancedEnd = (content: string, start: number, open: string, close: st
   return undefined;
 };
 
-const findTagEnd = (content: string, start: number): number | undefined => {
+const findTagEnd = (content: string, start: number, limit = content.length): number | undefined => {
   let quote = "";
-  for (let index = start + 1; index < content.length; index += 1) {
+  for (let index = start + 1; index < limit; index += 1) {
     const character = content[index];
     if (quote) {
       if (character === quote) quote = "";
@@ -33,24 +34,24 @@ const findTagEnd = (content: string, start: number): number | undefined => {
   return undefined;
 };
 
-const findXmlEnd = (content: string, start: number): number | undefined => {
+const findXmlEnd = (content: string, start: number, limit: number): number | undefined => {
   const stack: string[] = [];
-  for (let cursor = start; cursor < content.length;) {
+  for (let cursor = start; cursor < limit;) {
     const tagFrom = content.indexOf("<", cursor);
-    if (tagFrom < 0) return undefined;
+    if (tagFrom < 0 || tagFrom >= limit) return undefined;
     if (content.startsWith("<!--", tagFrom)) {
       const end = content.indexOf("-->", tagFrom + 4);
-      if (end < 0) return undefined;
+      if (end < 0 || end + 3 > limit) return undefined;
       cursor = end + 3;
       continue;
     }
     if (content.startsWith("<![CDATA[", tagFrom)) {
       const end = content.indexOf("]]>", tagFrom + 9);
-      if (end < 0) return undefined;
+      if (end < 0 || end + 3 > limit) return undefined;
       cursor = end + 3;
       continue;
     }
-    const tagTo = findTagEnd(content, tagFrom);
+    const tagTo = findTagEnd(content, tagFrom, limit);
     if (!tagTo) return undefined;
     const source = content.slice(tagFrom, tagTo);
     const closing = /^<\/\s*([A-Za-z_][\w:.-]*)/.exec(source);
@@ -59,7 +60,11 @@ const findXmlEnd = (content: string, start: number): number | undefined => {
       if (stack.at(-1) !== closing[1]) return undefined;
       stack.pop();
       if (stack.length === 0) return tagTo;
-    } else if (opening && !/\/\s*>$/.test(source)) stack.push(opening[1]);
+    } else if (opening) {
+      if (/\/\s*>$/.test(source)) {
+        if (stack.length === 0) return tagTo;
+      } else stack.push(opening[1]);
+    }
     cursor = tagTo;
   }
   return undefined;
@@ -69,7 +74,8 @@ const enclosingJavaCollection = (
   content: string,
   from: number,
   objectFrom: number,
-  objectTo: number
+  objectTo: number,
+  limit: number
 ): StructuredLogRange | undefined => {
   let cursor = objectFrom - 1;
   let collection: StructuredLogRange | undefined;
@@ -77,7 +83,7 @@ const enclosingJavaCollection = (
     while (cursor >= from && /\s/.test(content[cursor])) cursor -= 1;
     if (content[cursor] !== "[") break;
     const start = cursor;
-    const end = findBalancedEnd(content, start, "[", "]");
+    const end = findBalancedEnd(content, start, "[", "]", limit);
     if (!end || end < objectTo) break;
     collection = { kind: "java", start, end };
     cursor -= 1;
@@ -86,12 +92,34 @@ const enclosingJavaCollection = (
 };
 
 const firstCompleteJavaObject = (content: string, from: number, to: number): StructuredLogRange | undefined => {
+  const limit = nextLogHeader(content, from + 1);
   JAVA_OBJECT.lastIndex = from;
   for (let match = JAVA_OBJECT.exec(content); match && match.index < to; match = JAVA_OBJECT.exec(content)) {
     const start = match.index + match[0].lastIndexOf("(");
-    const end = findBalancedEnd(content, start, "(", ")");
+    const end = findBalancedEnd(content, start, "(", ")", limit);
     if (!end) continue;
-    const collection = enclosingJavaCollection(content, from, match.index, end);
+    for (let bracket = content.indexOf("[", from); bracket >= from && bracket < match.index; bracket = content.indexOf("[", bracket + 1)) {
+      const bracketEnd = findBalancedEnd(content, bracket, "[", "]", limit);
+      if (bracketEnd && bracketEnd >= end && bracketEnd - bracket >= 100) {
+        return { kind: "java", start: bracket, end: bracketEnd };
+      }
+    }
+    // A collection may be preceded by an assignment marker or other text on
+    // the same line. Recover the nearest balanced bracket when the immediate
+    // whitespace walk cannot see it, preserving the complete outer list.
+    let collection = enclosingJavaCollection(content, from, match.index, end, limit);
+    if (!collection) {
+      // Search all candidate opening brackets on the line. This also covers
+      // payloads written as `field=[Type(...), ...]` where the marker text
+      // separates the bracket from the first object match.
+      for (let bracket = content.indexOf("[", from); bracket >= from && bracket < match.index; bracket = content.indexOf("[", bracket + 1)) {
+        const bracketEnd = findBalancedEnd(content, bracket, "[", "]", limit);
+        if (bracketEnd && bracketEnd >= end && bracketEnd - bracket >= 100) {
+          collection = { kind: "java", start: bracket, end: bracketEnd };
+          break;
+        }
+      }
+    }
     if (collection && collection.end - collection.start >= 100) return collection;
     if (end - start >= 100) return { kind: "java", start, end };
   }
@@ -114,18 +142,49 @@ const nextLogHeader = (content: string, start: number): number => {
   return match ? start + match.index : content.length;
 };
 
+const parsedJsonEnd = (content: string, start: number, limit: number): number | undefined => {
+  const open = content[start];
+  let candidate = content.slice(start, limit);
+  let rawEnds = Array.from({ length: candidate.length }, (_, index) => index + 1);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const end = findBalancedEnd(candidate, 0, open, open === "{" ? "}" : "]");
+    if (end && parseJsonLogSource(candidate.slice(0, end))) return start + rawEnds[end - 1];
+    const decoded = decodeJsonLogEscapeLayer(candidate);
+    if (decoded.content === candidate) return undefined;
+    rawEnds = decoded.rawEnds.map((previousEnd) => rawEnds[previousEnd - 1]);
+    candidate = decoded.content;
+  }
+  return undefined;
+};
+
 const findJsonEnd = (content: string, start: number, open: string): number | undefined => {
   const limit = nextLogHeader(content, start + 1);
-  const balanced = findBalancedEnd(content, start, open, open === "{" ? "}" : "]", limit);
-  if (balanced || open !== "{" || !content.slice(start, limit).includes("\n")) return balanced;
-  const rootClose = /\n}\s*(?:,)?\s*(?=\n|$)/g.exec(content.slice(start, limit));
-  return rootClose ? start + rootClose.index + rootClose[0].indexOf("}") + 1 : undefined;
+  return parsedJsonEnd(content, start, limit);
+};
+
+const jsonCandidateBoundary = (content: string, start: number, from: number): boolean => {
+  if (start === from) return true;
+  let previous = start - 1;
+  while (previous >= from && /\s/.test(content[previous])) previous -= 1;
+  if (previous < from || /[:=>\[]/.test(content[previous])) return true;
+  if (content[previous] !== '"' && content[previous] !== "'") return false;
+  previous -= 1;
+  while (previous >= from && /\s/.test(content[previous])) previous -= 1;
+  return previous < from || /[:=>\[]/.test(content[previous]);
+};
+
+const xmlCandidateBoundary = (content: string, start: number, from: number): boolean => {
+  if (start === from) return true;
+  let previous = start - 1;
+  while (previous >= from && /\s/.test(content[previous])) previous -= 1;
+  return previous < from || /[:=>\[]/.test(content[previous]);
 };
 
 const firstCompleteJson = (content: string, from: number, to: number): StructuredLogRange | undefined => {
   for (let start = from; start < to; start += 1) {
     const open = content[start];
-    if ((open !== "{" && open !== "[") || !looksLikeJson(content, start)) continue;
+    if ((open !== "{" && open !== "[") || !jsonCandidateBoundary(content, start, from)) continue;
+    if (!looksLikeJson(content, start) && !/\\+"/.test(content.slice(start, Math.min(start + 16, to)))) continue;
     const end = findJsonEnd(content, start, open);
     if (end) return { kind: "json", start, end };
   }
@@ -136,24 +195,39 @@ export const findStructuredRange = (
   content: string, line: string, lineFrom: number, _lineTo: number, payloadFrom: number
 ): StructuredLogRange | undefined => {
   const payload = line.slice(payloadFrom);
+  const containsSql = /(?:execute\s+sql|\bsql)\s*[:=]\s*\[?/i.test(payload);
   const marker = WRAPPED_XML_ASSIGNMENT.exec(payload) ?? STRUCTURE_MARKER.exec(payload);
   const relativeFrom = payloadFrom + (marker ? marker.index + marker[0].length : 0);
   const searchFrom = lineFrom + relativeFrom;
   const searchTo = lineFrom + line.length;
-  const xmlRelative = line.slice(relativeFrom).search(/<[A-Za-z_][\w:.-]*(?:\s|>|\/)/);
-  if (xmlRelative >= 0 && (marker || /^\s*</.test(line.slice(relativeFrom)))) {
+  const xmlRelative = line.slice(relativeFrom).search(/<\?xml\b|<[A-Za-z_][\w:.-]*(?:\s|>|\/)/i);
+  if (xmlRelative >= 0) {
     const start = searchFrom + xmlRelative;
-    const end = findXmlEnd(content, start);
-    if (end) return { kind: "xml", start, end };
+    if (xmlCandidateBoundary(content, start, searchFrom)) {
+      const end = findXmlEnd(content, start, nextLogHeader(content, start + 1));
+      if (end) return { kind: "xml", start, end };
+    }
   }
-  const java = firstCompleteJavaObject(content, searchFrom, searchTo);
+  const java = containsSql ? undefined : firstCompleteJavaObject(content, searchFrom, searchTo);
   if (java && (marker || java.end - java.start >= 180)) return java;
-  return marker || /^\s*[\[{]/.test(line.slice(relativeFrom))
-    ? firstCompleteJson(content, searchFrom, searchTo)
-    : undefined;
+  return firstCompleteJson(content, searchFrom, searchTo);
 };
 
 export const highlightJson = (content: string, from: number, to: number, highlights: LogHighlight[]) => {
+  const source = content.slice(from, to);
+  if (parseJsonLogSource(source)?.escaped) {
+    const token = /\\"(?:\\\\.|[^"\\])*\\"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}\[\]]/g;
+    for (let match = token.exec(source); match; match = token.exec(source)) {
+      const value = match[0];
+      let kind: LogHighlight["kind"] = "json-punctuation";
+      if (value.startsWith('\\"')) {
+        kind = /^\s*:/.test(source.slice(match.index + value.length)) ? "json-key" : "json-string";
+      } else if (/^-?\d/.test(value)) kind = "json-number";
+      else if (/^(?:true|false|null)$/.test(value)) kind = "json-literal";
+      highlights.push({ from: from + match.index, to: from + match.index + value.length, kind });
+    }
+    return;
+  }
   for (let index = from; index < to;) {
     const character = content[index];
     if (character === '"') {

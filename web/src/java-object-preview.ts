@@ -1,3 +1,5 @@
+import { parseJsonLogSource } from "./log-json-source";
+
 export type JavaObjectScalarKind = "null" | "boolean" | "number" | "string" | "plain";
 
 export interface JavaObjectPreviewMember {
@@ -73,6 +75,24 @@ const scalarNode = (source: string): JavaObjectPreviewNode => {
   return { kind: "scalar", scalarKind, value, members: [] };
 };
 
+const jsonValueNode = (value: unknown, depth: number): JavaObjectPreviewNode => {
+  if (depth > 80 || value === null || typeof value !== "object") {
+    return scalarNode(typeof value === "string" ? JSON.stringify(value) : String(value));
+  }
+  if (Array.isArray(value)) {
+    return {
+      kind: "list",
+      typeName: "JSON Array",
+      members: value.map((item, index) => ({ name: `[${index}]`, value: jsonValueNode(item, depth + 1) }))
+    };
+  }
+  return {
+    kind: "map",
+    typeName: "JSON Object",
+    members: Object.entries(value).map(([name, item]) => ({ name, value: jsonValueNode(item, depth + 1) }))
+  };
+};
+
 const parseMembers = (source: string, depth: number, indexed: boolean): JavaObjectPreviewMember[] =>
   topLevelParts(source, !indexed).map((part, index) => {
     if (indexed) return { name: `[${index}]`, value: parseJavaValue(part, depth + 1) };
@@ -89,6 +109,14 @@ const parseJavaValue = (source: string, depth = 0): JavaObjectPreviewNode => {
   if (depth > 80) return scalarNode(value);
   const object = /^([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:<[^>]+>)?)\s*\(([\s\S]*)\)$/.exec(value);
   if (object) return { kind: "object", typeName: object[1], members: parseMembers(object[2], depth, false) };
+  // Java collections also use square brackets (for example
+  // `[RrcRulePO(...), ...]`). Only parse values with an unambiguous JSON
+  // shape here so those collections continue through the Java parser.
+  const looksLikeJson = value.startsWith("{") || /^\[\s*(?:\{|\"|null|true|false|-?\d)/.test(value);
+  if (looksLikeJson) {
+    const json = parseJsonLogSource(value);
+    if (json) return jsonValueNode(json.value, depth);
+  }
   if (value.startsWith("[") && value.endsWith("]")) {
     return { kind: "list", typeName: "List", members: parseMembers(value.slice(1, -1), depth, true) };
   }

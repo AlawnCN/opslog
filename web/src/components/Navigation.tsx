@@ -1,4 +1,5 @@
-import type { LogKind } from "../types";
+import { DEFAULT_TIME_ZONE, timeZoneOffsetLabel, timeZoneTitle } from "../time";
+import type { Environment, LogKind } from "../types";
 
 const items: Array<{ kind: LogKind; code: string; title: string; detail: string }> = [
   { kind: "transaction", code: "TXN", title: "交易日志", detail: "交易流水与调用轨迹" },
@@ -7,7 +8,12 @@ const items: Array<{ kind: LogKind; code: string; title: string; detail: string 
   { kind: "generic", code: "ANY", title: "通用日志", detail: "已配置索引自由检索" }
 ];
 
-export const Navigation = ({ active, onChange }: { active: LogKind; onChange: (kind: LogKind) => void }) => (
+export const Navigation = ({ active, onChange, environment }: { active: LogKind; onChange: (kind: LogKind) => void; environment?: Environment }) => {
+  const timeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
+  const offsetLabel = environment?.sourceType === "ssh" && environment.timeZoneOffset
+    ? `UTC ${environment.timeZoneOffset}`
+    : timeZoneOffsetLabel(timeZone);
+  return (
   <aside className="sidebar">
     <div className="nav-caption">LOG DOMAINS</div>
     <nav>
@@ -20,8 +26,9 @@ export const Navigation = ({ active, onChange }: { active: LogKind; onChange: (k
     </nav>
     <div className="timezone-card">
       <span>TIME REFERENCE</span>
-      <strong>Africa / Nairobi</strong>
-      <small>UTC +03:00 · EAT</small>
+      <strong>{timeZoneTitle(timeZone)}</strong>
+      <small>{offsetLabel}{environment?.timeZoneSource === "ssh" ? " · SSH" : ""}</small>
     </div>
   </aside>
-);
+  );
+};

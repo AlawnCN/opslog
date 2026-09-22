@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
-import type { EnvironmentConfig, QueryResult, SearchInput } from "./domain.js";
+import type { EnvironmentConfig, QueryResult, SearchInput, SshApplicationConfig, SshServerConfig } from "./domain.js";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+const TIME_PROFILE_CACHE_MS = 10 * 60 * 1000;
 const SAFE_LOG_ID = /^[A-Za-z0-9._-]+$/;
 const TRANSACTION_COLUMNS = [
   "ecp.txn.timestamp", "ecp.txn.id", "ecp.txn.no", "ecp.txn.business",
@@ -11,16 +12,23 @@ const TRANSACTION_COLUMNS = [
 ];
 
 const TRANSACTION_LIST_SCRIPT = String.raw`set -eu
-decode_arg() { printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
+decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
 days=$(decode_arg "$2")
+prefilter=$(decode_arg "$3")
+start_time=$(decode_arg "$4")
+end_time=$(decode_arg "$5")
 seen=''
 emit_file() {
   file=$1
   [ -f "$file" ] || return 0
   case " $seen " in *" $file "*) return 0;; esac
   seen="$seen $file"
-  cat -- "$file"
+  if [ -n "$prefilter" ]; then
+    awk -v start="$start_time" -v end="$end_time" 'substr($0, 1, 23) >= start && substr($0, 1, 23) < end' "$file" | grep -iF -- "$prefilter" || true
+  else
+    awk -v start="$start_time" -v end="$end_time" 'substr($0, 1, 23) >= start && substr($0, 1, 23) < end' "$file"
+  fi
 }
 for file in "$root"/log/txn_*.lst; do emit_file "$file"; done
 oldifs=$IFS
@@ -31,8 +39,15 @@ done
 IFS=$oldifs
 `;
 
+const TIME_PROFILE_SCRIPT = String.raw`set -eu
+zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+[ -n "$zone" ] || zone=$(cat /etc/timezone 2>/dev/null || true)
+offset=$(date +%:z)
+printf '%s\n%s\n' "$zone" "$offset"
+`;
+
 const TRANSACTION_CONTENT_SCRIPT = String.raw`set -eu
-decode_arg() { printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
+decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
 log_id=$(decode_arg "$2")
 days=$(decode_arg "$3")
@@ -79,7 +94,7 @@ exit 0
 `;
 
 const LOG_SEARCH_SCRIPT = String.raw`set -eu
-decode_arg() { printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
+decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
 days=$(decode_arg "$2")
 level=$(decode_arg "$3")
@@ -96,13 +111,12 @@ emit_file() {
   if [ -n "$file_filter" ]; then case "$name" in *"$file_filter"*) ;; *) return 0;; esac; fi
   if grep -q "§§ logEnd" "$file"; then
     awk -v source="$name" -v wanted_level="$level" -v wanted_keyword="$keyword" '
-      BEGIN { RS=" §§ logEnd[[:space:]]*"; ORS="\036"; emitted=0 }
-      emitted < 5000 && (wanted_level == "" || index($0, "§§ " wanted_level " §§") > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s", source, $0; emitted++ }
+      BEGIN { RS=" §§ logEnd[[:space:]]*"; ORS="\036" }
+      (wanted_level == "" || index($0, "§§ " wanted_level " §§") > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s", source, $0 }
     ' "$file"
   else
     awk -v source="$name" -v wanted_level="$level" -v wanted_keyword="$keyword" '
-      BEGIN { emitted=0 }
-      emitted < 5000 && (wanted_level == "" || index($0, wanted_level) > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s\036", source, $0; emitted++ }
+      (wanted_level == "" || index($0, wanted_level) > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s\036", source, $0 }
     ' "$file"
   fi
 }
@@ -114,6 +128,14 @@ for day in $days; do
 done
 IFS=$oldifs
 `;
+
+export interface SshTimeProfile {
+  timeZone: string;
+  offset: string;
+  timeZoneSource: "configured" | "ssh" | "default";
+}
+
+const timeProfileCache = new Map<string, { expiresAt: number; value: SshTimeProfile }>();
 
 const offsetMinutes = (value: string): number => {
   const match = /^([+-])(\d{2}):(\d{2})$/.exec(value);
@@ -145,29 +167,44 @@ const daysInRange = (start: string, end: string, offset: string): string[] => {
   return [...days];
 };
 
-const selectedApplication = (environment: EnvironmentConfig, input?: SearchInput): string => {
-  const applications = environment.sshApplications ?? [];
+const configuredServers = (environment: EnvironmentConfig): SshServerConfig[] => environment.sshServers?.length
+  ? environment.sshServers
+  : environment.sshHost ? [{ name: environment.sshHost, host: environment.sshHost, authentication: "ssh-config" }] : [];
+
+const configuredApplications = (environment: EnvironmentConfig): SshApplicationConfig[] => environment.sshMonitoredApplications?.length
+  ? environment.sshMonitoredApplications
+  : (environment.sshApplications ?? []).map((name) => ({ name, directory: `${(environment.sshBaseDirectory ?? "/home/coradm").replace(/\/+$/, "")}/${name}` }));
+
+const selectedApplication = (environment: EnvironmentConfig, input?: SearchInput): SshApplicationConfig => {
+  const applications = configuredApplications(environment);
   const requested = input?.application?.trim();
-  const application = requested || applications[0];
-  if (!application || !applications.includes(application)) throw new Error("请选择当前 SSH 环境中已配置的监控应用");
+  const application = applications.find(({ name }) => name === requested) ?? (!requested ? applications[0] : undefined);
+  if (!application) throw new Error("请选择当前 SSH 环境中已配置的监控应用");
   return application;
 };
 
-const applicationRoot = (environment: EnvironmentConfig, application: string): string => {
-  const base = environment.sshBaseDirectory ?? "/home/coradm";
-  if (!base.startsWith("/") || !/^[A-Za-z0-9_./-]+$/.test(base) || base.includes("..")) {
-    throw new Error("SSH 日志基础目录不合法");
+const applicationRoot = (application: SshApplicationConfig): string => {
+  if (!application.directory.startsWith("/") || !/^[A-Za-z0-9_./-]+$/.test(application.directory) || application.directory.includes("..")) {
+    throw new Error("SSH 应用日志目录不合法");
   }
-  return `${base.replace(/\/+$/, "")}/${application}`;
+  return application.directory.replace(/\/+$/, "");
 };
 
-const runSshScript = (environment: EnvironmentConfig, script: string, args: string[], timeoutSeconds: number): Promise<string> => {
-  const host = environment.sshHost?.trim();
+const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, script: string, args: string[], timeoutSeconds: number): Promise<string> => {
+  const host = server.host.trim();
   if (!host || !/^[A-Za-z0-9_.@-]+$/.test(host)) return Promise.reject(new Error("SSH 主机配置不合法"));
   const connectTimeout = environment.sshConnectTimeoutSeconds ?? 10;
   return new Promise((resolve, reject) => {
-    const encodedArgs = args.map((value) => Buffer.from(value, "utf8").toString("hex"));
-    const child = spawn("ssh", ["-o", "BatchMode=yes", "-o", `ConnectTimeout=${connectTimeout}`, host, "sh", "-s", "--", ...encodedArgs], { stdio: ["pipe", "pipe", "pipe"] });
+    const encodedArgs = args.map((value) => value ? Buffer.from(value, "utf8").toString("hex") : "-");
+    const sshArgs = ["-o", `ConnectTimeout=${connectTimeout}`];
+    if (server.port) sshArgs.push("-p", String(server.port));
+    if (server.authentication === "private-key" && server.privateKeyPath) sshArgs.push("-i", server.privateKeyPath, "-o", "BatchMode=yes");
+    else if (server.authentication === "ssh-config") sshArgs.push("-o", "BatchMode=yes");
+    const destination = server.authentication === "ssh-config" || !server.username ? host : `${server.username}@${host}`;
+    sshArgs.push(destination, "sh", "-s", "--", ...encodedArgs);
+    const command = server.authentication === "password" ? "sshpass" : "ssh";
+    const commandArgs = server.authentication === "password" ? ["-e", "ssh", ...sshArgs] : sshArgs;
+    const child = spawn(command, commandArgs, { stdio: ["pipe", "pipe", "pipe"], env: server.authentication === "password" ? { ...process.env, SSHPASS: server.password ?? "" } : process.env });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let size = 0;
@@ -178,7 +215,7 @@ const runSshScript = (environment: EnvironmentConfig, script: string, args: stri
       else stdout.push(chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", (error) => { clearTimeout(timer); reject(new Error(`无法启动 SSH：${error.message}`)); });
+    child.once("error", (error) => { clearTimeout(timer); reject(new Error(server.authentication === "password" && (error as NodeJS.ErrnoException).code === "ENOENT" ? "密码认证需要本机安装 sshpass；建议改用 SSH Config 或私钥认证" : `无法启动 SSH：${error.message}`)); });
     child.once("close", (code, signal) => {
       clearTimeout(timer);
       if (size > MAX_OUTPUT_BYTES) { reject(new Error("SSH 返回内容超过 64 MB 安全上限，请缩小查询范围")); return; }
@@ -188,6 +225,57 @@ const runSshScript = (environment: EnvironmentConfig, script: string, args: stri
     });
     child.stdin.end(script);
   });
+};
+
+const runAcrossServers = async (environment: EnvironmentConfig, script: string, args: string[], timeoutSeconds: number): Promise<Array<{ server: SshServerConfig; raw: string }>> => {
+  const servers = configuredServers(environment);
+  if (!servers.length) throw new Error("当前环境未配置 SSH 服务器");
+  const settled = await Promise.allSettled(servers.map(async (server) => ({ server, raw: await runSshScript(environment, server, script, args, timeoutSeconds) })));
+  const outputs = settled.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  if (outputs.length) return outputs;
+  throw new Error(`服务器组全部连接失败：${settled.map((result, index) => result.status === "rejected" ? `${servers[index]!.name}：${result.reason instanceof Error ? result.reason.message : String(result.reason)}` : "").filter(Boolean).join("；")}`);
+};
+
+export const resolveSshTimeProfile = async (environment: EnvironmentConfig): Promise<SshTimeProfile> => {
+  const servers = configuredServers(environment);
+  const cacheKey = [JSON.stringify(servers.map(({ host, port, username, authentication }) => ({ host, port, username, authentication }))), environment.timeZone ?? "", environment.sshLogTimeOffset ?? "", String(environment.sshAutoDetectTimeZone !== false)].join("\u0000");
+  const cached = timeProfileCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  if (environment.sshAutoDetectTimeZone === false) return { timeZone: environment.timeZone || "Africa/Nairobi", offset: environment.sshLogTimeOffset ?? "+03:00", timeZoneSource: "configured" };
+  try {
+    let output = "";
+    let lastError: unknown;
+    for (const server of servers) {
+      try { output = await runSshScript(environment, server, TIME_PROFILE_SCRIPT, [], 10); break; } catch (error) { lastError = error; }
+    }
+    if (!output) throw lastError ?? new Error("未配置 SSH 服务器");
+    const [detectedZone, detectedOffset] = output.trim().split(/\r?\n/);
+    const timeZone = detectedZone?.trim() || environment.timeZone || "Africa/Nairobi";
+    const offset = /^[+-](?:0\d|1\d|2[0-3]):[0-5]\d$/.test(detectedOffset?.trim() ?? "")
+      ? detectedOffset!.trim()
+      : environment.sshLogTimeOffset ?? "+03:00";
+    const value: SshTimeProfile = { timeZone, offset, timeZoneSource: "ssh" };
+    timeProfileCache.set(cacheKey, { expiresAt: Date.now() + TIME_PROFILE_CACHE_MS, value });
+    return value;
+  } catch {
+    const value: SshTimeProfile = {
+      timeZone: environment.timeZone || "Africa/Nairobi",
+      offset: environment.sshLogTimeOffset ?? "+03:00",
+      timeZoneSource: environment.timeZone || environment.sshLogTimeOffset ? "configured" : "default"
+    };
+    timeProfileCache.set(cacheKey, { expiresAt: Date.now() + TIME_PROFILE_CACHE_MS, value });
+    return value;
+  }
+};
+
+const transactionPrefilter = (input: SearchInput): string => [
+  input.txnId, input.txnNo, input.messageCode, input.service,
+  input.node, input.business, input.messageInfo
+].find((value) => value?.trim())?.trim() ?? "";
+
+const localTimestampBoundary = (value: string, offset: string): string => {
+  const shifted = new Date(new Date(value).getTime() + offsetMinutes(offset) * 60_000);
+  return shifted.toISOString().slice(0, 23).replace("T", " ");
 };
 
 const transactionFields = (body: string): { prefix: string[]; code: string; message: string; source: string } | undefined => {
@@ -240,8 +328,8 @@ const parseTransactionLine = (line: string, host: string, offset: string): Recor
     "ecp.txn.no": parts[1],
     "ecp.txn.tenant": parts[2],
     "ecp.txn.node": parts[3],
-    "ecp.txn.service": parts[4],
-    "ecp.txn.business": parts[5],
+    "ecp.txn.business": parts[4],
+    "ecp.txn.service": parts[5],
     "ecp.txn.duration": Number(parts[6]) || 0,
     "ecp.txn.message.code": fields.code,
     "ecp.txn.message.info": fields.message,
@@ -299,12 +387,9 @@ const parseLogRecord = (record: string, host: string, offset: string, year: numb
 
 const searchSshApplicationLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll: boolean): Promise<QueryResult> => {
   const application = selectedApplication(environment, input);
-  const offset = environment.sshLogTimeOffset ?? "+03:00";
+  const { offset } = await resolveSshTimeProfile(environment);
   const days = daysInRange(input.startTime, input.endTime, offset).join(",");
-  const raw = await runSshScript(environment, LOG_SEARCH_SCRIPT, [
-    applicationRoot(environment, application), days, input.level?.trim() ?? "",
-    input.keyword?.trim() ?? "", input.file?.trim() ?? ""
-  ], 120);
+  const outputs = await runAcrossServers(environment, LOG_SEARCH_SCRIPT, [applicationRoot(application), days, input.level?.trim() ?? "", input.keyword?.trim() ?? "", input.file?.trim() ?? ""], 120);
   const start = Date.parse(input.startTime);
   const end = Date.parse(input.endTime);
   const limit = exportAll ? 20_000 : Math.min(input.page * input.pageSize, 10_000);
@@ -314,8 +399,7 @@ const searchSshApplicationLogs = async (environment: EnvironmentConfig, input: S
       ? ["@timestamp", "ecp.log.application", "ecp.log.level", "ecp.log.thread", "message", "trace.id", "host.name"]
       : ["ecp.log.timestamp", "ecp.log.application", "ecp.log.level", "ecp.log.thread", "message", "trace.id", "host.name"];
   const year = new Date(Date.parse(input.startTime) + offsetMinutes(offset) * 60_000).getUTCFullYear();
-  const rows = raw.split("\x1e")
-    .map((record) => parseLogRecord(record, environment.sshHost ?? "", offset, year))
+  const rows = outputs.flatMap(({ server, raw }) => raw.split("\x1e").map((record) => parseLogRecord(record, server.name || server.host, offset, year)))
     .filter((row): row is Record<string, unknown> => row !== undefined)
     .filter((row) => {
       const timestamp = Date.parse(String(row["ecp.log.timestamp"]));
@@ -329,16 +413,15 @@ const searchSshApplicationLogs = async (environment: EnvironmentConfig, input: S
 export const searchSshLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll = false): Promise<QueryResult> => {
   if (input.kind !== "transaction") return searchSshApplicationLogs(environment, input, exportAll);
   const application = selectedApplication(environment, input);
-  const offset = environment.sshLogTimeOffset ?? "+03:00";
+  const { offset } = await resolveSshTimeProfile(environment);
   const days = daysInRange(input.startTime, input.endTime, offset).join(",");
-  const raw = await runSshScript(environment, TRANSACTION_LIST_SCRIPT, [applicationRoot(environment, application), days], 120);
+  const outputs = await runAcrossServers(environment, TRANSACTION_LIST_SCRIPT, [applicationRoot(application), days, transactionPrefilter(input), localTimestampBoundary(input.startTime, offset), localTimestampBoundary(input.endTime, offset)], 120);
   const limit = exportAll ? 20_000 : Math.min(input.page * input.pageSize, 10_000);
-  const parsedRows = raw.split(/\r?\n/)
-    .map((line) => parseTransactionLine(line, environment.sshHost ?? "", offset))
+  const parsedRows = outputs.flatMap(({ server, raw }) => raw.split(/\r?\n/).map((line) => parseTransactionLine(line, server.name || server.host, offset)))
     .filter((row): row is Record<string, unknown> => row !== undefined);
   const rows = parsedRows
     .filter((row) => matchesTransaction(row, input))
-    .map((row): Record<string, unknown> => ({ ...row, "opslog.source.application": application }))
+    .map((row): Record<string, unknown> => ({ ...row, "opslog.source.application": application.name }))
     .sort((left, right) => Date.parse(String(right["ecp.txn.timestamp"])) - Date.parse(String(left["ecp.txn.timestamp"])))
     .slice(0, limit);
   return { columns: TRANSACTION_COLUMNS, rows };
@@ -347,7 +430,8 @@ export const searchSshLogs = async (environment: EnvironmentConfig, input: Searc
 export const readSshTransactionLog = async (environment: EnvironmentConfig, id: string, startTime: string, endTime: string, application?: string): Promise<string> => {
   if (!SAFE_LOG_ID.test(id)) throw new Error("日志 ID 包含不允许的字符");
   const selected = selectedApplication(environment, { application } as SearchInput);
-  const offset = environment.sshLogTimeOffset ?? "+03:00";
+  const { offset } = await resolveSshTimeProfile(environment);
   const days = daysInRange(startTime, endTime, offset).join(",");
-  return runSshScript(environment, TRANSACTION_CONTENT_SCRIPT, [applicationRoot(environment, selected), id, days], 300);
+  const outputs = await runAcrossServers(environment, TRANSACTION_CONTENT_SCRIPT, [applicationRoot(selected), id, days], 300);
+  return outputs.filter(({ raw }) => raw.trim()).map(({ server, raw }) => `\n===== OPSLOG SERVER: ${server.name || server.host} =====\n${raw}`).join("\n");
 };

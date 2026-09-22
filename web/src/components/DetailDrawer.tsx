@@ -1,8 +1,8 @@
 import { CloseIcon } from "./Icons";
-import { displayNairobiTime } from "../time";
+import { DEFAULT_TIME_ZONE, displayTime } from "../time";
 import { useResizableDrawerWidth } from "./useResizableDrawerWidth";
 
-export const DetailDrawer = ({ row, onClose }: { row?: Record<string, unknown>; onClose: () => void }) => {
+export const DetailDrawer = ({ row, onClose, timeZone = DEFAULT_TIME_ZONE }: { row?: Record<string, unknown>; onClose: () => void; timeZone?: string }) => {
   const drawerWidth = useResizableDrawerWidth({ storageKey: "opslog.record-inspector.width-ratio.v1", defaultRatio: .46, minimumPixels: 420, bodyClassName: "is-resizing-record-inspector" });
   if (!row) return null;
   return <div className="drawer-backdrop" onMouseDown={onClose}>
@@ -11,7 +11,7 @@ export const DetailDrawer = ({ row, onClose }: { row?: Record<string, unknown>; 
       <div className="drawer-heading"><div><span className="eyebrow">RECORD INSPECTOR</span><h2>日志完整字段</h2></div><button onClick={onClose}><CloseIcon /></button></div>
       <div className="detail-grid">
         {Object.entries(row).map(([key, value]) => {
-          const shown = key.includes("timestamp") || key === "@timestamp" ? displayNairobiTime(value) : typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "—");
+          const shown = key.includes("timestamp") || key === "@timestamp" ? displayTime(value, timeZone) : typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "—");
           return <div key={key}><dt>{key}</dt><dd>{shown}</dd></div>;
         })}
       </div>

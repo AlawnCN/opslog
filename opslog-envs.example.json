@@ -9,6 +9,7 @@
     "txntrcIndex": "logs-ecp.txn.trc.pr*",
     "applogIndex": "logs-ecp.app.pr*",
     "apmIndex": "traces-apm*",
+    "timeZone": "Africa/Nairobi",
     "allowInsecureTls": false
   },
   {
@@ -20,10 +21,29 @@
     "txnlstIndex": "",
     "txntrcIndex": "",
     "applogIndex": "",
-    "sshHost": "m5.uat",
-    "sshBaseDirectory": "/home/coradm",
-    "sshApplications": ["cte"],
     "sshConnectTimeoutSeconds": 10,
-    "sshLogTimeOffset": "+03:00"
+    "timeZone": "Asia/Shanghai",
+    "sshLogTimeOffset": "+08:00",
+    "sshAutoDetectTimeZone": true,
+    "sshServers": [
+      {
+        "name": "m5-uat-01",
+        "host": "m5.uat",
+        "port": 22,
+        "authentication": "ssh-config"
+      },
+      {
+        "name": "m5-uat-02",
+        "host": "10.0.0.82",
+        "port": 22,
+        "username": "logadm",
+        "authentication": "private-key",
+        "privateKeyPath": "~/.ssh/id_ed25519"
+      }
+    ],
+    "sshMonitoredApplications": [
+      { "name": "cte", "directory": "/home/coradm/cte" },
+      { "name": "act", "directory": "/home/coradm/act" }
+    ]
   }
 ]

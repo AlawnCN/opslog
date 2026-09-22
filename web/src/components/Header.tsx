@@ -4,7 +4,7 @@ import type { Environment } from "../types";
 import type { LanShareController } from "../use-lan-share";
 import { PulseIcon, SettingsIcon } from "./Icons";
 import { LanShareControl } from "./LanShareControl";
-import { AppSelect } from "./AppSelect";
+import { EnvironmentPicker } from "./EnvironmentPicker";
 
 interface HeaderProps {
   environments: Environment[];
@@ -43,7 +43,7 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         <div className="environment-control">
           <span>运行环境</span>
           <div className="environment-composite-control">
-            <AppSelect value={selected} ariaLabel="运行环境" options={environments.map((item) => ({ value: item.name, label: item.name }))} onChange={onSelect} />
+            <EnvironmentPicker environments={environments} value={selected} onChange={onSelect} disabled={loading} />
             {canImportConfig && <button className="environment-config-trigger" type="button" disabled={loading} title="管理运行环境" onClick={onConfigure}><SettingsIcon /><span>配置</span></button>}
           </div>
         </div>
@@ -53,8 +53,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.0<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.1.0</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.1<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.1</div>}
       </div>
     </header>
   );

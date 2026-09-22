@@ -1,5 +1,21 @@
 export type LogKind = "transaction" | "application" | "ecp" | "generic";
 export type EnvironmentSource = "elk" | "ssh";
+export type SshAuthentication = "ssh-config" | "password" | "private-key";
+
+export interface SshServerConfig {
+  name: string;
+  host: string;
+  port?: number;
+  username?: string;
+  authentication: SshAuthentication;
+  password?: string;
+  privateKeyPath?: string;
+}
+
+export interface SshApplicationConfig {
+  name: string;
+  directory: string;
+}
 
 export interface EnvironmentConfig {
   name: string;
@@ -12,11 +28,15 @@ export interface EnvironmentConfig {
   applogIndex: string;
   apmIndex?: string;
   allowInsecureTls?: boolean;
+  timeZone?: string;
   sshHost?: string;
   sshBaseDirectory?: string;
   sshApplications?: string[];
   sshConnectTimeoutSeconds?: number;
   sshLogTimeOffset?: string;
+  sshAutoDetectTimeZone?: boolean;
+  sshServers?: SshServerConfig[];
+  sshMonitoredApplications?: SshApplicationConfig[];
 }
 
 export interface PublicEnvironment {
@@ -29,6 +49,9 @@ export interface PublicEnvironment {
   apmIndex: string;
   insecureTls: boolean;
   sshApplications: string[];
+  timeZone: string;
+  timeZoneOffset: string;
+  timeZoneSource: "configured" | "ssh" | "default";
 }
 
 export interface SearchInput {

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager};
 
-use crate::domain::{EnvironmentConfig, EnvironmentSource, PublicEnvironment};
+use crate::domain::{EnvironmentConfig, EnvironmentSource, PublicEnvironment, SshApplicationConfig, SshAuthentication, SshServerConfig};
 
 const CONFIG_FILE: &str = "opslog-envs.json";
 const LEGACY_KIBANA_URLS: [(&str, &str); 2] = [
@@ -70,23 +70,7 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
     }
     for environment in environments {
         let required = if environment.source_type == EnvironmentSource::Ssh {
-            vec![
-                (&environment.name, "name"),
-                (
-                    environment
-                        .ssh_host
-                        .as_ref()
-                        .unwrap_or(&environment.kibana_url),
-                    "sshHost",
-                ),
-                (
-                    environment
-                        .ssh_base_directory
-                        .as_ref()
-                        .unwrap_or(&environment.kibana_url),
-                    "sshBaseDirectory",
-                ),
-            ]
+            vec![(&environment.name, "name")]
         } else {
             vec![
                 (&environment.name, "name"),
@@ -108,21 +92,42 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
             return Err(format!("环境 {} 的 kibanaUrl 不合法", environment.name));
         }
         if environment.source_type == EnvironmentSource::Ssh {
-            if environment.ssh_applications.is_empty() {
+            if environment.ssh_servers.is_empty() {
+                return Err(format!("环境 {} 至少需要配置一台 SSH 服务器", environment.name));
+            }
+            if environment.ssh_monitored_applications.is_empty() {
                 return Err(format!(
                     "环境 {} 至少需要配置一个监控应用",
                     environment.name
                 ));
             }
-            if !environment
-                .ssh_base_directory
-                .as_deref()
-                .is_some_and(|path| path.starts_with('/'))
-            {
-                return Err(format!(
-                    "环境 {} 的 SSH 基础目录必须是绝对路径",
-                    environment.name
-                ));
+            let mut server_names = std::collections::HashSet::new();
+            for server in &environment.ssh_servers {
+                if server.name.trim().is_empty() || server.host.trim().is_empty() {
+                    return Err(format!("环境 {} 的服务器名称和地址不能为空", environment.name));
+                }
+                if matches!(server.authentication, SshAuthentication::Password)
+                    && (server.username.as_deref().unwrap_or("").trim().is_empty() || server.password.as_deref().unwrap_or("").is_empty())
+                {
+                    return Err(format!("环境 {} 的密码认证需要用户名和密码", environment.name));
+                }
+                if matches!(server.authentication, SshAuthentication::PrivateKey)
+                    && (server.username.as_deref().unwrap_or("").trim().is_empty() || server.private_key_path.as_deref().unwrap_or("").trim().is_empty())
+                {
+                    return Err(format!("环境 {} 的密钥认证需要用户名和私钥路径", environment.name));
+                }
+                if !server_names.insert(server.name.to_lowercase()) {
+                    return Err(format!("环境 {} 的服务器名称不能重复", environment.name));
+                }
+            }
+            let mut application_names = std::collections::HashSet::new();
+            for application in &environment.ssh_monitored_applications {
+                if !application.directory.starts_with('/') || application.directory.contains("..") {
+                    return Err(format!("环境 {} 的应用目录必须是安全的绝对路径", environment.name));
+                }
+                if !application_names.insert(application.name.to_lowercase()) {
+                    return Err(format!("环境 {} 的监控应用简称不能重复", environment.name));
+                }
             }
         }
     }
@@ -132,10 +137,19 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
 fn parse(contents: &str) -> Result<Vec<EnvironmentConfig>, String> {
     let mut environments: Vec<EnvironmentConfig> =
         serde_json::from_str(contents).map_err(|error| format!("环境配置 JSON 不合法：{error}"))?;
-    validate(&environments)?;
     for environment in &mut environments {
         environment.kibana_url = normalize_kibana_url(&environment.kibana_url);
+        if environment.ssh_servers.is_empty() {
+            if let Some(host) = environment.ssh_host.clone().filter(|host| !host.trim().is_empty()) {
+                environment.ssh_servers.push(SshServerConfig { name: host.clone(), host, port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None });
+            }
+        }
+        if environment.ssh_monitored_applications.is_empty() {
+            let base = environment.ssh_base_directory.as_deref().unwrap_or("/home/coradm").trim_end_matches('/');
+            environment.ssh_monitored_applications = environment.ssh_applications.iter().map(|name| SshApplicationConfig { name: name.clone(), directory: format!("{base}/{name}") }).collect();
+        }
     }
+    validate(&environments)?;
     Ok(environments)
 }
 
@@ -184,7 +198,20 @@ pub async fn find(app: &AppHandle, name: &str) -> Result<EnvironmentConfig, Stri
         .ok_or_else(|| format!("未知环境：{name}"))
 }
 
-pub fn to_public(environment: EnvironmentConfig) -> PublicEnvironment {
+pub fn to_public(
+    environment: EnvironmentConfig,
+    time_profile: Option<crate::ssh_log_source::SshTimeProfile>,
+) -> PublicEnvironment {
+    let configured_time_zone = environment.time_zone.clone();
+    let (time_zone, time_zone_offset, time_zone_source) = time_profile
+        .map(|profile| (profile.time_zone, profile.offset, profile.source))
+        .unwrap_or_else(|| {
+            (
+                configured_time_zone.clone().unwrap_or_else(|| "Africa/Nairobi".to_string()),
+                "+03:00".to_string(),
+                if configured_time_zone.is_some() { "configured" } else { "default" }.to_string(),
+            )
+        });
     PublicEnvironment {
         name: environment.name,
         source_type: environment.source_type,
@@ -196,7 +223,10 @@ pub fn to_public(environment: EnvironmentConfig) -> PublicEnvironment {
             .apm_index
             .unwrap_or_else(|| "traces-apm*".to_string()),
         insecure_tls: environment.allow_insecure_tls.unwrap_or(false),
-        ssh_applications: environment.ssh_applications,
+        ssh_applications: if environment.ssh_monitored_applications.is_empty() { environment.ssh_applications } else { environment.ssh_monitored_applications.into_iter().map(|application| application.name).collect() },
+        time_zone,
+        time_zone_offset,
+        time_zone_source,
     }
 }
 

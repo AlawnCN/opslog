@@ -260,6 +260,13 @@ export const saveCustomLogMarkerExport = async (name: string, contents: string):
   return undefined;
 };
 
+export const saveEnvironmentConfigurationExport = async (contents: string): Promise<string | undefined> => {
+  const name = `opslog-environments-${new Date().toISOString().slice(0, 10)}`;
+  if (desktopMode) return (await desktopInvoke<SavedFile>("save_custom_log_markers", { input: { name, contents } })).path;
+  saveBrowserBlob(new Blob([contents], { type: "application/json;charset=utf-8" }), `${name}.json`);
+  return undefined;
+};
+
 export const savePortableLogHtml = async (name: string, contents: string): Promise<string | undefined> => {
   const filename = name.toLocaleLowerCase().endsWith(".html") ? name : `${name}.html`;
   if (desktopMode) return (await desktopInvoke<SavedFile>("save_portable_log", { input: { name: filename.replace(/\.html$/i, ""), contents } })).path;

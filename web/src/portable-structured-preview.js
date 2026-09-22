@@ -46,6 +46,41 @@
     return /^<(?:\?|!)/.test(source) || /\/\s*>$/.test(source);
   }
 
+  function decodeJsonEscapeLayer(source) {
+    var simple = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+    var content = "";
+    for (var index = 0; index < source.length;) {
+      if (source[index] !== "\\" || index + 1 >= source.length) { content += source[index++]; continue; }
+      var escaped = source[index + 1];
+      if (escaped === "u" && /^[\da-fA-F]{4}$/.test(source.slice(index + 2, index + 6))) {
+        content += String.fromCharCode(parseInt(source.slice(index + 2, index + 6), 16));
+        index += 6;
+        continue;
+      }
+      if (simple[escaped] === undefined) { content += source[index++]; continue; }
+      content += simple[escaped];
+      index += 2;
+    }
+    return content;
+  }
+
+  function parseJsonSource(source) {
+    var original = source.trim(), content = original;
+    for (var attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        var value = JSON.parse(content);
+        if (value !== null && typeof value === "object") return value;
+        if (typeof value !== "string" || !/^\s*[\[{]/.test(value)) return undefined;
+        content = value.trim();
+      } catch (_) {
+        var decoded = decodeJsonEscapeLayer(content);
+        if (decoded === content) return undefined;
+        content = decoded.trim();
+      }
+    }
+    return undefined;
+  }
+
   function formatXml(source) {
     var input = source.trim();
     var tokens = [];
@@ -138,12 +173,11 @@
     var content = source.trim();
     var error;
     if (kind === "json") {
-      try {
-        var parsed = JSON.parse(source);
+      var parsed = parseJsonSource(source);
+      if (parsed === undefined) error = "JSON 内容不完整，暂时显示原始结构";
+      else {
         var preview = Array.isArray(parsed) && parsed.length === 1 && parsed[0] && typeof parsed[0] === "object" && !Array.isArray(parsed[0]) ? parsed[0] : parsed;
         content = JSON.stringify(preview, null, 2);
-      } catch (_) {
-        error = "JSON 内容不完整，暂时显示原始结构";
       }
     } else content = formatXml(source);
     var folds = kind === "json" ? jsonFolds(content) : xmlFolds(content);

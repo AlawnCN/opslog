@@ -291,6 +291,10 @@ mod tests {
             ssh_applications: Vec::new(),
             ssh_connect_timeout_seconds: None,
             ssh_log_time_offset: None,
+            time_zone: None,
+            ssh_auto_detect_time_zone: Some(true),
+            ssh_servers: Vec::new(),
+            ssh_monitored_applications: Vec::new(),
         }
     }
 

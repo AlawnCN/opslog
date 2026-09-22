@@ -11,7 +11,7 @@ import { TraceDrawer } from "./components/TraceDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
 import { OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
-import { rollingNairobiRange, toUtcIso } from "./time";
+import { DEFAULT_TIME_ZONE, rollingTimeZoneRange, toUtcIso, zonedLocal } from "./time";
 import type { Environment, EnvironmentConfiguration, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
 import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
@@ -45,8 +45,10 @@ export default function App() {
   const sessionCache = useRef(new OpsLogSessionCache());
   const filterPanelRef = useRef<FilterPanelHandle>(null);
   const transactionLogDrawerRef = useRef<TransactionLogDrawerHandle>(null);
+  const previousTimeZoneRef = useRef(DEFAULT_TIME_ZONE);
 
   const environment = environments.find((item) => item.name === environmentName);
+  const environmentTimeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
   const notifyCurrentVersion = useCallback(() => {
     setNotice({ tone: "info", text: "当前已是最新版本。" });
   }, []);
@@ -112,13 +114,24 @@ export default function App() {
     setResult(undefined);
     setSearchPerformance(undefined);
     setPage(1);
-    if (environment) setFilters((current) => ({
-      ...current,
-      ...(kind === "generic" ? { index: environment.applogIndex } : {}),
-      application: environment.sourceType === "ssh" ? environment.sshApplications[0] ?? "" : "",
-      ...(environment.sourceType === "ssh" ? { traceId: "" } : {})
-    }));
-  }, [kind, environmentName]);
+    if (environment) setFilters((current) => {
+      const previousTimeZone = previousTimeZoneRef.current;
+      const range = selectedRangeDays
+        ? rollingTimeZoneRange(selectedRangeDays, environmentTimeZone)
+        : {
+            startLocal: zonedLocal(new Date(toUtcIso(current.startLocal, previousTimeZone)), environmentTimeZone),
+            endLocal: zonedLocal(new Date(toUtcIso(current.endLocal, previousTimeZone)), environmentTimeZone)
+          };
+      previousTimeZoneRef.current = environmentTimeZone;
+      return {
+        ...current,
+        ...range,
+        ...(kind === "generic" ? { index: environment.applogIndex } : {}),
+        application: environment.sourceType === "ssh" ? environment.sshApplications[0] ?? "" : "",
+        ...(environment.sourceType === "ssh" ? { traceId: "" } : {})
+      };
+    });
+  }, [kind, environmentName, environmentTimeZone]);
 
   const request = useMemo<SearchRequest | undefined>(() => {
     if (!environmentName) return undefined;
@@ -128,8 +141,8 @@ export default function App() {
         ...fields,
         environment: environmentName,
         kind,
-        startTime: toUtcIso(startLocal),
-        endTime: toUtcIso(endLocal),
+        startTime: toUtcIso(startLocal, environmentTimeZone),
+        endTime: toUtcIso(endLocal, environmentTimeZone),
         page,
         pageSize,
         minDurationMs: minDurationMs ? Number(minDurationMs) : undefined
@@ -137,7 +150,7 @@ export default function App() {
     } catch {
       return undefined;
     }
-  }, [environmentName, filters, kind, page, pageSize]);
+  }, [environmentName, environmentTimeZone, filters, kind, page, pageSize]);
   const logResources = useLogResources({ environmentName, request, cache: sessionCache.current, onNotice: setNotice });
 
   useEffect(() => {
@@ -186,9 +199,9 @@ export default function App() {
   const runSearch = async (targetPage = 1, targetPageSize = pageSize, forceRefresh = false, refreshSelectedRange = false) => {
     let activeRequest = request;
     if (activeRequest && refreshSelectedRange && selectedRangeDays !== null) {
-      const range = rollingNairobiRange(selectedRangeDays);
+      const range = rollingTimeZoneRange(selectedRangeDays, environmentTimeZone);
       setFilters((current) => ({ ...current, ...range }));
-      activeRequest = { ...activeRequest, startTime: toUtcIso(range.startLocal), endTime: toUtcIso(range.endLocal) };
+      activeRequest = { ...activeRequest, startTime: toUtcIso(range.startLocal, environmentTimeZone), endTime: toUtcIso(range.endLocal, environmentTimeZone) };
     }
     if (!activeRequest) { setNotice({ tone: "error", text: "请选择环境并填写有效时间范围" }); return; }
     const runId = ++searchRunId.current;
@@ -249,7 +262,7 @@ export default function App() {
   };
   const setRange = (days: number) => {
     setSelectedRangeDays(days);
-    setFilters((current) => ({ ...current, ...rollingNairobiRange(days) }));
+    setFilters((current) => ({ ...current, ...rollingTimeZoneRange(days, environmentTimeZone) }));
   };
   const exportCurrent = async () => {
     if (!request) return;
@@ -263,14 +276,14 @@ export default function App() {
   };
   return <div className="app-shell">
     <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
-    <Navigation active={kind} onChange={setKind} />
+    <Navigation active={kind} onChange={setKind} environment={environment} />
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
-      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} />
+      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} timeZone={environmentTimeZone} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <AppSelect value={String(pageSize)} disabled={loading} ariaLabel="每页记录数" options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} 条` }))} onChange={(value) => changePageSize(Number(value))} /></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}
     </main>
-    <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} />
+    <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} timeZone={environmentTimeZone} />
     {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
     {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
     <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />

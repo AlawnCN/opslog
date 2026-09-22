@@ -8,7 +8,7 @@ import { buildSearchQuery, buildSearchQueryWithOmittedFields, buildTraceQuery, b
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
-import { readSshTransactionLog, searchSshLogs } from "./ssh-log-source.js";
+import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs } from "./ssh-log-source.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
@@ -150,7 +150,15 @@ apiRouter.get("/runtime", (_request, response) => {
 
 apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   const environments = await loadEnvironments();
-  response.json(environments.map(toPublicEnvironment));
+  response.json(await Promise.all(environments.map(async (environment) => {
+    if (environment.sourceType !== "ssh") return toPublicEnvironment(environment);
+    const profile = await resolveSshTimeProfile(environment);
+    return toPublicEnvironment(environment, {
+      timeZone: profile.timeZone,
+      timeZoneOffset: profile.offset,
+      timeZoneSource: profile.timeZoneSource
+    });
+  })));
 }));
 
 apiRouter.get("/environments/configuration", asyncRoute(async (_request, response) => {

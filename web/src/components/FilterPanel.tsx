@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import type { Environment, LogKind, SearchFilters } from "../types";
 import { DownloadIcon, SearchIcon } from "./Icons";
 import { AppSelect } from "./AppSelect";
+import { DEFAULT_TIME_ZONE, timeZoneOffsetLabel } from "../time";
 
 interface FilterPanelProps {
   kind: LogKind;
@@ -51,6 +52,9 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
     ? [environment.txnlstIndex, environment.txntrcIndex, environment.applogIndex, environment.apmIndex]
     : [];
   const toggleCollapsed = () => setCollapsed((current) => !current);
+  const timeZoneLabel = environment?.sourceType === "ssh" && environment.timeZoneOffset
+    ? `UTC ${environment.timeZoneOffset}`
+    : timeZoneOffsetLabel(environment?.timeZone || DEFAULT_TIME_ZONE);
 
   return (
     <form className="filter-panel" onSubmit={(event) => { event.preventDefault(); if (!loading) onSearch(); }}>
@@ -59,8 +63,8 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
         <i className="filter-heading-divider" aria-hidden="true" />
         <div className="filter-heading-controls">
           <div className="date-range-fields">
-            <Field label="开始时间（EAT）">{input("startLocal", "开始时间", "datetime-local")}</Field>
-            <Field label="结束时间（EAT）">{input("endLocal", "结束时间", "datetime-local")}</Field>
+            <Field label={`开始时间（${timeZoneLabel}）`}>{input("startLocal", "开始时间", "datetime-local")}</Field>
+            <Field label={`结束时间（${timeZoneLabel}）`}>{input("endLocal", "结束时间", "datetime-local")}</Field>
           </div>
           <div className="range-buttons">
             {[

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import { buildTraceModel, durationSeverity, flattenTraceTree, traceCategoryLabel, traceNodeTiming, type TraceNode } from "../trace-model";
-import { displayNairobiTime } from "../time";
+import { DEFAULT_TIME_ZONE, displayTime } from "../time";
 import { CloseIcon } from "./Icons";
 import { useResizableDrawerWidth } from "./useResizableDrawerWidth";
 
@@ -14,13 +14,14 @@ interface TraceDrawerProps {
   remoteDurationMs?: number;
   cached?: boolean;
   onClose: () => void;
+  timeZone?: string;
 }
 
 interface TooltipState { node: TraceNode; x: number; y: number; }
 
 const formatDuration = (value: number): string => value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${value.toFixed(2)} ms`;
 
-const TraceTooltip = ({ tooltip, onEnter, onLeave }: { tooltip?: TooltipState; onEnter: () => void; onLeave: () => void }) => {
+const TraceTooltip = ({ tooltip, onEnter, onLeave, timeZone }: { tooltip?: TooltipState; onEnter: () => void; onLeave: () => void; timeZone: string }) => {
   if (!tooltip) return null;
   const { node } = tooltip;
   return <div className={`trace-tooltip ${node.category}`} style={{ left: tooltip.x, top: tooltip.y }} role="tooltip" onMouseEnter={onEnter} onMouseLeave={onLeave}>
@@ -29,14 +30,14 @@ const TraceTooltip = ({ tooltip, onEnter, onLeave }: { tooltip?: TooltipState; o
     <dl>
       <div><dt>服务</dt><dd>{node.service}</dd></div>
       <div><dt>耗时</dt><dd className={durationSeverity(node.durationMs)}>{formatDuration(node.durationMs)}</dd></div>
-      <div><dt>开始</dt><dd>{displayNairobiTime(node.row["@timestamp"])}</dd></div>
+      <div><dt>开始</dt><dd>{displayTime(node.row["@timestamp"], timeZone)}</dd></div>
       {node.id && <div><dt>Span ID</dt><dd>{node.id}</dd></div>}
       {node.parentId && <div><dt>Parent ID</dt><dd>{node.parentId}</dd></div>}
     </dl>
   </div>;
 };
 
-export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, onClose }: TraceDrawerProps) => {
+export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, onClose, timeZone = DEFAULT_TIME_ZONE }: TraceDrawerProps) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [tooltip, setTooltip] = useState<TooltipState>();
   const tooltipHideTimer = useRef<number | undefined>(undefined);
@@ -102,7 +103,7 @@ export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, 
           })}
         </div>
       </>}
-      <TraceTooltip tooltip={tooltip} onEnter={cancelTooltipHide} onLeave={scheduleTooltipHide} />
+      <TraceTooltip tooltip={tooltip} onEnter={cancelTooltipHide} onLeave={scheduleTooltipHide} timeZone={timeZone} />
     </aside>
   </div>;
 };

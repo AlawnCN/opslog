@@ -1,5 +1,6 @@
 import { highlightJson, highlightXml } from "./transaction-log-structured";
 import type { LogHighlight } from "./transaction-log-model";
+import { parseJsonLogSource } from "./log-json-source";
 
 export type InspectableLogStructureKind = "json" | "xml";
 
@@ -189,18 +190,18 @@ export const formatStructuredLogPreview = (
   let content = source.trim();
   let error: string | undefined;
   if (kind === "json") {
-    try {
-      const parsed: unknown = JSON.parse(source);
-      const previewValue = Array.isArray(parsed)
-        && parsed.length === 1
-        && typeof parsed[0] === "object"
-        && parsed[0] !== null
-        && !Array.isArray(parsed[0])
-        ? parsed[0]
-        : parsed;
+    const parsed = parseJsonLogSource(source);
+    if (!parsed) error = "JSON 内容不完整，暂时显示原始结构";
+    else {
+      const value = parsed.value;
+      const previewValue = Array.isArray(value)
+        && value.length === 1
+        && typeof value[0] === "object"
+        && value[0] !== null
+        && !Array.isArray(value[0])
+        ? value[0]
+        : value;
       content = JSON.stringify(previewValue, null, 2);
-    } catch {
-      error = "JSON 内容不完整，暂时显示原始结构";
     }
   } else content = formatXmlLogStructure(source);
   const highlights: LogHighlight[] = [];

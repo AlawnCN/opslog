@@ -227,11 +227,17 @@ fn validate_download(input: &DownloadInput) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn load_environments(app: AppHandle) -> Result<Vec<PublicEnvironment>, String> {
-    Ok(environment_store::load(&app)
-        .await?
-        .into_iter()
-        .map(environment_store::to_public)
-        .collect())
+    let environments = environment_store::load(&app).await?;
+    let mut public_environments = Vec::with_capacity(environments.len());
+    for environment in environments {
+        let time_profile = if environment.source_type == EnvironmentSource::Ssh {
+            Some(ssh_log_source::resolve_time_profile(&environment).await)
+        } else {
+            None
+        };
+        public_environments.push(environment_store::to_public(environment, time_profile));
+    }
+    Ok(public_environments)
 }
 
 #[tauri::command]

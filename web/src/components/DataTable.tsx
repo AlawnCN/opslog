@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } fr
 import { useColumnPreferences } from "../column-preferences";
 import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "../loading-feedback";
-import { displayNairobiTime } from "../time";
+import { DEFAULT_TIME_ZONE, displayTime } from "../time";
 import type { LogKind, SearchResponse } from "../types";
 import { ColumnSelector } from "./ColumnSelector";
 import { DownloadIcon, TextReaderIcon, TraceIcon } from "./Icons";
@@ -52,9 +52,10 @@ interface DataTableProps {
   onReadTransactionLog: (row: Record<string, unknown>) => void;
   onTrace: (row: Record<string, unknown>) => void;
   traceEnabled?: boolean;
+  timeZone?: string;
 }
 
-export const DataTable = ({ kind, result, loading, queryPerformance, onTransactionLog, onReadTransactionLog, onTrace, traceEnabled = true }: DataTableProps) => {
+export const DataTable = ({ kind, result, loading, queryPerformance, onTransactionLog, onReadTransactionLog, onTrace, traceEnabled = true, timeZone = DEFAULT_TIME_ZONE }: DataTableProps) => {
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
   const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
   const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
@@ -144,7 +145,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
               const downloading = downloadingRows.has(rowKey);
               return <tr key={`${position}-${text(row[columns[0] ?? ""])}`}>
                 {visibleColumns.map((column) => {
-                  const value = timestampFields.has(column) ? displayNairobiTime(row[column]) : text(row[column]);
+                  const value = timestampFields.has(column) ? displayTime(row[column], timeZone) : text(row[column]);
                   const tone = column === "ecp.txn.message.code" ? resultTone(row) : "";
                   return <td key={column} style={widthStyle(column)} className={`${tone} ${column === "message" || column.endsWith(".id") ? "mono" : ""}`} title={value}>{column === "ecp.txn.duration" && value !== "—" ? `${value} ms` : value}</td>;
                 })}
