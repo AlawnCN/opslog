@@ -116,6 +116,7 @@ pub(crate) async fn execute_source_search(
             return Ok(QueryResult {
                 columns,
                 rows: Vec::new(),
+                warnings: Vec::new(),
             });
         }
         let query = if omitted.is_empty() {
@@ -137,6 +138,7 @@ pub(crate) async fn execute_source_search(
                     return Ok(QueryResult {
                         columns,
                         rows: Vec::new(),
+                        warnings: Vec::new(),
                     });
                 }
             }
@@ -145,6 +147,7 @@ pub(crate) async fn execute_source_search(
     Ok(QueryResult {
         columns: available_columns(input, &omitted),
         rows: Vec::new(),
+        warnings: Vec::new(),
     })
 }
 const MAX_CUSTOM_MARKERS_BYTES: usize = 1024 * 1024;
@@ -264,9 +267,17 @@ pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchRes
     let environment = environment_store::find(&app, &input.environment).await?;
     let result = execute_source_search(&environment, &input, false, 120).await?;
     let row_count = result.rows.len();
+    let warnings = result.warnings;
     let has_columns = !result.columns.is_empty();
     let columns = result.columns;
     let start = input.page.saturating_sub(1) * input.page_size;
+    let requested_rows = input.page * input.page_size;
+    let has_more_by_source = if environment.source_type == EnvironmentSource::Ssh {
+        row_count > requested_rows
+    } else {
+        row_count >= requested_rows
+    };
+    let has_more = has_columns && requested_rows < 10_000 && has_more_by_source;
     let rows = result
         .rows
         .into_iter()
@@ -276,9 +287,10 @@ pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchRes
     Ok(SearchResponse {
         columns,
         rows,
+        warnings,
         page: input.page,
         page_size: input.page_size,
-        has_more: has_columns && row_count >= input.page * input.page_size,
+        has_more,
         truncated: input.page * input.page_size >= 10_000,
         query_time: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
     })
@@ -289,6 +301,9 @@ pub async fn export_logs(app: AppHandle, input: SearchInput) -> Result<DownloadR
     validate_search(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
     let result = execute_source_search(&environment, &input, true, 300).await?;
+    if !result.warnings.is_empty() {
+        return Err(format!("部分服务器查询失败，已取消导出以避免生成不完整文件：{}", result.warnings.join("；")));
+    }
     let columns = &result.columns;
     let contents = export_files::csv(columns, &result.rows);
     export_files::save(input.kind.as_str(), "csv", contents.as_bytes()).await

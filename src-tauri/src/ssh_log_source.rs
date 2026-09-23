@@ -5,11 +5,13 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDateTime, TimeZone};
+use futures_util::stream::{self, StreamExt};
 use serde_json::{Map, Value};
 
 use crate::domain::{EnvironmentConfig, LogKind, QueryResult, SearchInput, SearchStatus, SshApplicationConfig, SshAuthentication, SshServerConfig};
 
 const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
+const MAX_PARALLEL_SERVERS: usize = 4;
 const TIME_PROFILE_CACHE_DURATION: StdDuration = StdDuration::from_secs(10 * 60);
 const TRANSACTION_LIST_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
@@ -19,28 +21,120 @@ if [ ! -d "$root" ]; then
   if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
 fi
 days=$(decode_arg "$2")
-prefilter=$(decode_arg "$3")
-start_time=$(decode_arg "$4")
-end_time=$(decode_arg "$5")
+start_time=$(decode_arg "$3")
+end_time=$(decode_arg "$4")
+limit=$(decode_arg "$5")
+txn_id=$(decode_arg "$6")
+txn_no=$(decode_arg "$7")
+business=$(decode_arg "$8")
+service=$(decode_arg "$9")
+shift 9
+node=$(decode_arg "$1")
+message_code=$(decode_arg "$2")
+message_info=$(decode_arg "$3")
+minimum_duration=$(decode_arg "$4")
+status=$(decode_arg "$5")
 seen=''
 emit_file() {
   file=$1
   [ -f "$file" ] || return 0
   case " $seen " in *" $file "*) return 0;; esac
   seen="$seen $file"
-  if [ -n "$prefilter" ]; then
-    awk -v start="$start_time" -v end="$end_time" 'substr($0, 1, 23) >= start && substr($0, 1, 23) < end' "$file" | grep -iF -- "$prefilter" || true
-  else
-    awk -v start="$start_time" -v end="$end_time" 'substr($0, 1, 23) >= start && substr($0, 1, 23) < end' "$file"
-  fi
+  cat -- "$file"
 }
-for file in "$root"/log/txn_*.lst; do emit_file "$file"; done
-oldifs=$IFS
-IFS=,
-for day in $days; do
-  for file in "$root"/log/"$day"/txn_*.lst; do emit_file "$file"; done
-done
-IFS=$oldifs
+stream_files() {
+  for file in "$root"/log/txn_*.lst; do emit_file "$file"; done
+  oldifs=$IFS
+  IFS=,
+  for day in $days; do
+    for file in "$root"/log/"$day"/txn_*.lst; do emit_file "$file"; done
+  done
+  IFS=$oldifs
+}
+stream_files | perl -e '
+use strict;
+use warnings;
+use Encode qw(decode encode);
+my ($start, $end, $limit, $id, $no, $business, $service, $node, $code_filter, $info, $minimum, $status) = @ARGV;
+$limit = int($limit);
+$minimum = 0 + ($minimum || 0);
+sub matches { my ($value, $needle) = @_; return !$needle || index(lc($value), lc($needle)) >= 0; }
+my @top;
+my $retain = sub {
+  my ($stamp, $row) = @_;
+  if (@top < $limit) {
+    push @top, [$stamp, $row];
+    my $index = $#top;
+    while ($index > 0) {
+      my $parent = int(($index - 1) / 2);
+      last if $top[$parent][0] le $top[$index][0];
+      @top[$parent, $index] = @top[$index, $parent];
+      $index = $parent;
+    }
+  } elsif ($stamp gt $top[0][0]) {
+    $top[0] = [$stamp, $row];
+    my $index = 0;
+    while (2 * $index + 1 < @top) {
+      my $child = 2 * $index + 1;
+      $child++ if $child + 1 < @top && $top[$child + 1][0] lt $top[$child][0];
+      last if $top[$index][0] le $top[$child][0];
+      @top[$index, $child] = @top[$child, $index];
+      $index = $child;
+    }
+  }
+};
+LINE: while (my $line = <STDIN>) {
+  $line =~ s/\r?\n$//;
+  my ($stamp, $body) = $line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\s+->\s+\|(.*)\|$/;
+  next unless defined $body;
+  $stamp =~ tr/,/./;
+  next if $stamp lt $start || $stamp ge $end;
+  my @fields;
+  my $cursor = 0;
+  for (1..9) {
+    my $separator = index($body, "|", $cursor);
+    next LINE if $separator < 0;
+    push @fields, substr($body, $cursor, $separator - $cursor);
+    $cursor = $separator + 1;
+  }
+  my $context_end;
+  if (substr($body, $cursor, 1) eq "{") {
+    my ($depth, $quoted, $escaped) = (0, 0, 0);
+    for (my $index = $cursor; $index < length($body); $index++) {
+      my $character = substr($body, $index, 1);
+      if ($escaped) { $escaped = 0; next; }
+      if ($quoted && $character eq "\\") { $escaped = 1; next; }
+      if ($character eq "\"") { $quoted = !$quoted; next; }
+      next if $quoted;
+      $depth++ if $character eq "{";
+      if ($character eq "}" && --$depth == 0) { $context_end = $index + 1; last; }
+    }
+  } else {
+    $context_end = index($body, "|", $cursor);
+  }
+  next if !defined($context_end) || $context_end < 0 || substr($body, $context_end, 1) ne "|";
+  my $tail = substr($body, $context_end + 1);
+  my $code_end = index($tail, "|");
+  my $source_start = rindex($tail, "|");
+  next if $code_end < 0 || $source_start <= $code_end;
+  my $code = substr($tail, 0, $code_end);
+  my $message = substr($tail, $code_end + 1, $source_start - $code_end - 1);
+  $message =~ s/\|$//;
+  my $source = substr($tail, $source_start + 1);
+  next unless matches($fields[0], $id) && matches($fields[1], $no)
+    && matches($fields[4], $business) && matches($fields[5], $service)
+    && matches($fields[3], $node) && matches($code, $code_filter) && matches($message, $info);
+  next if $minimum && (0 + $fields[6]) < $minimum;
+  next if $status ne "ALL" && $status ne "" && $code eq "";
+  next if $status eq "SUCCESS" && $code !~ /00000$/;
+  next if $status eq "FAIL" && $code =~ /00000$/;
+  # The full context and long message remain available in the per-transaction detail view.
+  my $preview = encode("UTF-8", substr(decode("UTF-8", $message), 0, 4096));
+  my $compact = "$stamp -> |" . join("|", @fields) . "|{}|$code|$preview|$source|\n";
+  $retain->($stamp, $compact);
+}
+print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
+' "$start_time" "$end_time" "$limit" "$txn_id" "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info" "$minimum_duration" "$status"
 "#;
 const TRANSACTION_DETAIL_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
@@ -57,7 +151,13 @@ service=$(decode_arg "$6")
 node=$(decode_arg "$7")
 message_code=$(decode_arg "$8")
 message_info=$(decode_arg "$9")
+shift 9
+start_time=$(decode_arg "$1")
+end_time=$(decode_arg "$2")
+limit=$(decode_arg "$3")
+minimum_duration=$(decode_arg "$4")
 seen=''
+collect_details() {
 oldifs=$IFS
 IFS=,
 for day in $days; do
@@ -72,6 +172,16 @@ for day in $days; do
     case " $seen " in *" $base "*) continue;; esac
     seen="$seen $base"
     if [ -n "$txn_id" ] && ! printf '%s' "$base" | grep -iqF -- "$txn_id"; then continue; fi
+    if [ -f "$directory/$base.trc" ]; then file="$directory/$base.trc"; fi
+    year=$(date -r "$file" +%Y)
+    timestamp=$(head -c 65536 "$file" | awk -F ' §§ ' -v year="$year" '
+      NF >= 2 && $2 ~ /^20[0-9][0-9]-/ { print $2; exit }
+      match($0, /\[[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9][,.][0-9][0-9][0-9]\]/) {
+        value=substr($0, RSTART+1, RLENGTH-2); gsub(/,/, ".", value); print year "-" value; exit
+      }
+    ')
+    [ -n "$timestamp" ] || continue
+    if ! awk -v value="$timestamp" -v start="$start_time" -v end="$end_time" 'BEGIN { gsub(/,/, ".", value); exit !(value >= start && value < end) }'; then continue; fi
     matched=1
     for needle in "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info"; do
       [ -n "$needle" ] || continue
@@ -82,15 +192,6 @@ for day in $days; do
       if [ "$hit" -eq 0 ]; then matched=0; break; fi
     done
     [ "$matched" -eq 1 ] || continue
-    if [ -f "$directory/$base.trc" ]; then file="$directory/$base.trc"; fi
-    year=$(date -r "$file" +%Y)
-    timestamp=$(awk -F ' §§ ' -v year="$year" '
-      NF >= 2 && $2 ~ /^20[0-9][0-9]-/ { print $2; exit }
-      match($0, /\[[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9][,.][0-9][0-9][0-9]\]/) {
-        value=substr($0, RSTART+1, RLENGTH-2); gsub(/,/, ".", value); print year "-" value; exit
-      }
-    ' "$file")
-    [ -n "$timestamp" ] || continue
     summary_service=''
     summary_business=''
     duration=''
@@ -109,11 +210,14 @@ for day in $days; do
         break
       fi
     done
+    if [ -n "$minimum_duration" ] && ! awk -v value="$duration" -v minimum="$minimum_duration" 'BEGIN { exit !((value + 0) >= (minimum + 0)) }'; then continue; fi
     [ -n "$summary_service" ] || summary_service=$(printf '%s' "$base" | sed -E 's/[.][su]_0_.*$//')
     printf '@OPSLOG_DETAIL\t%s\t%s\t%s\t%s\t%s\n' "$timestamp" "$base" "$summary_business" "$summary_service" "$duration"
   done
 done
 IFS=$oldifs
+}
+collect_details | awk -F '\t' -v start="$start_time" -v end="$end_time" '{ value=$2; gsub(/,/, ".", value); if (value >= start && value < end) print }' | LC_ALL=C sort -t "$(printf '\t')" -k2,2r | awk -v limit="$limit" 'NR <= limit'
 "#;
 const TIME_PROFILE_SCRIPT: &str = r#"set -eu
 zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
@@ -178,11 +282,15 @@ if [ ! -d "$root" ]; then
   if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
 fi
 days=$(decode_arg "$2")
-level=$(decode_arg "$3")
-keyword=$(decode_arg "$4")
-file_filter=$(decode_arg "$5")
+start_time=$(decode_arg "$3")
+end_time=$(decode_arg "$4")
+limit=$(decode_arg "$5")
+level=$(decode_arg "$6")
+keyword=$(decode_arg "$7")
+file_filter=$(decode_arg "$8")
+output_mode=$(decode_arg "$9")
 seen=''
-emit_file() {
+emit_path() {
   file=$1
   [ -f "$file" ] || return 0
   case " $seen " in *" $file "*) return 0;; esac
@@ -190,24 +298,102 @@ emit_file() {
   name=$(basename "$file")
   case "$name" in txn_*.lst|txntrc_*.trc*) return 0;; esac
   if [ -n "$file_filter" ]; then case "$name" in *"$file_filter"*) ;; *) return 0;; esac; fi
-  if grep -q "§§ logEnd" "$file"; then
-    awk -v source="$name" -v wanted_level="$level" -v wanted_keyword="$keyword" '
-      BEGIN { RS=" §§ logEnd[[:space:]]*"; ORS="\036" }
-      (wanted_level == "" || index($0, "§§ " wanted_level " §§") > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s", source, $0 }
-    ' "$file"
-  else
-    awk -v source="$name" -v wanted_level="$level" -v wanted_keyword="$keyword" '
-      (wanted_level == "" || index($0, wanted_level) > 0) && (wanted_keyword == "" || index(tolower($0), tolower(wanted_keyword)) > 0) { printf "%s\037%s\036", source, $0 }
-    ' "$file"
-  fi
+  printf '%s\n' "$file"
 }
-for file in "$root"/log/*.log "$root"/log/*.log.* "$root"/log/*.log_*; do emit_file "$file"; done
-oldifs=$IFS
-IFS=,
-for day in $days; do
-  for file in "$root"/log/"$day"/*.log; do emit_file "$file"; done
-done
-IFS=$oldifs
+stream_paths() {
+  for file in "$root"/log/*.log "$root"/log/*.log.* "$root"/log/*.log_*; do emit_path "$file"; done
+  oldifs=$IFS
+  IFS=,
+  for day in $days; do
+    for file in "$root"/log/"$day"/*.log "$root"/log/"$day"/*.log.* "$root"/log/"$day"/*.log_*; do emit_path "$file"; done
+  done
+  IFS=$oldifs
+}
+stream_paths | perl -e '
+use strict;
+use warnings;
+use Encode qw(decode encode);
+use File::Basename qw(basename);
+use Time::Local qw(timegm);
+my ($start, $end, $limit, $level, $keyword, $output_mode) = @ARGV;
+$limit = int($limit);
+my $first_year = substr($start, 0, 4);
+my $last_year = substr($end, 0, 4);
+sub day_epoch {
+  my ($year, $month, $day) = @_;
+  return eval { timegm(0, 0, 0, $day, $month - 1, $year) };
+}
+my $start_day = day_epoch(substr($start, 0, 4), substr($start, 5, 2), substr($start, 8, 2));
+my $end_day = day_epoch(substr($end, 0, 4), substr($end, 5, 2), substr($end, 8, 2));
+my $max_record_bytes = int(48 * 1024 * 1024 / $limit);
+$max_record_bytes = 65536 if $max_record_bytes > 65536;
+my @top;
+my $retain = sub {
+  my ($stamp, $row) = @_;
+  if (@top < $limit) {
+    push @top, [$stamp, $row];
+    my $index = $#top;
+    while ($index > 0) {
+      my $parent = int(($index - 1) / 2);
+      last if $top[$parent][0] le $top[$index][0];
+      @top[$parent, $index] = @top[$index, $parent];
+      $index = $parent;
+    }
+  } elsif ($stamp gt $top[0][0]) {
+    $top[0] = [$stamp, $row];
+    my $index = 0;
+    while (2 * $index + 1 < @top) {
+      my $child = 2 * $index + 1;
+      $child++ if $child + 1 < @top && $top[$child + 1][0] lt $top[$child][0];
+      last if $top[$index][0] le $top[$child][0];
+      @top[$index, $child] = @top[$child, $index];
+      $index = $child;
+    }
+  }
+};
+while (my $path = <STDIN>) {
+  chomp $path;
+  my $source = basename($path);
+  if ($source =~ /(20\d{2})-(\d{2})-(\d{2})/) {
+    my $file_day = day_epoch($1, $2, $3);
+    next if defined($file_day) && defined($start_day) && defined($end_day)
+      && ($file_day < $start_day - 86400 || $file_day > $end_day + 86400);
+  }
+  open my $file, "<:raw", $path or next;
+  my $sample = "";
+  read($file, $sample, 1048576);
+  my $structured = index($sample, " §§ logEnd") >= 0;
+  seek($file, 0, 0);
+  local $/ = $structured ? " §§ logEnd" : "\n";
+  while (my $record = <$file>) {
+    $record =~ s/ §§ logEnd$// if $structured;
+    my $stamp;
+    if ($structured) {
+      my @fields = split(/ §§ /, $record, 3);
+      $stamp = $fields[1] if @fields >= 3;
+      next if $level ne "" && index($record, "§§ $level §§") < 0;
+    } else {
+      my ($raw_level, $local_time) = $record =~ /^([A-Z]+)\d*\[(\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\]/;
+      next unless defined $local_time;
+      next if $level ne "" && index($raw_level, $level) < 0;
+      $stamp = "$first_year-$local_time";
+      $stamp =~ tr/,/./;
+      if ($stamp lt $start && $last_year ne $first_year) { $stamp = "$last_year-$local_time"; }
+    }
+    next unless defined $stamp && $stamp =~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3}/;
+    $stamp = substr($stamp, 0, 23);
+    $stamp =~ tr/,/./;
+    next if $stamp lt $start || $stamp ge $end;
+    next if $keyword ne "" && index(lc($record), lc($keyword)) < 0;
+    if ($output_mode eq "PREVIEW" && length($record) > $max_record_bytes) {
+      $record = encode("UTF-8", substr(decode("UTF-8", substr($record, 0, $max_record_bytes - 32)), 0)) . "\n[日志内容已截断]";
+    }
+    $retain->($stamp, "$source\x1f$record\x1e");
+  }
+  close $file;
+}
+print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
+' "$start_time" "$end_time" "$limit" "$level" "$keyword" "$output_mode"
 "#;
 
 #[derive(Clone, Debug)]
@@ -384,23 +570,37 @@ async fn run_script(
     String::from_utf8(output.stdout).map_err(|_| "SSH 返回的日志不是有效 UTF-8 文本".to_string())
 }
 
+struct SshServerGroupResult {
+    outputs: Vec<(SshServerConfig, String)>,
+    warnings: Vec<String>,
+}
+
 async fn run_across_servers(
     environment: &EnvironmentConfig,
     script: &str,
     args: &[String],
     timeout_seconds: u64,
-) -> Result<Vec<(SshServerConfig, String)>, String> {
+) -> Result<SshServerGroupResult, String> {
     let servers = configured_servers(environment);
     if servers.is_empty() { return Err("当前环境未配置 SSH 服务器".to_string()); }
+    let mut settled = stream::iter(servers.into_iter().enumerate().map(|(index, server)| async move {
+        let result = run_script(environment, &server, script, args, timeout_seconds).await;
+        (index, server, result)
+    }))
+    .buffer_unordered(MAX_PARALLEL_SERVERS)
+    .collect::<Vec<_>>()
+    .await;
+    settled.sort_by_key(|(index, _, _)| *index);
     let mut outputs = Vec::new();
-    let mut errors = Vec::new();
-    for server in servers {
-        match run_script(environment, &server, script, args, timeout_seconds).await {
+    let mut warnings = Vec::new();
+    for (_, server, result) in settled {
+        match result {
             Ok(raw) => outputs.push((server, raw)),
-            Err(error) => errors.push(format!("{}：{error}", server.name)),
+            Err(error) => warnings.push(format!("{}：{error}", if server.name.is_empty() { &server.host } else { &server.name })),
         }
     }
-    if outputs.is_empty() { Err(format!("服务器组全部连接失败：{}", errors.join("；"))) } else { Ok(outputs) }
+    if outputs.is_empty() { return Err(format!("服务器组全部连接失败：{}", warnings.join("；"))); }
+    Ok(SshServerGroupResult { outputs, warnings })
 }
 
 pub async fn resolve_time_profile(environment: &EnvironmentConfig) -> SshTimeProfile {
@@ -423,10 +623,9 @@ pub async fn resolve_time_profile(environment: &EnvironmentConfig) -> SshTimePro
     if !environment.ssh_auto_detect_time_zone.unwrap_or(true) {
         return SshTimeProfile { time_zone: environment.time_zone.clone().unwrap_or_else(|| "Africa/Nairobi".to_string()), offset: environment.ssh_log_time_offset.clone().unwrap_or_else(|| "+03:00".to_string()), source: "configured".to_string() };
     }
-    let mut detected = None;
-    for server in &servers {
-        if let Ok(raw) = run_script(environment, server, TIME_PROFILE_SCRIPT, &[], 10).await { detected = Some(raw); break; }
-    }
+    let detected = run_across_servers(environment, TIME_PROFILE_SCRIPT, &[], 10).await.ok()
+        .and_then(|group| group.outputs.into_iter().map(|(_, raw)| raw)
+            .find(|raw| parse_offset(raw.lines().nth(1).unwrap_or_default().trim()).is_ok()));
     if let Some(raw) = detected {
         let mut lines = raw.lines();
         let detected_zone = lines.next().unwrap_or_default().trim();
@@ -602,24 +801,6 @@ fn contains(row: &Map<String, Value>, key: &str, candidate: Option<&str>) -> boo
         .contains(&candidate.trim().to_lowercase())
 }
 
-fn transaction_prefilter(input: &SearchInput) -> String {
-    [
-        input.txn_id.as_deref(),
-        input.txn_no.as_deref(),
-        input.message_code.as_deref(),
-        input.service.as_deref(),
-        input.node.as_deref(),
-        input.business.as_deref(),
-        input.message_info.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .map(str::trim)
-    .find(|value| !value.is_empty())
-    .unwrap_or_default()
-    .to_string()
-}
-
 fn local_timestamp_boundary(value: &str, offset: FixedOffset) -> Result<String, String> {
     Ok(DateTime::parse_from_rfc3339(value)
         .map_err(|_| "时间格式不合法".to_string())?
@@ -652,7 +833,6 @@ fn matches_transaction(row: &Map<String, Value>, input: &SearchInput) -> bool {
             ("ecp.txn.business", input.business.as_deref()),
             ("ecp.txn.service", input.service.as_deref()),
             ("ecp.txn.message.code", input.message_code.as_deref()),
-            ("ecp.txn.message.info", input.message_info.as_deref()),
             ("ecp.txn.node", input.node.as_deref()),
         ] {
             if !contains(row, key, candidate) {
@@ -685,6 +865,9 @@ fn parse_log_record(
     host: &str,
     offset: FixedOffset,
     year: i32,
+    end_year: i32,
+    start: &DateTime<FixedOffset>,
+    end: &DateTime<FixedOffset>,
 ) -> Option<Map<String, Value>> {
     let (source, content) = record.split_once('\u{1f}')?;
     let fields = content.trim().split(" §§ ").collect::<Vec<_>>();
@@ -694,7 +877,11 @@ fn parse_log_record(
         let level =
             content[..bracket].trim_end_matches(|character: char| character.is_ascii_digit());
         let short_timestamp = &content[bracket + 1..close];
-        let timestamp = parse_timestamp(&format!("{year}-{short_timestamp}"), offset)?.to_rfc3339();
+        let mut timestamp = parse_timestamp(&format!("{year}-{short_timestamp}"), offset)?;
+        if end_year != year && (&timestamp < start || &timestamp >= end) {
+            timestamp = parse_timestamp(&format!("{end_year}-{short_timestamp}"), offset)?;
+        }
+        let timestamp = timestamp.to_rfc3339();
         let mut row = Map::new();
         for (key, value) in [
             ("ecp.log.timestamp", timestamp.clone()),
@@ -738,13 +925,6 @@ async fn search_application_logs(
     let offset = resolved_log_offset(environment).await?;
     let days = days_in_range(&input.start_time, &input.end_time, offset)?;
     let root = application_root(&application)?;
-    let args = vec![
-        root,
-        days,
-        input.level.clone().unwrap_or_default(),
-        input.keyword.clone().unwrap_or_default(),
-        input.file.clone().unwrap_or_default(),
-    ];
     let start = DateTime::parse_from_rfc3339(&input.start_time)
         .map_err(|_| "开始时间格式不合法".to_string())?;
     let end = DateTime::parse_from_rfc3339(&input.end_time)
@@ -752,12 +932,25 @@ async fn search_application_logs(
     let limit = if export_all {
         20_000
     } else {
-        (input.page * input.page_size).min(10_000)
+        input.page.saturating_mul(input.page_size).saturating_add(1).min(10_001)
     };
+    let args = vec![
+        root,
+        days,
+        local_timestamp_boundary(&input.start_time, offset)?,
+        local_timestamp_boundary(&input.end_time, offset)?,
+        limit.to_string(),
+        input.level.clone().unwrap_or_default(),
+        input.keyword.clone().unwrap_or_default(),
+        input.file.clone().unwrap_or_default(),
+        if export_all { "FULL" } else { "PREVIEW" }.to_string(),
+    ];
     let year = start.with_timezone(&offset).year();
+    let end_year = end.with_timezone(&offset).year();
     let mut rows = Vec::new();
-    for (server, raw) in run_across_servers(environment, LOG_SEARCH_SCRIPT, &args, 120).await? {
-        rows.extend(raw.split('\u{1e}').filter_map(|record| parse_log_record(record, if server.name.is_empty() { &server.host } else { &server.name }, offset, year)));
+    let group = run_across_servers(environment, LOG_SEARCH_SCRIPT, &args, 120).await?;
+    for (server, raw) in group.outputs {
+        rows.extend(raw.split('\u{1e}').filter_map(|record| parse_log_record(record, if server.name.is_empty() { &server.host } else { &server.name }, offset, year, end_year, &start, &end)));
     }
     let mut rows = rows.into_iter()
         .filter(|row| {
@@ -780,6 +973,7 @@ async fn search_application_logs(
             .map(ToString::to_string)
             .collect(),
         rows,
+        warnings: group.warnings,
     })
 }
 
@@ -795,30 +989,65 @@ pub async fn search(
     let offset = resolved_log_offset(environment).await?;
     let days = days_in_range(&input.start_time, &input.end_time, offset)?;
     let root = application_root(&application)?;
-    let prefilter = transaction_prefilter(input);
     let start_time = local_timestamp_boundary(&input.start_time, offset)?;
     let end_time = local_timestamp_boundary(&input.end_time, offset)?;
     let limit = if export_all {
         20_000
     } else {
-        (input.page * input.page_size).min(10_000)
+        input.page.saturating_mul(input.page_size).saturating_add(1).min(10_001)
     };
     let mut rows = Vec::new();
-    for (server, raw) in run_across_servers(environment, TRANSACTION_LIST_SCRIPT, &[root.clone(), days.clone(), prefilter.clone(), start_time.clone(), end_time.clone()], 120).await? {
+    let list_args = vec![
+        root.clone(), days.clone(), start_time.clone(), end_time.clone(), limit.to_string(),
+        input.txn_id.as_deref().unwrap_or_default().trim().to_string(),
+        input.txn_no.as_deref().unwrap_or_default().trim().to_string(),
+        input.business.as_deref().unwrap_or_default().trim().to_string(),
+        input.service.as_deref().unwrap_or_default().trim().to_string(),
+        input.node.as_deref().unwrap_or_default().trim().to_string(),
+        input.message_code.as_deref().unwrap_or_default().trim().to_string(),
+        input.message_info.as_deref().unwrap_or_default().trim().to_string(),
+        input.min_duration_ms.map(|value| value.to_string()).unwrap_or_default(),
+        match input.status { Some(SearchStatus::Success) => "SUCCESS", Some(SearchStatus::Fail) => "FAIL", _ => "ALL" }.to_string(),
+    ];
+    let group = run_across_servers(environment, TRANSACTION_LIST_SCRIPT, &list_args, 120).await?;
+    let mut warnings = group.warnings;
+    let mut fallback_servers = Vec::new();
+    for (server, raw) in group.outputs {
         let host = if server.name.is_empty() { &server.host } else { &server.name };
         let list_rows = raw.lines().filter_map(|line| parse_transaction_line(line, host, &application.name, offset)).collect::<Vec<_>>();
         if list_rows.is_empty() {
-            let filters = [
-                input.txn_id.as_deref(), input.txn_no.as_deref(), input.business.as_deref(),
-                input.service.as_deref(), input.node.as_deref(), input.message_code.as_deref(),
-                input.message_info.as_deref(),
-            ];
-            let mut args = vec![root.clone(), days.clone()];
-            args.extend(filters.map(|value| value.unwrap_or_default().trim().to_string()));
-            let detail = run_script(environment, &server, TRANSACTION_DETAIL_SCRIPT, &args, 120).await?;
-            rows.extend(detail.lines().filter_map(|line| parse_transaction_detail(line, host, &application.name, offset)));
+            fallback_servers.push(server);
         } else {
             rows.extend(list_rows);
+        }
+    }
+    let filters = [
+        input.txn_id.as_deref(), input.txn_no.as_deref(), input.business.as_deref(),
+        input.service.as_deref(), input.node.as_deref(), input.message_code.as_deref(),
+        input.message_info.as_deref(),
+    ];
+    let mut fallback_args = vec![root.clone(), days.clone()];
+    fallback_args.extend(filters.map(|value| value.unwrap_or_default().trim().to_string()));
+    fallback_args.extend([
+        start_time, end_time, limit.to_string(),
+        input.min_duration_ms.map(|value| value.to_string()).unwrap_or_default(),
+    ]);
+    let mut fallback_results = stream::iter(fallback_servers.into_iter().enumerate().map(|(index, server)| {
+        let args = &fallback_args;
+        async move {
+            let result = run_script(environment, &server, TRANSACTION_DETAIL_SCRIPT, args, 120).await;
+            (index, server, result)
+        }
+    }))
+    .buffer_unordered(MAX_PARALLEL_SERVERS)
+    .collect::<Vec<_>>()
+    .await;
+    fallback_results.sort_by_key(|(index, _, _)| *index);
+    for (_, server, result) in fallback_results {
+        let host = if server.name.is_empty() { &server.host } else { &server.name };
+        match result {
+            Ok(detail) => rows.extend(detail.lines().filter_map(|line| parse_transaction_detail(line, host, &application.name, offset))),
+            Err(error) => warnings.push(format!("{}：明细兜底查询失败：{error}", host)),
         }
     }
     let mut rows = rows.into_iter()
@@ -837,6 +1066,7 @@ pub async fn search(
             .map(ToString::to_string)
             .collect(),
         rows,
+        warnings,
     })
 }
 
@@ -859,10 +1089,14 @@ pub async fn read_transaction(
     let days = days_in_range(start, end, offset)?;
     let root = application_root(&application)?;
     let mut combined = String::new();
-    for (server, content) in run_across_servers(environment, TRANSACTION_CONTENT_SCRIPT, &[root.clone(), id.to_string(), days.clone()], 300).await? {
+    let group = run_across_servers(environment, TRANSACTION_CONTENT_SCRIPT, &[root.clone(), id.to_string(), days.clone()], 300).await?;
+    for (server, content) in group.outputs {
         if !content.trim().is_empty() {
             combined.push_str(&format!("\n===== OPSLOG SERVER: {} =====\n{}", if server.name.is_empty() { &server.host } else { &server.name }, content));
         }
+    }
+    if !group.warnings.is_empty() {
+        combined.push_str(&format!("\n===== OPSLOG WARNING: 部分服务器查询失败：{} =====\n", group.warnings.join("；")));
     }
     Ok(combined)
 }

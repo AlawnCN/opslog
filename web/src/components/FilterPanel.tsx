@@ -3,6 +3,7 @@ import type { Environment, LogKind, SearchFilters } from "../types";
 import { DownloadIcon, SearchIcon } from "./Icons";
 import { AppSelect } from "./AppSelect";
 import { DEFAULT_TIME_ZONE, timeZoneOffsetLabel } from "../time";
+import { DateTimePicker } from "./DateTimePicker";
 
 interface FilterPanelProps {
   kind: LogKind;
@@ -44,8 +45,7 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
       type={type}
       value={filters[field]}
       placeholder={placeholder}
-      onInput={type === "datetime-local" ? (event) => onChange(field, event.currentTarget.value) : undefined}
-      onChange={type === "datetime-local" ? undefined : (event) => onChange(field, event.target.value)}
+      onChange={(event) => onChange(field, event.target.value)}
     />
   );
   const indexes = environment
@@ -63,8 +63,8 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
         <i className="filter-heading-divider" aria-hidden="true" />
         <div className="filter-heading-controls">
           <div className="date-range-fields">
-            <Field label={`开始时间（${timeZoneLabel}）`}>{input("startLocal", "开始时间", "datetime-local")}</Field>
-            <Field label={`结束时间（${timeZoneLabel}）`}>{input("endLocal", "结束时间", "datetime-local")}</Field>
+            <DateTimePicker label={`开始时间（${timeZoneLabel}）`} value={filters.startLocal} onChange={(value) => onChange("startLocal", value)} />
+            <DateTimePicker label={`结束时间（${timeZoneLabel}）`} value={filters.endLocal} onChange={(value) => onChange("endLocal", value)} />
           </div>
           <div className="range-buttons">
             {[

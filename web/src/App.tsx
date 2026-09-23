@@ -219,6 +219,7 @@ export default function App() {
       setPage(targetPage);
       setPageSize(targetPageSize);
       setResult(cached);
+      if (cached.warnings?.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${cached.warnings.join("；")}` });
       setSearchPerformance({ durationMs: 0, cached: true });
       setLoading(false);
       return;
@@ -237,7 +238,8 @@ export default function App() {
       setPageSize(targetPageSize);
       setResult(response);
       setSearchPerformance({ durationMs: remoteDurationMs, cached: false });
-      if (response.truncated) setNotice({ tone: "info", text: "已达到 10,000 条交互查询深度，请增加筛选条件或使用导出。" });
+      if (response.warnings?.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${response.warnings.join("；")}` });
+      else if (response.truncated) setNotice({ tone: "info", text: "已达到 10,000 条交互查询深度，请增加筛选条件或使用导出。" });
     } catch (error) {
       if (runId === searchRunId.current) {
         await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.search);

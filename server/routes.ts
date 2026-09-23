@@ -239,9 +239,12 @@ apiRouter.post("/search", asyncRoute(async (request, response) => {
   response.json({
     columns: result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind],
     rows,
+    warnings: result.warnings ?? [],
     page: input.page,
     pageSize: input.pageSize,
-    hasMore: result.rows.length >= input.page * input.pageSize,
+    hasMore: input.page * input.pageSize < 10_000 && (environment.sourceType === "ssh"
+      ? result.rows.length > input.page * input.pageSize
+      : result.rows.length >= input.page * input.pageSize),
     truncated: input.page * input.pageSize >= 10_000,
     queryTime: new Date().toISOString()
   });
@@ -253,6 +256,7 @@ apiRouter.post("/export", asyncRoute(async (request, response) => {
   const result = environment.sourceType === "ssh"
     ? await searchSshLogs(environment, input, true)
     : await searchElkLogs(environment, input, true);
+  if (result.warnings?.length) throw new Error(`部分服务器查询失败，已取消导出以避免生成不完整文件：${result.warnings.join("；")}`);
   const columns = result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind];
   response
     .status(200)

@@ -196,6 +196,7 @@ pub struct SavePortableLogInput {
 pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Map<String, Value>>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -203,6 +204,7 @@ pub struct QueryResult {
 pub struct SearchResponse {
     pub columns: Vec<String>,
     pub rows: Vec<Map<String, Value>>,
+    pub warnings: Vec<String>,
     pub page: usize,
     pub page_size: usize,
     pub has_more: bool,

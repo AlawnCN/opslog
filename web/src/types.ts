@@ -77,6 +77,7 @@ export interface SearchFilters {
 export interface SearchResponse {
   columns: string[];
   rows: Record<string, unknown>[];
+  warnings?: string[];
   page: number;
   pageSize: number;
   hasMore: boolean;

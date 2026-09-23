@@ -81,6 +81,7 @@ export interface SearchInput {
 export interface QueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
+  warnings?: string[];
 }
 
 export const DISPLAY_FIELDS: Record<LogKind, string[]> = {

@@ -32,7 +32,7 @@ const preserveSecrets = (current: EnvironmentConfiguration, imported: Environmen
   })
 });
 
-export const mergeImportedEnvironments = (current: EnvironmentConfiguration[], imported: EnvironmentConfiguration[]): { environments: EnvironmentConfiguration[]; importedIndexes: number[]; updated: number; added: number } => {
+export const mergeImportedEnvironments = (current: EnvironmentConfiguration[], imported: EnvironmentConfiguration[], preserveEmptySecrets = true): { environments: EnvironmentConfiguration[]; importedIndexes: number[]; updated: number; added: number } => {
   const next = current.map(cloneConfiguration);
   const importedIndexes: number[] = [];
   let updated = 0;
@@ -47,7 +47,7 @@ export const mergeImportedEnvironments = (current: EnvironmentConfiguration[], i
         added += 1;
         return;
       }
-      next[existingIndex] = preserveSecrets(next[existingIndex], normalized);
+      next[existingIndex] = preserveEmptySecrets ? preserveSecrets(next[existingIndex], normalized) : normalized;
       importedIndexes.push(existingIndex);
       updated += 1;
       return;

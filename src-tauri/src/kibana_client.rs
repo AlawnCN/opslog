@@ -74,7 +74,7 @@ fn normalize_result(payload: Value) -> QueryResult {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    QueryResult { columns, rows }
+    QueryResult { columns, rows, warnings: Vec::new() }
 }
 
 fn row_from_value(columns: &[String], value: &Value) -> Map<String, Value> {
