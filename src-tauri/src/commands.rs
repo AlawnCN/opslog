@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use futures_util::{stream, StreamExt};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use tauri::AppHandle;
@@ -231,15 +232,14 @@ fn validate_download(input: &DownloadInput) -> Result<(), String> {
 #[tauri::command]
 pub async fn load_environments(app: AppHandle) -> Result<Vec<PublicEnvironment>, String> {
     let environments = environment_store::load(&app).await?;
-    let mut public_environments = Vec::with_capacity(environments.len());
-    for environment in environments {
+    let public_environments = stream::iter(environments.into_iter().map(|environment| async move {
         let time_profile = if environment.source_type == EnvironmentSource::Ssh {
             Some(ssh_log_source::resolve_time_profile(&environment).await)
         } else {
             None
         };
-        public_environments.push(environment_store::to_public(environment, time_profile));
-    }
+        environment_store::to_public(environment, time_profile)
+    })).buffered(4).collect::<Vec<_>>().await;
     Ok(public_environments)
 }
 

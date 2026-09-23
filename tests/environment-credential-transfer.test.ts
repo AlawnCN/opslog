@@ -8,11 +8,20 @@ import {
 import type { EnvironmentConfiguration } from "../web/src/types";
 
 const environments: EnvironmentConfiguration[] = [{
-  name: "uat",
+  name: "uat-elk",
+  sourceType: "elk",
+  kibanaUrl: "https://elk.example.test",
+  username: "elk-user",
+  password: "elk-secret",
+  txnlstIndex: "transactions-*",
+  txntrcIndex: "traces-*",
+  applogIndex: "apps-*"
+}, {
+  name: "uat-ssh",
   sourceType: "ssh",
   kibanaUrl: "",
   username: "",
-  password: "elk-secret",
+  password: "stale-elk-secret",
   txnlstIndex: "",
   txntrcIndex: "",
   applogIndex: "",
@@ -27,11 +36,14 @@ test("加密环境配置不保存明文密码并可还原 ELK 与 SSH 密码", a
   assert.equal(contents.includes("elk-secret"), false);
   assert.equal(contents.includes("ssh-secret"), false);
   if (!parsed.encrypted) assert.fail("expected encrypted transfer");
-  assert.equal(parsed.file.environments[0]?.password, "");
+  assert.equal("password" in (parsed.file.environments[0] ?? {}), false);
+  assert.equal("password" in ((parsed.file.environments[1]?.sshServers as Array<Record<string, unknown>>)[0] ?? {}), false);
+  assert.equal(contents.includes("stale-elk-secret"), false);
 
   const restored = await decryptEnvironmentConfigurations(parsed.file, "long-enough-passphrase");
   assert.equal(restored[0]?.password, "elk-secret");
-  assert.equal(restored[0]?.sshServers?.[0]?.password, "ssh-secret");
+  assert.equal(restored[1]?.password, "");
+  assert.equal(restored[1]?.sshServers?.[0]?.password, "ssh-secret");
 });
 
 test("加密环境配置拒绝错误密钥、被篡改的元数据和明文密码", async () => {

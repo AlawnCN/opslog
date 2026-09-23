@@ -119,10 +119,12 @@ macOS 与 Windows 桌面端支持自动更新。更新窗口展示完整 Changel
 ## 快速开始
 
 1. 从 [GitHub Releases](https://github.com/AlawnCN/opslog/releases) 下载对应平台版本。
-2. 启动 OpsLog，点击“导入配置”并选择 `opslog-envs.json`。
+2. 启动 OpsLog，在“配置”中导入 `opslog-envs.json`，或直接新增环境。
 3. 连接 VPN，选择运行环境后查询。
 
 环境配置不会写入安装包。导入后的配置保存在系统应用配置目录；macOS / Linux 下文件权限为 `0600`。
+
+环境配置支持选定部分环境导入、导出。普通导出不包含 `password` 字段；勾选“包含密码”后，只有实际配置的 ELK 或 SSH 密码会分别写入加密区，不使用密码的连接仍不生成 `password` 字段。整份文件使用同一个导出加密口令导入，但每个连接密码使用独立随机盐和随机 IV 加密；口令本身不写入文件。旧版加密导出仍可导入。SSH 私钥文件不包含在配置导出中。
 
 <details>
 <summary><strong>配置字段</strong></summary>

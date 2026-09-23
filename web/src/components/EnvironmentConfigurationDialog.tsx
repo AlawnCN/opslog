@@ -254,7 +254,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
   const applyImport = () => {
     if (!importCandidates) return;
     const selectedCandidates = importCandidates.filter((_, index) => importSelection.has(index));
-    const merged = mergeImportedEnvironments(drafts, selectedCandidates, !importIncludesPasswords);
+    const merged = mergeImportedEnvironments(drafts, selectedCandidates);
     setDrafts(merged.environments); setExportMode(false); setTransferSelection(new Set());
     if (merged.importedIndexes[0] !== undefined) setSelected(merged.importedIndexes[0]);
     setImportCandidates(undefined); setImportSelection(new Set()); setImportIncludesPasswords(false); setConfirmRemove(false);
@@ -263,18 +263,18 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
   const exportConfiguration = async () => {
     const selectedDrafts = drafts.filter((_, index) => transferSelection.has(index));
     if (!selectedDrafts.length) { setExportError("请先选择至少一个环境"); return; }
-    if (includePasswords && exportPassphrase.length < MIN_EXPORT_PASSPHRASE_LENGTH) { setExportError(`加密密钥至少需要 ${MIN_EXPORT_PASSPHRASE_LENGTH} 个字符`); return; }
-    if (includePasswords && exportPassphrase !== exportPassphraseConfirmation) { setExportError("两次输入的加密密钥不一致"); return; }
+    if (includePasswords && exportPassphrase.length < MIN_EXPORT_PASSPHRASE_LENGTH) { setExportError(`加密口令至少需要 ${MIN_EXPORT_PASSPHRASE_LENGTH} 个字符`); return; }
+    if (includePasswords && exportPassphrase !== exportPassphraseConfirmation) { setExportError("两次输入的加密口令不一致"); return; }
     setExportBusy(true);
     try {
       setExportError(undefined);
       const contents = includePasswords
         ? await serializeEncryptedEnvironmentConfigurations(selectedDrafts, exportPassphrase)
         : serializeEnvironmentConfigurations(selectedDrafts);
-      await saveEnvironmentConfigurationExport(contents);
+      await saveEnvironmentConfigurationExport(contents, includePasswords);
       setExportMode(false); setTransferSelection(new Set()); setIncludePasswords(false); setExportPassphrase(""); setExportPassphraseConfirmation("");
       setNotice(includePasswords
-        ? `已导出 ${selectedDrafts.length} 个环境；密码密文位于 encryptedSecrets，解密密钥未写入文件。`
+        ? `已导出 ${selectedDrafts.length} 个环境；各连接密码分别加密，解密口令未写入文件。`
         : `已导出 ${selectedDrafts.length} 个环境（不含密码）。`);
     } catch (error) { setExportError(error instanceof Error ? error.message : "无法导出配置"); }
     finally { setExportBusy(false); }
@@ -330,7 +330,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
             <div className="environment-transfer-summary"><strong>选择导出范围</strong><span>已选 {transferSelection.size}/{drafts.length}</span></div>
             <p className="environment-transfer-guidance">{transferSelection.size ? `将导出已勾选的 ${transferSelection.size} 个环境。` : "请勾选左侧环境列表中的项目，或点击下方「全选」。"}</p>
             <button type="button" role="checkbox" aria-checked={includePasswords} className={`environment-transfer-secret-option${includePasswords ? " is-checked" : ""}`} disabled={exportBusy} onClick={() => { setIncludePasswords((value) => !value); setExportPassphrase(""); setExportPassphraseConfirmation(""); setExportError(undefined); }}><span className="environment-selection-check" aria-hidden="true">{includePasswords ? "✓" : ""}</span><span>包含密码（加密导出）</span></button>
-            {includePasswords && <div className="environment-transfer-secret-fields" onKeyDown={(event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) { event.preventDefault(); if (!exportBusy) void exportConfiguration(); } }}><div className="environment-secret-field"><label htmlFor="environment-export-key">加密密钥</label><PasswordInput id="environment-export-key" secretLabel="加密密钥" autoComplete="new-password" value={exportPassphrase} disabled={exportBusy} onChange={(event) => { setExportPassphrase(event.target.value); setExportError(undefined); }} placeholder={`至少 ${MIN_EXPORT_PASSPHRASE_LENGTH} 个字符`} /></div><div className="environment-secret-field"><label htmlFor="environment-export-key-confirmation">确认密钥</label><PasswordInput id="environment-export-key-confirmation" secretLabel="确认密钥" autoComplete="new-password" value={exportPassphraseConfirmation} disabled={exportBusy} onChange={(event) => { setExportPassphraseConfirmation(event.target.value); setExportError(undefined); }} /></div><small>密码会写入 encryptedSecrets 密文，配置中的 password 字段留空；解密密钥不会写入文件。至少 {MIN_EXPORT_PASSPHRASE_LENGTH} 个字符，建议使用更长且不易猜测的密钥。环境名称、地址等仍可读取；密钥遗失后无法恢复密码，SSH 私钥文件不导出。</small></div>}
+            {includePasswords && <div className="environment-transfer-secret-fields" onKeyDown={(event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) { event.preventDefault(); if (!exportBusy) void exportConfiguration(); } }}><div className="environment-secret-field"><label htmlFor="environment-export-key">加密口令</label><PasswordInput id="environment-export-key" secretLabel="加密口令" autoComplete="new-password" value={exportPassphrase} disabled={exportBusy} onChange={(event) => { setExportPassphrase(event.target.value); setExportError(undefined); }} placeholder={`至少 ${MIN_EXPORT_PASSPHRASE_LENGTH} 个字符`} /></div><div className="environment-secret-field"><label htmlFor="environment-export-key-confirmation">确认口令</label><PasswordInput id="environment-export-key-confirmation" secretLabel="确认口令" autoComplete="new-password" value={exportPassphraseConfirmation} disabled={exportBusy} onChange={(event) => { setExportPassphraseConfirmation(event.target.value); setExportError(undefined); }} /></div><small>使用同一口令导入；每个已配置的连接密码分别加密，采用独立随机参数。无密码的连接不写 password 字段。口令不保存在文件中，丢失后无法恢复；SSH 私钥文件不导出。</small></div>}
             <button type="button" disabled={exportBusy} onClick={() => setTransferSelection(transferSelection.size === drafts.length ? new Set() : new Set(drafts.map((_, index) => index)))}>{transferSelection.size === drafts.length ? "取消全选" : "全选"}</button>
             <button type="button" className="primary" disabled={exportBusy || !transferSelection.size} title={!transferSelection.size ? "请先选择至少一个环境" : "导出已选择的环境"} onClick={() => void exportConfiguration()}><DownloadIcon />{exportBusy ? "导出中…" : `导出 (${transferSelection.size})`}</button>
             {exportError && <p className="environment-transfer-error" role="alert">{exportError}</p>}

@@ -25,9 +25,13 @@ export const cloneEnvironmentConfiguration = (source: EnvironmentConfiguration, 
 
 const preserveSecrets = (current: EnvironmentConfiguration, imported: EnvironmentConfiguration): EnvironmentConfiguration => ({
   ...imported,
-  password: imported.password || current.password,
+  password: imported.sourceType === "elk"
+    ? imported.password || (current.kibanaUrl === imported.kibanaUrl && current.username === imported.username ? current.password : "")
+    : "",
   sshServers: imported.sshServers?.map((server) => {
-    const existing = current.sshServers?.find((item) => item.name.trim().toLocaleLowerCase() === server.name.trim().toLocaleLowerCase());
+    if (server.authentication !== "password") return { ...server, password: "" };
+    const existing = current.sshServers?.find((item) => item.name.trim().toLocaleLowerCase() === server.name.trim().toLocaleLowerCase()
+      && item.host === server.host && item.port === server.port && item.username === server.username && item.authentication === "password");
     return { ...server, password: server.password || existing?.password || "" };
   })
 });

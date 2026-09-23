@@ -53,8 +53,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.3<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.1.3</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.4<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.4</div>}
       </div>
     </header>
   );

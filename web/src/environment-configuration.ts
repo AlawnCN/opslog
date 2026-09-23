@@ -76,8 +76,24 @@ export const parseEnvironmentConfigurationFile = (contents: string): Environment
 
 export const serializeEnvironmentConfigurations = (items: EnvironmentConfiguration[]): string => JSON.stringify(items.map((item) => {
   const normalized = normalizeEnvironmentConfiguration(item);
-  const { sshHost: _sshHost, sshBaseDirectory: _sshBaseDirectory, sshApplications: _sshApplications, ...canonical } = normalized;
-  return { ...canonical, password: "", sshServers: canonical.sshServers?.map((server) => ({ ...server, password: "" })) };
+  const common = { name: normalized.name, sourceType: normalized.sourceType, timeZone: normalized.timeZone };
+  if (normalized.sourceType === "elk") return {
+    ...common, kibanaUrl: normalized.kibanaUrl, username: normalized.username,
+    txnlstIndex: normalized.txnlstIndex, txntrcIndex: normalized.txntrcIndex, applogIndex: normalized.applogIndex,
+    ...(normalized.apmIndex !== undefined ? { apmIndex: normalized.apmIndex } : {}),
+    ...(normalized.allowInsecureTls !== undefined ? { allowInsecureTls: normalized.allowInsecureTls } : {})
+  };
+  return {
+    ...common, sshConnectTimeoutSeconds: normalized.sshConnectTimeoutSeconds,
+    sshLogTimeOffset: normalized.sshLogTimeOffset, sshAutoDetectTimeZone: normalized.sshAutoDetectTimeZone,
+    sshServers: normalized.sshServers?.map((server) => ({
+      name: server.name, host: server.host, authentication: server.authentication,
+      ...(server.authentication !== "ssh-config" && server.port !== undefined ? { port: server.port } : {}),
+      ...(server.authentication !== "ssh-config" ? { username: server.username ?? "" } : {}),
+      ...(server.authentication === "private-key" ? { privateKeyPath: server.privateKeyPath ?? "" } : {})
+    })),
+    sshMonitoredApplications: normalized.sshMonitoredApplications
+  };
 }), null, 2);
 
 const validTimeZone = (timeZone: string): boolean => {

@@ -1,12 +1,13 @@
 use std::collections::HashMap;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDateTime, TimeZone};
 use futures_util::stream::{self, StreamExt};
 use serde_json::{Map, Value};
+use tokio::io::AsyncWriteExt;
+use tokio::process::Command;
 
 use crate::domain::{EnvironmentConfig, LogKind, QueryResult, SearchInput, SearchStatus, SshApplicationConfig, SshAuthentication, SshServerConfig};
 
@@ -510,7 +511,6 @@ async fn run_script(
         .clamp(3, 60);
     let host = host.to_string();
     let server = server.clone();
-    let script = script.to_string();
     let args = args
         .iter()
         .map(|value| {
@@ -524,38 +524,36 @@ async fn run_script(
                 .collect::<String>()
         })
         .collect::<Vec<_>>();
-    let output = tokio::task::spawn_blocking(move || {
-        let mut ssh_args = vec!["-o".to_string(), format!("ConnectTimeout={connect_timeout}")];
-        if let Some(port) = server.port { ssh_args.extend(["-p".to_string(), port.to_string()]); }
-        if matches!(server.authentication, SshAuthentication::PrivateKey) {
-            if let Some(path) = server.private_key_path.as_ref() { ssh_args.extend(["-i".to_string(), path.clone(), "-o".to_string(), "BatchMode=yes".to_string()]); }
-        } else if matches!(server.authentication, SshAuthentication::SshConfig) {
-            ssh_args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
-        }
-        let destination = if matches!(server.authentication, SshAuthentication::SshConfig) || server.username.as_deref().unwrap_or("").is_empty() { host } else { format!("{}@{}", server.username.as_deref().unwrap_or_default(), host) };
-        ssh_args.extend([destination, "timeout".to_string(), timeout_seconds.to_string(), "sh".to_string(), "-s".to_string(), "--".to_string()]);
-        ssh_args.extend(args);
-        let mut command = if matches!(server.authentication, SshAuthentication::Password) { let mut command = Command::new("sshpass"); command.args(["-e", "ssh"]); command.env("SSHPASS", server.password.as_deref().unwrap_or_default()); command } else { Command::new("ssh") };
-        let mut child = command.args(ssh_args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| if matches!(server.authentication, SshAuthentication::Password) && error.kind() == std::io::ErrorKind::NotFound { "密码认证需要本机安装 sshpass；建议改用 SSH Config 或私钥认证".to_string() } else { format!("无法启动 SSH：{error}") })?;
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "无法写入 SSH 命令".to_string())?;
-        stdin
-            .write_all(script.as_bytes())
-            .map_err(|error| format!("无法发送 SSH 查询：{error}"))?;
+    let mut ssh_args = vec![
+        "-o".to_string(), format!("ConnectTimeout={connect_timeout}"),
+        "-o".to_string(), "NumberOfPasswordPrompts=1".to_string(),
+    ];
+    if let Some(port) = server.port { ssh_args.extend(["-p".to_string(), port.to_string()]); }
+    if matches!(server.authentication, SshAuthentication::PrivateKey) {
+        if let Some(path) = server.private_key_path.as_ref() { ssh_args.extend(["-i".to_string(), path.clone(), "-o".to_string(), "BatchMode=yes".to_string()]); }
+    } else if matches!(server.authentication, SshAuthentication::SshConfig) {
+        ssh_args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
+    }
+    let destination = if matches!(server.authentication, SshAuthentication::SshConfig) || server.username.as_deref().unwrap_or("").is_empty() { host } else { format!("{}@{}", server.username.as_deref().unwrap_or_default(), host) };
+    ssh_args.extend([destination, "timeout".to_string(), timeout_seconds.to_string(), "sh".to_string(), "-s".to_string(), "--".to_string()]);
+    ssh_args.extend(args);
+    let mut command = if matches!(server.authentication, SshAuthentication::Password) { let mut command = Command::new("sshpass"); command.args(["-e", "ssh"]); command.env("SSHPASS", server.password.as_deref().unwrap_or_default()); command } else { Command::new("ssh") };
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies to the SSH/sshpass child of the GUI app.
+    command.kill_on_drop(true);
+    let mut child = command.args(ssh_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| if matches!(server.authentication, SshAuthentication::Password) && error.kind() == std::io::ErrorKind::NotFound { "密码认证需要本机安装 sshpass；建议改用 SSH Config 或私钥认证".to_string() } else { format!("无法启动 SSH：{error}") })?;
+    let deadline = StdDuration::from_secs(timeout_seconds.saturating_add(connect_timeout).saturating_add(10));
+    let output = tokio::time::timeout(deadline, async {
+        let mut stdin = child.stdin.take().ok_or_else(|| "无法写入 SSH 命令".to_string())?;
+        stdin.write_all(script.as_bytes()).await.map_err(|error| format!("无法发送 SSH 查询：{error}"))?;
         drop(stdin);
-        child
-            .wait_with_output()
-            .map_err(|error| format!("SSH 查询失败：{error}"))
-    })
-    .await
-    .map_err(|error| format!("SSH 查询任务失败：{error}"))??;
+        child.wait_with_output().await.map_err(|error| format!("SSH 查询失败：{error}"))
+    }).await.map_err(|_| format!("SSH 查询超过 {} 秒，已终止本地进程；请检查网络、认证及远端负载", deadline.as_secs()))??;
     if !output.status.success() {
         let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if message.is_empty() {

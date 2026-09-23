@@ -1,6 +1,6 @@
 [package]
 name = "opslog"
-version = "3.1.3"
+version = "3.1.4"
 description = "Portable M5/Faulu log query console"
 authors = ["MuRong Technology"]
 license = "Proprietary"
@@ -35,7 +35,7 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-updater = "2.11.0"
-tokio = { version = "1", features = ["fs", "net", "sync"] }
+tokio = { version = "1", features = ["fs", "net", "sync", "process", "time", "io-util"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"

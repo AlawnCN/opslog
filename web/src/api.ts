@@ -260,8 +260,8 @@ export const saveCustomLogMarkerExport = async (name: string, contents: string):
   return undefined;
 };
 
-export const saveEnvironmentConfigurationExport = async (contents: string): Promise<string | undefined> => {
-  const name = `opslog-environments-${new Date().toISOString().slice(0, 10)}`;
+export const saveEnvironmentConfigurationExport = async (contents: string, encrypted = false): Promise<string | undefined> => {
+  const name = `opslog-environments-${new Date().toISOString().slice(0, 10)}${encrypted ? "-encrypted" : ""}`;
   if (desktopMode) return (await desktopInvoke<SavedFile>("save_custom_log_markers", { input: { name, contents } })).path;
   saveBrowserBlob(new Blob([contents], { type: "application/json;charset=utf-8" }), `${name}.json`);
   return undefined;
