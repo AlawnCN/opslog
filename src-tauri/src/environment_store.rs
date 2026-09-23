@@ -106,6 +106,9 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
                 if server.name.trim().is_empty() || server.host.trim().is_empty() {
                     return Err(format!("环境 {} 的服务器名称和地址不能为空", environment.name));
                 }
+                if !matches!(server.authentication, SshAuthentication::SshConfig) && server.port == Some(0) {
+                    return Err(format!("环境 {} 的 SSH 端口必须在 1～65535 之间", environment.name));
+                }
                 if matches!(server.authentication, SshAuthentication::Password)
                     && (server.username.as_deref().unwrap_or("").trim().is_empty() || server.password.as_deref().unwrap_or("").is_empty())
                 {
@@ -139,6 +142,11 @@ fn parse(contents: &str) -> Result<Vec<EnvironmentConfig>, String> {
         serde_json::from_str(contents).map_err(|error| format!("环境配置 JSON 不合法：{error}"))?;
     for environment in &mut environments {
         environment.kibana_url = normalize_kibana_url(&environment.kibana_url);
+        for server in &mut environment.ssh_servers {
+            if matches!(server.authentication, SshAuthentication::SshConfig) {
+                server.port = None;
+            }
+        }
         if environment.ssh_servers.is_empty() {
             if let Some(host) = environment.ssh_host.clone().filter(|host| !host.trim().is_empty()) {
                 environment.ssh_servers.push(SshServerConfig { name: host.clone(), host, port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None });

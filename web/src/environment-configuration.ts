@@ -13,6 +13,13 @@ const defaultSshServer = (sequence = 1): SshServerConfiguration => ({
 
 const defaultSshApplication = (): SshApplicationConfiguration => ({ name: "cte", directory: "/home/coradm/cte" });
 
+const normalizeSshServer = (server: SshServerConfiguration): SshServerConfiguration => {
+  const { port, ...rest } = server;
+  return rest.authentication === "ssh-config" || port == null || String(port).trim() === ""
+    ? rest
+    : { ...rest, port };
+};
+
 export const createEnvironmentConfiguration = (sequence: number): EnvironmentConfiguration => ({
   name: `environment-${sequence}`, sourceType: "elk", kibanaUrl: "", username: "", password: "",
   txnlstIndex: "logs-ecp.txn.lst.dr*", txntrcIndex: "logs-ecp.txn.trc.dr*", applogIndex: "logs-ecp.app.dr*",
@@ -23,11 +30,11 @@ export const createEnvironmentConfiguration = (sequence: number): EnvironmentCon
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 const parseSshServers = (item: Record<string, unknown>): SshServerConfiguration[] => {
-  if (Array.isArray(item.sshServers)) return item.sshServers.filter(isRecord).map((server, index) => ({
-    name: String(server.name ?? `server-${index + 1}`), host: String(server.host ?? ""), ...(server.port === undefined || server.port === "" ? {} : { port: Number(server.port) }),
+  if (Array.isArray(item.sshServers)) return item.sshServers.filter(isRecord).map((server, index): SshServerConfiguration => ({
+    name: String(server.name ?? `server-${index + 1}`), host: String(server.host ?? ""), ...(server.port == null || server.port === "" ? {} : { port: Number(server.port) }),
     username: String(server.username ?? ""), authentication: server.authentication === "password" || server.authentication === "private-key" ? server.authentication : "ssh-config",
     password: String(server.password ?? ""), privateKeyPath: String(server.privateKeyPath ?? "")
-  }));
+  })).map(normalizeSshServer);
   const legacyHost = String(item.sshHost ?? "");
   return legacyHost ? [{ ...defaultSshServer(), name: legacyHost, host: legacyHost }] : [defaultSshServer()];
 };
@@ -45,7 +52,7 @@ export const normalizeEnvironmentConfiguration = (item: EnvironmentConfiguration
   ...item, timeZone: item.timeZone || DEFAULT_TIME_ZONE,
   sshConnectTimeoutSeconds: item.sshConnectTimeoutSeconds ?? 10, sshLogTimeOffset: item.sshLogTimeOffset || DEFAULT_SSH_OFFSET,
   sshAutoDetectTimeZone: item.sshAutoDetectTimeZone ?? true,
-  sshServers: item.sshServers?.length ? item.sshServers.map((server) => ({ ...server })) : parseSshServers(item as unknown as Record<string, unknown>),
+  sshServers: item.sshServers?.length ? item.sshServers.map(normalizeSshServer) : parseSshServers(item as unknown as Record<string, unknown>),
   sshMonitoredApplications: item.sshMonitoredApplications?.length ? item.sshMonitoredApplications.map((application) => ({ ...application })) : parseSshApplications(item as unknown as Record<string, unknown>)
 });
 
@@ -91,7 +98,7 @@ export const validateEnvironmentConfigurations = (items: EnvironmentConfiguratio
       const serverNames = new Set<string>();
       for (const server of item.sshServers) {
         if (!server.name.trim() || !server.host.trim()) return `${item.name}：服务器名称和地址不能为空`;
-        if (server.port !== undefined && (!Number.isInteger(server.port) || server.port < 1 || server.port > 65535)) return `${item.name}：SSH 端口必须在 1～65535 之间`;
+        if (server.authentication !== "ssh-config" && server.port !== undefined && (!Number.isInteger(server.port) || server.port < 1 || server.port > 65535)) return `${item.name} / ${server.name}：SSH 端口必须在 1～65535 之间`;
         if (serverNames.has(server.name.trim().toLocaleLowerCase())) return `${item.name}：服务器名称不能重复`;
         serverNames.add(server.name.trim().toLocaleLowerCase());
         if (server.authentication === "password" && (!server.username?.trim() || !server.password)) return `${item.name} / ${server.name}：密码认证需要用户名和密码`;

@@ -6,7 +6,7 @@ import type { EnvironmentConfig, PublicEnvironment } from "./domain.js";
 const sshServerSchema = z.object({
   name: z.string().trim().min(1),
   host: z.string().trim().min(1),
-  port: z.number().int().min(1).max(65535).optional(),
+  port: z.preprocess((port) => port == null || port === "" ? undefined : port, z.number().int().optional()),
   username: z.string().trim().optional(),
   authentication: z.enum(["ssh-config", "password", "private-key"]).default("ssh-config"),
   password: z.string().optional(),
@@ -64,6 +64,7 @@ const environmentSchema = z.object({
   if (new Set(servers.map(({ name }) => name.toLocaleLowerCase())).size !== servers.length) context.addIssue({ code: "custom", path: ["sshServers"], message: "服务器名称不能重复" });
   if (new Set(applications.map(({ name }) => name.toLocaleLowerCase())).size !== applications.length) context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "监控应用简称不能重复" });
   for (const [index, server] of servers.entries()) {
+    if (server.authentication !== "ssh-config" && server.port !== undefined && (server.port < 1 || server.port > 65535)) context.addIssue({ code: "custom", path: ["sshServers", index, "port"], message: "SSH 端口必须在 1～65535 之间" });
     if (server.authentication === "password" && (!server.username?.trim() || !server.password)) context.addIssue({ code: "custom", path: ["sshServers", index], message: "密码认证需要用户名和密码" });
     if (server.authentication === "private-key" && (!server.username?.trim() || !server.privateKeyPath?.trim())) context.addIssue({ code: "custom", path: ["sshServers", index], message: "密钥认证需要用户名和私钥路径" });
   }
@@ -74,6 +75,13 @@ const environmentSchema = z.object({
     context.addIssue({ code: "custom", path: ["sshBaseDirectory"], message: "SSH 基础目录必须是绝对路径" });
   }
 });
+
+const sourceSpecificEnvironmentSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const environment = value as Record<string, unknown>;
+  if (environment.sourceType === "ssh") return value;
+  return { ...environment, sshHost: undefined, sshBaseDirectory: undefined, sshApplications: [], sshServers: [], sshMonitoredApplications: [] };
+}, environmentSchema);
 
 const LEGACY_KIBANA_URLS = new Map([
   ["https://10.1.6.10/kibana", "https://nexus.faulukenya.com/kibana"],
@@ -88,9 +96,9 @@ export const normalizeKibanaUrl = (url: string): string =>
 export const parseEnvironmentConfig = (contents: string): EnvironmentConfig[] => {
   try {
     const parsed = JSON.parse(contents) as unknown;
-    const environments = z.array(environmentSchema).min(1).parse(parsed);
+    const environments = z.array(sourceSpecificEnvironmentSchema).min(1).parse(parsed);
     return environments.map((environment) => {
-      const sshServers = environment.sshServers?.length ? environment.sshServers : environment.sshHost ? [{ name: environment.sshHost, host: environment.sshHost, authentication: "ssh-config" as const }] : [];
+      const sshServers = environment.sshServers?.length ? environment.sshServers.map((server) => server.authentication === "ssh-config" ? { ...server, port: undefined } : server) : environment.sshHost ? [{ name: environment.sshHost, host: environment.sshHost, authentication: "ssh-config" as const }] : [];
       const sshMonitoredApplications = environment.sshMonitoredApplications?.length ? environment.sshMonitoredApplications : (environment.sshApplications ?? []).map((name) => ({ name, directory: `${(environment.sshBaseDirectory ?? "/home/coradm").replace(/\/+$/, "")}/${name}` }));
       return { ...environment, kibanaUrl: normalizeKibanaUrl(environment.kibanaUrl), sshAutoDetectTimeZone: environment.sshAutoDetectTimeZone ?? true, sshServers, sshMonitoredApplications };
     });

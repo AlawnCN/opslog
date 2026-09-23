@@ -14,6 +14,10 @@ const TIME_PROFILE_CACHE_DURATION: StdDuration = StdDuration::from_secs(10 * 60)
 const TRANSACTION_LIST_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 days=$(decode_arg "$2")
 prefilter=$(decode_arg "$3")
 start_time=$(decode_arg "$4")
@@ -38,6 +42,79 @@ for day in $days; do
 done
 IFS=$oldifs
 "#;
+const TRANSACTION_DETAIL_SCRIPT: &str = r#"set -eu
+decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
+root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
+days=$(decode_arg "$2")
+txn_id=$(decode_arg "$3")
+txn_no=$(decode_arg "$4")
+business=$(decode_arg "$5")
+service=$(decode_arg "$6")
+node=$(decode_arg "$7")
+message_code=$(decode_arg "$8")
+message_info=$(decode_arg "$9")
+seen=''
+oldifs=$IFS
+IFS=,
+for day in $days; do
+  directory="$root/trc/$day"
+  [ -d "$directory" ] || continue
+  for file in "$directory"/*.trc; do
+    [ -f "$file" ] || continue
+    base=$(basename "$file" .trc | sed -E 's/-[0-9]+$//')
+    case "$base" in *.s_0_*|*.u_0_*) ;; *) continue;; esac
+    suffix=$(printf '%s' "$base" | sed 's/.*_0_//')
+    case "$suffix" in *[!0-9]*|'') continue;; ??????????*) ;; *) continue;; esac
+    case " $seen " in *" $base "*) continue;; esac
+    seen="$seen $base"
+    if [ -n "$txn_id" ] && ! printf '%s' "$base" | grep -iqF -- "$txn_id"; then continue; fi
+    matched=1
+    for needle in "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info"; do
+      [ -n "$needle" ] || continue
+      hit=0
+      for candidate in "$directory/$base.trc" "$directory/$base"-[0-9]*.trc; do
+        if [ -f "$candidate" ] && grep -iqF -- "$needle" "$candidate"; then hit=1; break; fi
+      done
+      if [ "$hit" -eq 0 ]; then matched=0; break; fi
+    done
+    [ "$matched" -eq 1 ] || continue
+    if [ -f "$directory/$base.trc" ]; then file="$directory/$base.trc"; fi
+    year=$(date -r "$file" +%Y)
+    timestamp=$(awk -F ' §§ ' -v year="$year" '
+      NF >= 2 && $2 ~ /^20[0-9][0-9]-/ { print $2; exit }
+      match($0, /\[[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9][,.][0-9][0-9][0-9]\]/) {
+        value=substr($0, RSTART+1, RLENGTH-2); gsub(/,/, ".", value); print year "-" value; exit
+      }
+    ' "$file")
+    [ -n "$timestamp" ] || continue
+    summary_service=''
+    summary_business=''
+    duration=''
+    for summary in "$directory"/transaction_*.trc; do
+      [ -f "$summary" ] || continue
+      metadata=$(awk -F '|' -v id="$base" '
+        index($1, " -> " id) == 0 || NF < 5 { next }
+        $3 == "null" || $3 == "TxJnlInterceptor" || $3 == "IdempotentInterceptor" || $3 == "AntiRepeatFilterComponent" { next }
+        $5+0 >= longest { longest=$5+0; business=$2; service=$3 }
+        END { if (service != "") printf "%s\t%s\t%.0f", business, service, longest }
+      ' "$summary")
+      if [ -n "$metadata" ]; then
+        summary_business=$(printf '%s' "$metadata" | cut -f1)
+        summary_service=$(printf '%s' "$metadata" | cut -f2)
+        duration=$(printf '%s' "$metadata" | cut -f3)
+        break
+      fi
+    done
+    [ -n "$summary_service" ] || summary_service=$(printf '%s' "$base" | sed -E 's/[.][su]_0_.*$//')
+    printf '@OPSLOG_DETAIL\t%s\t%s\t%s\t%s\t%s\n' "$timestamp" "$base" "$summary_business" "$summary_service" "$duration"
+  done
+done
+IFS=$oldifs
+"#;
 const TIME_PROFILE_SCRIPT: &str = r#"set -eu
 zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
 [ -n "$zone" ] || zone=$(cat /etc/timezone 2>/dev/null || true)
@@ -47,6 +124,10 @@ printf '%s\n%s\n' "$zone" "$offset"
 const TRANSACTION_CONTENT_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 log_id=$(decode_arg "$2")
 days=$(decode_arg "$3")
 base=$(printf '%s' "$log_id" | sed -E 's/-[0-9]+$//')
@@ -92,6 +173,10 @@ fi
 const LOG_SEARCH_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 days=$(decode_arg "$2")
 level=$(decode_arg "$3")
 keyword=$(decode_arg "$4")
@@ -472,6 +557,40 @@ fn parse_transaction_line(
     Some(row)
 }
 
+fn parse_transaction_detail(
+    line: &str,
+    host: &str,
+    application: &str,
+    offset: FixedOffset,
+) -> Option<Map<String, Value>> {
+    let fields = line.split('\t').collect::<Vec<_>>();
+    if fields.len() != 6 || fields[0] != "@OPSLOG_DETAIL" || fields[2].is_empty() {
+        return None;
+    }
+    let timestamp = parse_timestamp(fields[1], offset)?.to_rfc3339();
+    let mut row = Map::new();
+    for (key, value) in [
+        ("ecp.txn.timestamp", timestamp),
+        ("ecp.txn.id", fields[2].to_string()),
+        ("ecp.txn.no", String::new()),
+        ("ecp.txn.tenant", String::new()),
+        ("ecp.txn.node", String::new()),
+        ("ecp.txn.business", fields[3].to_string()),
+        ("ecp.txn.service", fields[4].to_string()),
+        ("ecp.txn.message.code", String::new()),
+        ("ecp.txn.message.info", String::new()),
+        ("ecp.txn.trace", String::new()),
+        ("ecp.txn.server", host.to_string()),
+        ("ecp.txn.src.node.id", String::new()),
+        ("opslog.source.application", application.to_string()),
+    ] {
+        row.insert(key.to_string(), Value::String(value));
+    }
+    row.insert("ecp.txn.duration".to_string(), Value::from(fields[5].parse::<u64>().unwrap_or(0)));
+    row.insert("opslog.ssh.detailSearch".to_string(), Value::Bool(true));
+    Some(row)
+}
+
 fn contains(row: &Map<String, Value>, key: &str, candidate: Option<&str>) -> bool {
     let Some(candidate) = candidate.filter(|value| !value.trim().is_empty()) else {
         return true;
@@ -526,17 +645,19 @@ fn matches_transaction(row: &Map<String, Value>, input: &SearchInput) -> bool {
     if timestamp < start || timestamp >= end {
         return false;
     }
-    for (key, candidate) in [
-        ("ecp.txn.id", input.txn_id.as_deref()),
-        ("ecp.txn.no", input.txn_no.as_deref()),
-        ("ecp.txn.business", input.business.as_deref()),
-        ("ecp.txn.service", input.service.as_deref()),
-        ("ecp.txn.message.code", input.message_code.as_deref()),
-        ("ecp.txn.message.info", input.message_info.as_deref()),
-        ("ecp.txn.node", input.node.as_deref()),
-    ] {
-        if !contains(row, key, candidate) {
-            return false;
+    if row.get("opslog.ssh.detailSearch") != Some(&Value::Bool(true)) {
+        for (key, candidate) in [
+            ("ecp.txn.id", input.txn_id.as_deref()),
+            ("ecp.txn.no", input.txn_no.as_deref()),
+            ("ecp.txn.business", input.business.as_deref()),
+            ("ecp.txn.service", input.service.as_deref()),
+            ("ecp.txn.message.code", input.message_code.as_deref()),
+            ("ecp.txn.message.info", input.message_info.as_deref()),
+            ("ecp.txn.node", input.node.as_deref()),
+        ] {
+            if !contains(row, key, candidate) {
+                return false;
+            }
         }
     }
     if input.min_duration_ms.is_some_and(|minimum| {
@@ -547,10 +668,14 @@ fn matches_transaction(row: &Map<String, Value>, input: &SearchInput) -> bool {
     }) {
         return false;
     }
-    let success = row
+    let code = row
         .get("ecp.txn.message.code")
         .and_then(Value::as_str)
-        .is_some_and(|code| code.ends_with("00000"));
+        .unwrap_or_default();
+    if code.is_empty() && matches!(input.status, Some(SearchStatus::Success | SearchStatus::Fail)) {
+        return false;
+    }
+    let success = code.ends_with("00000");
     !matches!(input.status, Some(SearchStatus::Success) if !success)
         && !matches!(input.status, Some(SearchStatus::Fail) if success)
 }
@@ -680,7 +805,21 @@ pub async fn search(
     };
     let mut rows = Vec::new();
     for (server, raw) in run_across_servers(environment, TRANSACTION_LIST_SCRIPT, &[root.clone(), days.clone(), prefilter.clone(), start_time.clone(), end_time.clone()], 120).await? {
-        rows.extend(raw.lines().filter_map(|line| parse_transaction_line(line, if server.name.is_empty() { &server.host } else { &server.name }, &application.name, offset)));
+        let host = if server.name.is_empty() { &server.host } else { &server.name };
+        let list_rows = raw.lines().filter_map(|line| parse_transaction_line(line, host, &application.name, offset)).collect::<Vec<_>>();
+        if list_rows.is_empty() {
+            let filters = [
+                input.txn_id.as_deref(), input.txn_no.as_deref(), input.business.as_deref(),
+                input.service.as_deref(), input.node.as_deref(), input.message_code.as_deref(),
+                input.message_info.as_deref(),
+            ];
+            let mut args = vec![root.clone(), days.clone()];
+            args.extend(filters.map(|value| value.unwrap_or_default().trim().to_string()));
+            let detail = run_script(environment, &server, TRANSACTION_DETAIL_SCRIPT, &args, 120).await?;
+            rows.extend(detail.lines().filter_map(|line| parse_transaction_detail(line, host, &application.name, offset)));
+        } else {
+            rows.extend(list_rows);
+        }
     }
     let mut rows = rows.into_iter()
         .filter(|row| matches_transaction(row, input))

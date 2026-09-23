@@ -56,6 +56,7 @@ impl Default for SshAuthentication {
 pub struct SshServerConfig {
     pub name: String,
     pub host: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
     pub username: Option<String>,
     #[serde(default)]

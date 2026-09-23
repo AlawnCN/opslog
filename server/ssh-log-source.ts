@@ -14,6 +14,10 @@ const TRANSACTION_COLUMNS = [
 const TRANSACTION_LIST_SCRIPT = String.raw`set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 days=$(decode_arg "$2")
 prefilter=$(decode_arg "$3")
 start_time=$(decode_arg "$4")
@@ -39,6 +43,82 @@ done
 IFS=$oldifs
 `;
 
+// Older installations retain per-transaction trace files without txn_*.lst.
+// Return only file identity, timestamp and optional summary metadata; never transfer entire traces for a list query.
+const TRANSACTION_DETAIL_SCRIPT = String.raw`set -eu
+decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
+root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
+days=$(decode_arg "$2")
+txn_id=$(decode_arg "$3")
+txn_no=$(decode_arg "$4")
+business=$(decode_arg "$5")
+service=$(decode_arg "$6")
+node=$(decode_arg "$7")
+message_code=$(decode_arg "$8")
+message_info=$(decode_arg "$9")
+seen=''
+oldifs=$IFS
+IFS=,
+for day in $days; do
+  directory="$root/trc/$day"
+  [ -d "$directory" ] || continue
+  for file in "$directory"/*.trc; do
+    [ -f "$file" ] || continue
+    base=$(basename "$file" .trc | sed -E 's/-[0-9]+$//')
+    case "$base" in *.s_0_*|*.u_0_*) ;; *) continue;; esac
+    suffix=$(printf '%s' "$base" | sed 's/.*_0_//')
+    case "$suffix" in *[!0-9]*|'') continue;; ??????????*) ;; *) continue;; esac
+    case " $seen " in *" $base "*) continue;; esac
+    seen="$seen $base"
+    if [ -n "$txn_id" ] && ! printf '%s' "$base" | grep -iqF -- "$txn_id"; then continue; fi
+    matched=1
+    for needle in "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info"; do
+      [ -n "$needle" ] || continue
+      hit=0
+      for candidate in "$directory/$base.trc" "$directory/$base"-[0-9]*.trc; do
+        if [ -f "$candidate" ] && grep -iqF -- "$needle" "$candidate"; then hit=1; break; fi
+      done
+      if [ "$hit" -eq 0 ]; then matched=0; break; fi
+    done
+    [ "$matched" -eq 1 ] || continue
+    if [ -f "$directory/$base.trc" ]; then file="$directory/$base.trc"; fi
+    year=$(date -r "$file" +%Y)
+    timestamp=$(awk -F ' §§ ' -v year="$year" '
+      NF >= 2 && $2 ~ /^20[0-9][0-9]-/ { print $2; exit }
+      match($0, /\[[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9][,.][0-9][0-9][0-9]\]/) {
+        value=substr($0, RSTART+1, RLENGTH-2); gsub(/,/, ".", value); print year "-" value; exit
+      }
+    ' "$file")
+    [ -n "$timestamp" ] || continue
+    summary_service=''
+    summary_business=''
+    duration=''
+    for summary in "$directory"/transaction_*.trc; do
+      [ -f "$summary" ] || continue
+      metadata=$(awk -F '|' -v id="$base" '
+        index($1, " -> " id) == 0 || NF < 5 { next }
+        $3 == "null" || $3 == "TxJnlInterceptor" || $3 == "IdempotentInterceptor" || $3 == "AntiRepeatFilterComponent" { next }
+        $5+0 >= longest { longest=$5+0; business=$2; service=$3 }
+        END { if (service != "") printf "%s\t%s\t%.0f", business, service, longest }
+      ' "$summary")
+      if [ -n "$metadata" ]; then
+        summary_business=$(printf '%s' "$metadata" | cut -f1)
+        summary_service=$(printf '%s' "$metadata" | cut -f2)
+        duration=$(printf '%s' "$metadata" | cut -f3)
+        break
+      fi
+    done
+    [ -n "$summary_service" ] || summary_service=$(printf '%s' "$base" | sed -E 's/[.][su]_0_.*$//')
+    printf '@OPSLOG_DETAIL\t%s\t%s\t%s\t%s\t%s\n' "$timestamp" "$base" "$summary_business" "$summary_service" "$duration"
+  done
+done
+IFS=$oldifs
+`;
+
 const TIME_PROFILE_SCRIPT = String.raw`set -eu
 zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
 [ -n "$zone" ] || zone=$(cat /etc/timezone 2>/dev/null || true)
@@ -49,6 +129,10 @@ printf '%s\n%s\n' "$zone" "$offset"
 const TRANSACTION_CONTENT_SCRIPT = String.raw`set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 log_id=$(decode_arg "$2")
 days=$(decode_arg "$3")
 base=$(printf '%s' "$log_id" | sed -E 's/-[0-9]+$//')
@@ -96,6 +180,10 @@ exit 0
 const LOG_SEARCH_SCRIPT = String.raw`set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
+if [ ! -d "$root" ]; then
+  parent=$(dirname "$root")
+  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+fi
 days=$(decode_arg "$2")
 level=$(decode_arg "$3")
 keyword=$(decode_arg "$4")
@@ -339,17 +427,44 @@ const parseTransactionLine = (line: string, host: string, offset: string): Recor
   };
 };
 
+const parseTransactionDetail = (line: string, host: string, offset: string): Record<string, unknown> | undefined => {
+  const [marker, rawTimestamp, id, business, service, rawDuration] = line.split("\t");
+  if (marker !== "@OPSLOG_DETAIL" || !rawTimestamp || !id) return undefined;
+  const timestamp = sourceIso(rawTimestamp, offset);
+  if (!timestamp) return undefined;
+  return {
+    "ecp.txn.timestamp": timestamp,
+    "ecp.txn.id": id,
+    "ecp.txn.no": "",
+    "ecp.txn.tenant": "",
+    "ecp.txn.node": "",
+    "ecp.txn.business": business ?? "",
+    "ecp.txn.service": service ?? "",
+    "ecp.txn.duration": rawDuration ? Number(rawDuration) || 0 : 0,
+    "ecp.txn.message.code": "",
+    "ecp.txn.message.info": "",
+    "ecp.txn.trace": "",
+    "ecp.txn.server": host,
+    "ecp.txn.src.node.id": "",
+    "opslog.ssh.detailSearch": true
+  };
+};
+
 const includes = (value: unknown, candidate?: string): boolean => !candidate?.trim() || String(value ?? "").toLocaleLowerCase().includes(candidate.trim().toLocaleLowerCase());
 
 const matchesTransaction = (row: Record<string, unknown>, input: SearchInput): boolean => {
   const timestamp = Date.parse(String(row["ecp.txn.timestamp"]));
   if (timestamp < Date.parse(input.startTime) || timestamp >= Date.parse(input.endTime)) return false;
-  if (!includes(row["ecp.txn.id"], input.txnId) || !includes(row["ecp.txn.no"], input.txnNo)) return false;
-  if (!includes(row["ecp.txn.business"], input.business) || !includes(row["ecp.txn.service"], input.service)) return false;
-  if (!includes(row["ecp.txn.message.code"], input.messageCode) || !includes(row["ecp.txn.message.info"], input.messageInfo)) return false;
-  if (!includes(row["ecp.txn.node"], input.node)) return false;
+  if (row["opslog.ssh.detailSearch"] !== true) {
+    if (!includes(row["ecp.txn.id"], input.txnId) || !includes(row["ecp.txn.no"], input.txnNo)) return false;
+    if (!includes(row["ecp.txn.business"], input.business) || !includes(row["ecp.txn.service"], input.service)) return false;
+    if (!includes(row["ecp.txn.message.code"], input.messageCode) || !includes(row["ecp.txn.message.info"], input.messageInfo)) return false;
+    if (!includes(row["ecp.txn.node"], input.node)) return false;
+  }
   if (input.minDurationMs && Number(row["ecp.txn.duration"]) < input.minDurationMs) return false;
-  const success = String(row["ecp.txn.message.code"] ?? "").endsWith("00000");
+  const code = String(row["ecp.txn.message.code"] ?? "");
+  if (input.status && input.status !== "ALL" && !code) return false;
+  const success = code.endsWith("00000");
   if (input.status === "SUCCESS" && !success) return false;
   if (input.status === "FAIL" && success) return false;
   return true;
@@ -417,9 +532,23 @@ export const searchSshLogs = async (environment: EnvironmentConfig, input: Searc
   const days = daysInRange(input.startTime, input.endTime, offset).join(",");
   const outputs = await runAcrossServers(environment, TRANSACTION_LIST_SCRIPT, [applicationRoot(application), days, transactionPrefilter(input), localTimestampBoundary(input.startTime, offset), localTimestampBoundary(input.endTime, offset)], 120);
   const limit = exportAll ? 20_000 : Math.min(input.page * input.pageSize, 10_000);
-  const parsedRows = outputs.flatMap(({ server, raw }) => raw.split(/\r?\n/).map((line) => parseTransactionLine(line, server.name || server.host, offset)))
+  const parsedByServer = outputs.map(({ server, raw }) => ({
+    server,
+    rows: raw.split(/\r?\n/).map((line) => parseTransactionLine(line, server.name || server.host, offset))
+      .filter((row): row is Record<string, unknown> => row !== undefined)
+  }));
+  const fallback = await Promise.all(parsedByServer.filter(({ rows }) => rows.length === 0).map(async ({ server }) => ({
+    server,
+    raw: await runSshScript(environment, server, TRANSACTION_DETAIL_SCRIPT, [
+      applicationRoot(application), days, input.txnId?.trim() ?? "", input.txnNo?.trim() ?? "",
+      input.business?.trim() ?? "", input.service?.trim() ?? "", input.node?.trim() ?? "",
+      input.messageCode?.trim() ?? "", input.messageInfo?.trim() ?? ""
+    ], 120)
+  })));
+  const parsedRows = parsedByServer.flatMap(({ rows }) => rows);
+  const detailRows = fallback.flatMap(({ server, raw }) => raw.split(/\r?\n/).map((line) => parseTransactionDetail(line, server.name || server.host, offset)))
     .filter((row): row is Record<string, unknown> => row !== undefined);
-  const rows = parsedRows
+  const rows = [...parsedRows, ...detailRows]
     .filter((row) => matchesTransaction(row, input))
     .map((row): Record<string, unknown> => ({ ...row, "opslog.source.application": application.name }))
     .sort((left, right) => Date.parse(String(right["ecp.txn.timestamp"])) - Date.parse(String(left["ecp.txn.timestamp"])))

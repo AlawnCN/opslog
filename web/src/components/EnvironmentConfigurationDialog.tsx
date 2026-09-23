@@ -42,8 +42,8 @@ const SshServerList = ({ value, onChange }: { value: SshServerConfiguration[]; o
       <div className="environment-server-fields">
         <label><span>服务器名称</span><input value={server.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="例如 m5-uat-01" /></label>
         <label><span>主机 / SSH Config 别名</span><input value={server.host} onChange={(event) => update(index, { host: event.target.value })} placeholder="m5.uat 或 10.0.0.8" /></label>
-        <label><span>认证方式</span><AppSelect value={server.authentication} ariaLabel="SSH 认证方式" options={[{ value: "ssh-config", label: "SSH Config" }, { value: "private-key", label: "用户名 + 私钥" }, { value: "password", label: "用户名 + 密码" }]} onChange={(authentication) => update(index, { authentication: authentication as SshServerConfiguration["authentication"] })} /></label>
-        <label><span>端口</span><input type="number" min="1" max="65535" value={server.port ?? ""} onChange={(event) => update(index, { port: event.target.value ? Number(event.target.value) : undefined })} placeholder="SSH Config 可留空" /></label>
+        <label><span>认证方式</span><AppSelect value={server.authentication} ariaLabel="SSH 认证方式" options={[{ value: "ssh-config", label: "SSH Config" }, { value: "private-key", label: "用户名 + 私钥" }, { value: "password", label: "用户名 + 密码" }]} onChange={(authentication) => update(index, { authentication: authentication as SshServerConfiguration["authentication"], port: authentication === "ssh-config" ? undefined : server.port })} />{server.authentication === "ssh-config" && <small>主机、用户、端口和密钥均由 SSH Config 解析。</small>}</label>
+        {server.authentication !== "ssh-config" && <label><span>端口（可选）</span><input type="number" min="1" max="65535" value={server.port ?? ""} onChange={(event) => update(index, { port: event.target.value ? Number(event.target.value) : undefined })} placeholder="默认 22" /></label>}
         {server.authentication !== "ssh-config" && <label><span>用户名</span><input autoComplete="off" value={server.username ?? ""} onChange={(event) => update(index, { username: event.target.value })} /></label>}
         {server.authentication === "password" && <label><span>密码</span><input type="password" autoComplete="new-password" value={server.password ?? ""} onChange={(event) => update(index, { password: event.target.value })} /></label>}
         {server.authentication === "private-key" && <label><span>私钥路径</span><input value={server.privateKeyPath ?? ""} onChange={(event) => update(index, { privateKeyPath: event.target.value })} placeholder="~/.ssh/id_ed25519" /></label>}
@@ -164,14 +164,22 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const validation = validateEnvironmentConfigurations(drafts);
-    if (validation) { setLocalError(validation); return; }
+    if (validation) {
+      setLocalError(validation);
+      const invalidIndex = drafts.findIndex((item) => validation.startsWith(`${item.name}：`) || validation.startsWith(`${item.name} / `));
+      if (invalidIndex >= 0) {
+        setSelected(invalidIndex);
+        requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[data-environment-index="${invalidIndex}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+      }
+      return;
+    }
     onSave(drafts.map((rawItem) => {
       const item = normalizeEnvironmentConfiguration(rawItem);
       return {
         ...item, name: item.name.trim(), kibanaUrl: item.kibanaUrl.trim(), timeZone: item.timeZone?.trim(),
         sshHost: undefined, sshBaseDirectory: undefined, sshApplications: undefined,
-        sshServers: item.sshServers?.map((server) => ({ ...server, name: server.name.trim(), host: server.host.trim(), username: server.username?.trim(), privateKeyPath: server.privateKeyPath?.trim() })),
-        sshMonitoredApplications: item.sshMonitoredApplications?.map((application) => ({ name: application.name.trim(), directory: application.directory.trim().replace(/\/+$/, "") }))
+        sshServers: item.sourceType === "ssh" ? item.sshServers?.map((server) => ({ ...server, name: server.name.trim(), host: server.host.trim(), username: server.username?.trim(), privateKeyPath: server.privateKeyPath?.trim() })) : [],
+        sshMonitoredApplications: item.sourceType === "ssh" ? item.sshMonitoredApplications?.map((application) => ({ name: application.name.trim(), directory: application.directory.trim().replace(/\/+$/, "") })) : []
       };
     }));
   };
@@ -190,7 +198,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
           <div className={`environment-config-transfer${exportMode ? " is-selecting" : ""}`}>{exportMode ? <><div className="environment-transfer-summary"><strong>选择导出范围</strong><span>已选 {transferSelection.size}/{drafts.length}</span></div><button type="button" onClick={() => setTransferSelection(transferSelection.size === drafts.length ? new Set() : new Set(drafts.map((_, index) => index)))}>{transferSelection.size === drafts.length ? "取消全选" : "全选"}</button><button type="button" className="primary" disabled={!transferSelection.size} onClick={() => void exportConfiguration()}><DownloadIcon />导出{transferSelection.size ? ` (${transferSelection.size})` : ""}</button><button type="button" className="environment-export-cancel" onClick={() => { setExportMode(false); setTransferSelection(new Set()); }}>取消</button></> : <><button type="button" onClick={() => importRef.current?.click()}><ImportIcon />导入配置</button><button type="button" onClick={() => { setExportMode(true); setTransferSelection(new Set()); setAddSourceOpen(false); }}><DownloadIcon />导出配置</button></>}<input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importConfiguration(event.currentTarget.files?.[0])} /></div>
         </aside>
         <section className="environment-config-body">{loading && <div className="environment-config-loading">正在读取当前配置…</div>}
-          {!loading && current && <><div className="environment-config-section-title"><div><strong>{current.name || "未命名环境"}</strong><span>{current.sourceType.toUpperCase()} · 日志源类型不可变</span></div><div className="environment-config-actions"><div className="environment-source-identity"><EnvironmentSourceBadge source={current.sourceType} /><span className="environment-source-copy"><strong>{current.sourceType === "ssh" ? "SSH 服务器组" : "ELK 查询网关"}</strong><small>日志源类型</small></span></div></div></div>
+          {!loading && current && <><div className="environment-config-section-title"><strong>{current.name || "未命名环境"}</strong><EnvironmentSourceBadge source={current.sourceType} /></div>
             <div className="environment-config-fields">
               <label><span>环境名称</span><input value={current.name} onChange={(event) => update({ name: event.target.value })} placeholder="例如 faulu-m5-dr" /></label>
               <label><span>日志时区</span><SearchableSelect value={current.timeZone ?? "Africa/Nairobi"} options={TIME_ZONE_OPTIONS} ariaLabel="日志时区" searchPlaceholder="搜索城市或时区" onChange={(timeZone) => update({ timeZone })} /><small>用于查询时间换算与时间戳显示。</small></label>
