@@ -14,6 +14,7 @@ use crate::domain::{EnvironmentConfig, LogKind, QueryResult, SearchInput, Search
 const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PARALLEL_SERVERS: usize = 4;
 const TIME_PROFILE_CACHE_DURATION: StdDuration = StdDuration::from_secs(10 * 60);
+const TRANSACTION_SUMMARY_SCRIPT: &str = include_str!("ssh_transaction_summary.sh");
 const TRANSACTION_LIST_SCRIPT: &str = r#"set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
@@ -36,12 +37,19 @@ message_info=$(decode_arg "$3")
 minimum_duration=$(decode_arg "$4")
 status=$(decode_arg "$5")
 seen=''
+list_truncated=0
 emit_file() {
   file=$1
   [ -f "$file" ] || return 0
   case " $seen " in *" $file "*) return 0;; esac
   seen="$seen $file"
-  cat -- "$file"
+  size=$(wc -c < "$file")
+  if [ "$size" -gt 8388608 ]; then
+    list_truncated=1
+    tail -c 8388608 "$file" | sed '1d'
+  else
+    cat -- "$file"
+  fi
 }
 stream_files() {
   for file in "$root"/log/txn_*.lst; do emit_file "$file"; done
@@ -51,6 +59,7 @@ stream_files() {
     for file in "$root"/log/"$day"/txn_*.lst; do emit_file "$file"; done
   done
   IFS=$oldifs
+  if [ "$list_truncated" -eq 1 ]; then printf '@OPSLOG_SCAN_LIMIT\t交易列表仅扫描文件末尾片段，结果可能不完整\n'; fi
 }
 stream_files | perl -e '
 use strict;
@@ -61,6 +70,7 @@ $limit = int($limit);
 $minimum = 0 + ($minimum || 0);
 sub matches { my ($value, $needle) = @_; return !$needle || index(lc($value), lc($needle)) >= 0; }
 my @top;
+my $scan_warning = "";
 my $retain = sub {
   my ($stamp, $row) = @_;
   if (@top < $limit) {
@@ -86,6 +96,7 @@ my $retain = sub {
 };
 LINE: while (my $line = <STDIN>) {
   $line =~ s/\r?\n$//;
+  if ($line =~ /^\@OPSLOG_SCAN_LIMIT\t(.*)$/) { $scan_warning = $1; next; }
   my ($stamp, $body) = $line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\s+->\s+\|(.*)\|$/;
   next unless defined $body;
   $stamp =~ tr/,/./;
@@ -135,90 +146,8 @@ LINE: while (my $line = <STDIN>) {
   $retain->($stamp, $compact);
 }
 print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
+print "\@OPSLOG_SCAN_LIMIT\t$scan_warning\n" if length $scan_warning;
 ' "$start_time" "$end_time" "$limit" "$txn_id" "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info" "$minimum_duration" "$status"
-"#;
-const TRANSACTION_DETAIL_SCRIPT: &str = r#"set -eu
-decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
-root=$(decode_arg "$1")
-if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
-fi
-days=$(decode_arg "$2")
-txn_id=$(decode_arg "$3")
-txn_no=$(decode_arg "$4")
-business=$(decode_arg "$5")
-service=$(decode_arg "$6")
-node=$(decode_arg "$7")
-message_code=$(decode_arg "$8")
-message_info=$(decode_arg "$9")
-shift 9
-start_time=$(decode_arg "$1")
-end_time=$(decode_arg "$2")
-limit=$(decode_arg "$3")
-minimum_duration=$(decode_arg "$4")
-seen=''
-collect_details() {
-oldifs=$IFS
-IFS=,
-for day in $days; do
-  directory="$root/trc/$day"
-  [ -d "$directory" ] || continue
-  for file in "$directory"/*.trc; do
-    [ -f "$file" ] || continue
-    base=$(basename "$file" .trc | sed -E 's/-[0-9]+$//')
-    case "$base" in *.s_0_*|*.u_0_*) ;; *) continue;; esac
-    suffix=$(printf '%s' "$base" | sed 's/.*_0_//')
-    case "$suffix" in *[!0-9]*|'') continue;; ??????????*) ;; *) continue;; esac
-    case " $seen " in *" $base "*) continue;; esac
-    seen="$seen $base"
-    if [ -n "$txn_id" ] && ! printf '%s' "$base" | grep -iqF -- "$txn_id"; then continue; fi
-    if [ -f "$directory/$base.trc" ]; then file="$directory/$base.trc"; fi
-    year=$(date -r "$file" +%Y)
-    timestamp=$(head -c 65536 "$file" | awk -F ' §§ ' -v year="$year" '
-      NF >= 2 && $2 ~ /^20[0-9][0-9]-/ { print $2; exit }
-      match($0, /\[[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9][,.][0-9][0-9][0-9]\]/) {
-        value=substr($0, RSTART+1, RLENGTH-2); gsub(/,/, ".", value); print year "-" value; exit
-      }
-    ')
-    [ -n "$timestamp" ] || continue
-    if ! awk -v value="$timestamp" -v start="$start_time" -v end="$end_time" 'BEGIN { gsub(/,/, ".", value); exit !(value >= start && value < end) }'; then continue; fi
-    matched=1
-    for needle in "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info"; do
-      [ -n "$needle" ] || continue
-      hit=0
-      for candidate in "$directory/$base.trc" "$directory/$base"-[0-9]*.trc; do
-        if [ -f "$candidate" ] && grep -iqF -- "$needle" "$candidate"; then hit=1; break; fi
-      done
-      if [ "$hit" -eq 0 ]; then matched=0; break; fi
-    done
-    [ "$matched" -eq 1 ] || continue
-    summary_service=''
-    summary_business=''
-    duration=''
-    for summary in "$directory"/transaction_*.trc; do
-      [ -f "$summary" ] || continue
-      metadata=$(awk -F '|' -v id="$base" '
-        index($1, " -> " id) == 0 || NF < 5 { next }
-        $3 == "null" || $3 == "TxJnlInterceptor" || $3 == "IdempotentInterceptor" || $3 == "AntiRepeatFilterComponent" { next }
-        $5+0 >= longest { longest=$5+0; business=$2; service=$3 }
-        END { if (service != "") printf "%s\t%s\t%.0f", business, service, longest }
-      ' "$summary")
-      if [ -n "$metadata" ]; then
-        summary_business=$(printf '%s' "$metadata" | cut -f1)
-        summary_service=$(printf '%s' "$metadata" | cut -f2)
-        duration=$(printf '%s' "$metadata" | cut -f3)
-        break
-      fi
-    done
-    if [ -n "$minimum_duration" ] && ! awk -v value="$duration" -v minimum="$minimum_duration" 'BEGIN { exit !((value + 0) >= (minimum + 0)) }'; then continue; fi
-    [ -n "$summary_service" ] || summary_service=$(printf '%s' "$base" | sed -E 's/[.][su]_0_.*$//')
-    printf '@OPSLOG_DETAIL\t%s\t%s\t%s\t%s\t%s\n' "$timestamp" "$base" "$summary_business" "$summary_service" "$duration"
-  done
-done
-IFS=$oldifs
-}
-collect_details | awk -F '\t' -v start="$start_time" -v end="$end_time" '{ value=$2; gsub(/,/, ".", value); if (value >= start && value < end) print }' | LC_ALL=C sort -t "$(printf '\t')" -k2,2r | awk -v limit="$limit" 'NR <= limit'
 "#;
 const TIME_PROFILE_SCRIPT: &str = r#"set -eu
 zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
@@ -237,6 +166,8 @@ log_id=$(decode_arg "$2")
 days=$(decode_arg "$3")
 base=$(printf '%s' "$log_id" | sed -E 's/-[0-9]+$//')
 found=0
+remaining=16777216
+truncated=0
 oldifs=$IFS
 IFS=,
 for day in $days; do
@@ -245,26 +176,52 @@ for day in $days; do
   for file in "$directory/$base.trc" "$directory/$base"-[0-9]*.trc; do
     [ -f "$file" ] || continue
     found=1
+    if [ "$remaining" -le 0 ]; then truncated=1; continue; fi
     printf '\n===== OPSLOG SOURCE: %s =====\n' "$(basename "$file")"
-    cat -- "$file"
+    size=$(wc -c < "$file")
+    take=$size
+    [ "$take" -le 4194304 ] || take=4194304
+    [ "$take" -le "$remaining" ] || take=$remaining
+    if [ "$size" -le "$take" ]; then
+      cat -- "$file"
+    else
+      first=$((take / 2))
+      last=$((take - first))
+      head -c "$first" "$file"
+      printf '\n[日志过大，中间内容已省略]\n'
+      tail -c "$last" "$file"
+      truncated=1
+    fi
+    remaining=$((remaining - take))
     printf '\n'
   done
 done
 IFS=$oldifs
+if [ "$truncated" -eq 1 ]; then printf '\n[单笔日志已按读取预算截断]\n'; fi
 if [ "$found" -eq 0 ]; then
   aggregate_found=0
   aggregate_seen=''
+  aggregate_budget=33554432
+  aggregate_truncated=0
   emit_aggregate() {
     file=$1
     [ -f "$file" ] || return 0
     case " $aggregate_seen " in *" $file "*) return 0;; esac
     aggregate_seen="$aggregate_seen $file"
-    if grep -q -F " §§ $base" "$file"; then
+    if [ "$aggregate_budget" -le 0 ]; then aggregate_truncated=1; return 0; fi
+    size=$(wc -c < "$file")
+    take=$size
+    [ "$take" -le 4194304 ] || take=4194304
+    [ "$take" -le "$aggregate_budget" ] || take=$aggregate_budget
+    [ "$size" -le "$take" ] || aggregate_truncated=1
+    aggregate_budget=$((aggregate_budget - take))
+    matches=$(tail -c "$take" "$file" | grep -m 50 -F " §§ $base" | head -c 1048576 || true)
+    if [ -n "$matches" ]; then
       if [ "$aggregate_found" -eq 0 ]; then
         printf '\n===== OPSLOG SOURCE: transaction aggregate =====\n'
         aggregate_found=1
       fi
-      grep -h -F " §§ $base" "$file"
+      printf '%s\n' "$matches"
     fi
   }
   for file in "$root"/log/txntrc_*.trc "$root"/log/txntrc_*.trc.*; do emit_aggregate "$file"; done
@@ -273,6 +230,7 @@ if [ "$found" -eq 0 ]; then
     for file in "$root"/log/"$day"/txntrc_*.trc "$root"/log/"$day"/txntrc_*.trc.* "$root"/trc/"$day"/txntrc_*.trc "$root"/trc/"$day"/txntrc_*.trc.*; do emit_aggregate "$file"; done
   done
   IFS=$oldifs
+  if [ "$aggregate_truncated" -eq 1 ]; then printf '\n[汇总日志仅搜索末尾片段，结果可能不完整]\n'; fi
 fi
 "#;
 const LOG_SEARCH_SCRIPT: &str = r#"set -eu
@@ -1012,6 +970,8 @@ pub async fn search(
     let mut fallback_servers = Vec::new();
     for (server, raw) in group.outputs {
         let host = if server.name.is_empty() { &server.host } else { &server.name };
+        warnings.extend(raw.lines().filter_map(|line| line.strip_prefix("@OPSLOG_SCAN_LIMIT\t"))
+            .map(|message| format!("{}：{message}", host)));
         let list_rows = raw.lines().filter_map(|line| parse_transaction_line(line, host, &application.name, offset)).collect::<Vec<_>>();
         if list_rows.is_empty() {
             fallback_servers.push(server);
@@ -1033,7 +993,13 @@ pub async fn search(
     let mut fallback_results = stream::iter(fallback_servers.into_iter().enumerate().map(|(index, server)| {
         let args = &fallback_args;
         async move {
-            let result = run_script(environment, &server, TRANSACTION_DETAIL_SCRIPT, args, 120).await;
+            let summary = run_script(environment, &server, TRANSACTION_SUMMARY_SCRIPT, args, 120).await;
+            let result = match summary {
+                Ok(raw) if raw.lines().next().and_then(|line| line.strip_prefix("@OPSLOG_SUMMARY_PARSED\t"))
+                    .and_then(|count| count.parse::<usize>().ok()).is_some_and(|count| count > 0) => Ok(raw),
+                Ok(_) => Err("未找到可解析的交易汇总日志；为避免全量扫描，已停止明细兜底查询".to_string()),
+                Err(error) => Err(error),
+            };
             (index, server, result)
         }
     }))
@@ -1044,8 +1010,12 @@ pub async fn search(
     for (_, server, result) in fallback_results {
         let host = if server.name.is_empty() { &server.host } else { &server.name };
         match result {
-            Ok(detail) => rows.extend(detail.lines().filter_map(|line| parse_transaction_detail(line, host, &application.name, offset))),
-            Err(error) => warnings.push(format!("{}：明细兜底查询失败：{error}", host)),
+            Ok(detail) => {
+                warnings.extend(detail.lines().filter_map(|line| line.strip_prefix("@OPSLOG_SCAN_LIMIT\t"))
+                    .map(|message| format!("{}：{message}", host)));
+                rows.extend(detail.lines().filter_map(|line| parse_transaction_detail(line, host, &application.name, offset)));
+            }
+            Err(error) => warnings.push(format!("{}：交易汇总查询失败：{error}", host)),
         }
     }
     let mut rows = rows.into_iter()

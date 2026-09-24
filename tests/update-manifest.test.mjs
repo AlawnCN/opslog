@@ -38,7 +38,7 @@ test("generates separate signed updater manifests for OpsLog and OpsLog Reader",
 
   const main = JSON.parse(await readFile(join(directory, "latest.json"), "utf8"));
   const reader = JSON.parse(await readFile(join(directory, "reader-latest.json"), "utf8"));
-  assert.equal(main.notes, "## 更新内容\n\n- Reader 自动更新");
+  assert.equal(main.notes, "## 更新内容\n\n- Reader 自动更新\n");
   assert.equal(reader.notes, main.notes);
   assert.match(main.platforms["windows-x86_64"].url, /OpsLog_3\.0\.29_windows_x64_setup\.exe$/);
   assert.match(reader.platforms["windows-x86_64"].url, /OpsLog_Reader_3\.0\.29_windows_x64_setup\.exe$/);

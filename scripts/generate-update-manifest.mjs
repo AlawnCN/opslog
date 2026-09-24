@@ -24,9 +24,7 @@ const asset = async (platform, filename) => {
   }];
 };
 
-const notes = (await readFile(releaseNotesFile, "utf8"))
-  .replace(/\r\n?/g, "\n")
-  .replace(/\n$/, "");
+const notes = await readFile(releaseNotesFile, "utf8");
 if (!notes.trim()) fail("release notes are required and cannot be empty");
 
 const writeManifest = async (filename, prefix) => {
