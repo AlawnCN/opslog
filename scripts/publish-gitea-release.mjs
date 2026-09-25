@@ -77,7 +77,13 @@ for (const path of entries) {
   release.assets = [...(release.assets ?? []), uploaded];
   process.stdout.write(`Verified Gitea asset ${name}\n`);
 }
-if ((release.assets?.length ?? 0) !== entries.length) throw new Error(`Gitea ${tag} contains unexpected extra assets`);
+// Re-read Gitea's authoritative attachment list instead of trusting locally
+// accumulated create/upload responses.
+release = await request(releasePath);
+const actualNames = new Set((release.assets ?? []).map((asset) => asset.name));
+if (actualNames.size !== entries.length || names.some((name) => !actualNames.has(name))) {
+  throw new Error(`Gitea ${tag} contains missing or unexpected assets`);
+}
 
 const published = release.draft
   ? await request(`/releases/${release.id}`, {
