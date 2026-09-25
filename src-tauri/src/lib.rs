@@ -15,6 +15,7 @@ mod reader_association;
 mod reader_files;
 mod reader_settings;
 mod ssh_log_source;
+mod update_mirrors;
 mod update_release;
 
 #[cfg(feature = "reader-app")]
@@ -59,6 +60,8 @@ pub fn run() {
             reader_settings::load_reader_settings,
             reader_settings::save_reader_setting,
             update_release::load_update_release_notes,
+            update_mirrors::check_update_mirrors,
+            update_mirrors::install_update_from_mirrors,
             lan_server::get_lan_share_status,
             lan_server::set_lan_share_enabled,
         ])
@@ -100,6 +103,8 @@ pub fn run_reader() {
             commands::save_portable_log,
             commands::save_ai_analysis,
             update_release::load_update_release_notes,
+            update_mirrors::check_update_mirrors,
+            update_mirrors::install_update_from_mirrors,
         ])
         .build(tauri::generate_context!())
         .expect("OpsLog Reader application failed to build");

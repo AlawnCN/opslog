@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: opslog-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   windows:
     name: Windows x64 packages
@@ -230,12 +234,13 @@ jobs:
           retention-days: 7
 
   release:
-    name: Publish GitHub Release
+    name: Publish GitHub and Gitea Releases
     needs:
       - windows
       - macos
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write
 
@@ -250,7 +255,7 @@ jobs:
           path: release
           merge-multiple: true
 
-      - name: Publish release assets
+      - name: Prepare mirrored release manifests
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -271,18 +276,71 @@ jobs:
               > release-notes.md
           fi
           test -s release-notes.md
-          node scripts/generate-update-manifest.mjs release "${GITHUB_REF_NAME#v}" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" release-notes.md
-          find release -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > release/SHA256SUMS
-          assets=(release/*)
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
-              --title "OpsLog ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
-            gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --clobber
+          release_date="$(git show -s --format=%cI "$GITHUB_SHA")"
+          node scripts/generate-update-manifest.mjs release publish/github "${GITHUB_REF_NAME#v}" \
+            "https://github.com/AlawnCN/opslog-release/releases/download" "$GITHUB_REF_NAME" release-notes.md "$release_date"
+          node scripts/generate-update-manifest.mjs release publish/gitea "${GITHUB_REF_NAME#v}" \
+            "https://git.alawn.cn/Alawn/opslog-release/releases/download" "$GITHUB_REF_NAME" release-notes.md "$release_date"
+          node scripts/write-release-checksums.mjs release publish/github
+          node scripts/write-release-checksums.mjs release publish/gitea
+
+      - name: Verify mirror publishing credentials
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          test -n "$GH_RELEASE_TOKEN" || { echo "GH_RELEASE_TOKEN is required for AlawnCN/opslog-release" >&2; exit 1; }
+          test -n "$GITEA_RELEASE_TOKEN" || { echo "GITEA_RELEASE_TOKEN is required for Alawn/opslog-release" >&2; exit 1; }
+
+      - name: Publish and verify Gitea release
+        env:
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+        run: node scripts/publish-gitea-release.mjs "$GITHUB_REF_NAME" release publish/gitea release-notes.md
+
+      - name: Publish and verify GitHub mirror release
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          target_repo="AlawnCN/opslog-release"
+          if gh release view "$GITHUB_REF_NAME" --repo "$target_repo" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$GITHUB_REF_NAME" --repo "$target_repo" --json isDraft --jq .isDraft)"
+            if test "$is_draft" = true; then
+              gh release upload "$GITHUB_REF_NAME" release/* publish/github/* --repo "$target_repo" --clobber
+            fi
           else
-            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "OpsLog ${GITHUB_REF_NAME#v}" \
-              --notes-file release-notes.md
+            is_draft=true
+            gh release create "$GITHUB_REF_NAME" release/* publish/github/* \
+              --repo "$target_repo" --target main --draft \
+              --title "OpsLog ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
           fi
+          node scripts/verify-github-release.mjs "$target_repo" "$GITHUB_REF_NAME" release publish/github release-notes.md
+          if test "$is_draft" = true; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$target_repo" --draft=false --latest \
+              --title "OpsLog ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
+          fi
+          curl --fail --location --silent --show-error --output /dev/null \
+            "https://github.com/$target_repo/releases/latest/download/latest.json"
+          curl --fail --location --silent --show-error --output /dev/null \
+            "https://github.com/$target_repo/releases/latest/download/reader-latest.json"
+
+      - name: Promote Gitea update manifests
+        env:
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+        run: node scripts/promote-gitea-manifests.mjs "$GITHUB_REF_NAME" publish/gitea
+
+      - name: Preserve old clients' GitHub update endpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              publish/github/latest.json publish/github/reader-latest.json \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "OpsLog ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
+          fi
+          node scripts/verify-github-release.mjs "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" - publish/github release-notes.md
+          curl --fail --location --silent --show-error --output /dev/null \
+            "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json"

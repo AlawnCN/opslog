@@ -1,5 +1,6 @@
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import type { DownloadEvent } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadUpdateReleaseNotes } from "./api";
 import { normalizeReleaseNotes } from "./update-release-notes";
@@ -33,9 +34,16 @@ const initialState: AppUpdateState = {
 
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
+interface MirrorCandidate {
+  version: string;
+  currentVersion: string;
+  body?: string;
+  source: "gitea" | "github";
+}
+
 export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions) => {
   const [state, setState] = useState(initialState);
-  const candidate = useRef<Update | undefined>(undefined);
+  const candidate = useRef<MirrorCandidate | undefined>(undefined);
   const checking = useRef(false);
 
   const checkForUpdates = useCallback(async (manual = true) => {
@@ -43,13 +51,13 @@ export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions
     checking.current = true;
     setState((current) => ({ ...current, phase: "checking", visible: manual }));
     try {
-      const update = await check({ timeout: 20_000 });
+      const update = await invoke<MirrorCandidate | null>("check_update_mirrors");
       if (!update) {
+        candidate.current = undefined;
         setState(initialState);
         if (manual) onCurrent();
         return;
       }
-      await candidate.current?.close();
       candidate.current = update;
       const manifestNotes = normalizeReleaseNotes(update.body);
       setState({
@@ -81,6 +89,7 @@ export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions
         }
       }
     } catch (error) {
+      candidate.current = undefined;
       setState(initialState);
       if (manual) onError(messageOf(error));
     } finally {
@@ -93,10 +102,6 @@ export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions
     const timer = window.setTimeout(() => void checkForUpdates(false), 3_000);
     return () => window.clearTimeout(timer);
   }, [checkForUpdates, enabled]);
-
-  useEffect(() => () => {
-    void candidate.current?.close();
-  }, []);
 
   const handleDownloadEvent = (event: DownloadEvent) => {
     if (event.event === "Started") {
@@ -113,7 +118,13 @@ export const useAppUpdater = ({ enabled, onCurrent, onError }: AppUpdaterOptions
     if (!update || state.phase === "downloading" || state.phase === "installing") return;
     setState((current) => ({ ...current, phase: "downloading", visible: true, error: undefined }));
     try {
-      await update.downloadAndInstall(handleDownloadEvent, { timeout: 10 * 60_000 });
+      const onEvent = new Channel<DownloadEvent>();
+      onEvent.onmessage = handleDownloadEvent;
+      await invoke("install_update_from_mirrors", {
+        version: update.version,
+        source: update.source,
+        onEvent
+      });
       await relaunch();
     } catch (error) {
       setState((current) => ({ ...current, phase: "error", visible: true, error: messageOf(error) }));

@@ -44,13 +44,20 @@ test("release workflow builds both OpsLog applications", async () => {
   assert.match(workflow, /OpsLog_Reader_/);
   assert.match(workflow, /OpsLog_Reader_\$\{packageVersion\}_windows_x64_setup\.exe\.sig/);
   assert.match(workflow, /OpsLog_Reader_\$\{package_version\}_macos_\$\{\{ matrix\.arch \}\}\.app\.tar\.gz/);
+  assert.match(workflow, /GITEA_RELEASE_TOKEN/);
+  assert.match(workflow, /GH_RELEASE_TOKEN/);
+  assert.match(workflow, /publish-gitea-release\.mjs/);
+  assert.match(workflow, /verify-github-release\.mjs/);
+  assert.match(workflow, /promote-gitea-manifests\.mjs/);
+  assert.match(workflow, /Preserve old clients' GitHub update endpoint/);
 });
 
 test("standalone reader uses its own signed update channel", async () => {
   const config = await readJson("src-tauri/tauri.reader.conf.json");
   const plugins = config.plugins as { updater?: { endpoints?: string[] } };
   assert.deepEqual(plugins.updater?.endpoints, [
-    "https://github.com/AlawnCN/opslog/releases/latest/download/reader-latest.json"
+    "https://git.alawn.cn/Alawn/opslog-release/raw/branch/main/reader-latest.json",
+    "https://github.com/AlawnCN/opslog-release/releases/latest/download/reader-latest.json"
   ]);
 
   const manifestGenerator = await readFile("scripts/generate-update-manifest.mjs", "utf8");

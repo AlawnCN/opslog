@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/AlawnCN/opslog/releases">下载</a>
+  <a href="https://git.alawn.cn/Alawn/opslog-release/releases">下载（Gitea）</a>
+  ·
+  <a href="https://github.com/AlawnCN/opslog-release/releases">备用下载（GitHub）</a>
   ·
   <a href="#核心功能">核心功能</a>
   ·
@@ -103,7 +105,7 @@ OpsLog 与 OpsLog Reader 共用 AI 配置。API Key 仅写入本机共享配置�
 
 ### 自动更新
 
-macOS 与 Windows 桌面端支持自动更新。更新窗口展示完整 Changelog，更新包通过 Tauri 数字签名校验后安装。Web 版不执行桌面更新。
+macOS 与 Windows 桌面端支持自动更新。优先检查 Gitea，同时核对 GitHub 备用站的版本；下载或签名验证失败时尝试另一站相同版本的更新包。更新窗口展示完整 Changelog，安装前仍执行 Tauri 数字签名校验。Web 版不执行桌面更新。
 
 <p align="center">
   <img src="docs/images/opslog-auto-update.webp" alt="OpsLog 自动更新检查" width="58%">
@@ -118,7 +120,7 @@ macOS 与 Windows 桌面端支持自动更新。更新窗口展示完整 Changel
 
 ## 快速开始
 
-1. 从 [GitHub Releases](https://github.com/AlawnCN/opslog/releases) 下载对应平台版本。
+1. 从 [Gitea Releases](https://git.alawn.cn/Alawn/opslog-release/releases) 或 [GitHub 镜像](https://github.com/AlawnCN/opslog-release/releases) 下载对应平台版本。
 2. 启动 OpsLog，在“配置”中导入 `opslog-envs.json`，或直接新增环境。
 3. 连接 VPN，选择运行环境后查询。
 
@@ -185,14 +187,14 @@ npm run desktop:windows:setup
 npm run reader:windows:setup
 ```
 
-GitHub Release 同时生成 OpsLog 与 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG 及便携 ZIP。OpsLog 的更新包、签名、`latest.json` 与全部资产校验汇总在同一 Release 中。
+GitHub Actions 只构建一次，向 Gitea 与 GitHub 的 `opslog-release` 仓库同步发布 OpsLog 和 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG、便携 ZIP、更新包及签名。两个站点各自提供指向本站程序包的 `latest.json`、`reader-latest.json` 与 `SHA256SUMS`；两份清单的 Changelog 一致。原 `AlawnCN/opslog` 仓库仅保留新版本的兼容清单，供尚未迁移的旧客户端检查更新。旧客户端迁移完毕前，请保持该仓库的 Release 公开可读。
 
 </details>
 
 <details>
 <summary><strong>macOS 未公证包</strong></summary>
 
-当前 Release 未使用 Apple Developer ID 签名和公证。请从项目 GitHub Release 下载，并核对 `SHA256SUMS`。
+当前 Release 未使用 Apple Developer ID 签名和公证。请从上述任一发布站点下载，并核对该站点的 `SHA256SUMS`。
 
 若 macOS 拦截启动：
 
@@ -211,8 +213,10 @@ xattr -dr com.apple.quarantine /Applications/OpsLog.app
 
 - `TAURI_SIGNING_PRIVATE_KEY`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- `GH_RELEASE_TOKEN`：仅对 `AlawnCN/opslog-release` 具有 Contents 写权限的 GitHub 凭据。
+- `GITEA_RELEASE_TOKEN`：建议使用仅能写入 `Alawn/opslog-release` 的专用 Gitea 账号令牌。
 
-私钥、口令和真实环境配置禁止提交到仓库。Tauri updater 签名不等同于 Apple Developer ID、公证或 Windows Authenticode。
+推送源码仓库的 `v*` tag 后，workflow 会先验证两个 Secret，再发布 Gitea、GitHub 镜像，最后提升 Gitea 更新清单并发布旧仓库兼容清单。发布前须核对两个站点的资源及签名。私钥、口令和真实环境配置禁止提交到仓库。Tauri updater 签名不等同于 Apple Developer ID、公证或 Windows Authenticode。
 
 </details>
 
