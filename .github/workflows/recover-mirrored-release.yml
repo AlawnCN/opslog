@@ -1,0 +1,99 @@
+name: Recover mirrored release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing source tag and mirrored release to finish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: opslog-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+
+    steps:
+      - name: Check out release scripts and source tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag and release notes
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}"
+          test -s "docs/releases/$RELEASE_TAG.md"
+
+      - name: Download and verify GitHub draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          test -n "$GH_TOKEN"
+          mkdir -p release publish/github publish/gitea
+          gh release download "$RELEASE_TAG" --repo AlawnCN/opslog-release --dir release
+          (cd release && sha256sum --check SHA256SUMS)
+          mv release/latest.json release/reader-latest.json release/SHA256SUMS publish/github/
+          cp "docs/releases/$RELEASE_TAG.md" release-notes.md
+          release_date="$(git show -s --format=%cI "refs/tags/$RELEASE_TAG^{commit}")"
+          node scripts/generate-update-manifest.mjs release publish/gitea "${RELEASE_TAG#v}" \
+            "https://git.alawn.cn/Alawn/opslog-release/releases/download" "$RELEASE_TAG" release-notes.md "$release_date"
+          node scripts/write-release-checksums.mjs release publish/gitea
+
+      - name: Verify Gitea release and mirror-specific manifests
+        shell: bash
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://git.alawn.cn/api/v1/repos/Alawn/opslog-release/releases/tags/$RELEASE_TAG" \
+            | node -e 'let data="";process.stdin.on("data",chunk=>data+=chunk);process.stdin.on("end",()=>{const release=JSON.parse(data);const notes=require("node:fs").readFileSync("release-notes.md","utf8");if(release.draft||release.body!==notes||release.assets.length!==25)process.exit(1)})'
+          for name in latest.json reader-latest.json SHA256SUMS; do
+            curl --fail --location --silent --show-error \
+              "https://git.alawn.cn/Alawn/opslog-release/releases/download/$RELEASE_TAG/$name" \
+              --output "publish/gitea/remote-$name"
+            cmp "publish/gitea/$name" "publish/gitea/remote-$name"
+            rm "publish/gitea/remote-$name"
+          done
+
+      - name: Verify and publish GitHub mirror draft
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+        shell: bash
+        run: |
+          node scripts/verify-github-release.mjs AlawnCN/opslog-release "$RELEASE_TAG" release publish/github release-notes.md
+          is_draft="$(gh release view "$RELEASE_TAG" --repo AlawnCN/opslog-release --json isDraft --jq .isDraft)"
+          if test "$is_draft" = true; then
+            gh release edit "$RELEASE_TAG" --repo AlawnCN/opslog-release --draft=false --latest \
+              --title "OpsLog ${RELEASE_TAG#v}" --notes-file release-notes.md
+          fi
+          node scripts/verify-github-release.mjs AlawnCN/opslog-release "$RELEASE_TAG" release publish/github release-notes.md
+          curl --fail --location --retry 5 --retry-delay 3 --silent --show-error --output /dev/null \
+            https://github.com/AlawnCN/opslog-release/releases/latest/download/latest.json
+
+      - name: Promote Gitea update manifests
+        env:
+          GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
+        run: node scripts/promote-gitea-manifests.mjs "$RELEASE_TAG" publish/gitea
+
+      - name: Preserve old clients' update endpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              publish/github/latest.json publish/github/reader-latest.json \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "OpsLog ${RELEASE_TAG#v}" --notes-file release-notes.md
+          fi
+          node scripts/verify-github-release.mjs "$GITHUB_REPOSITORY" "$RELEASE_TAG" - publish/github release-notes.md
