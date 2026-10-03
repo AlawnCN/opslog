@@ -293,6 +293,11 @@ jobs:
           test -n "$GH_RELEASE_TOKEN" || { echo "GH_RELEASE_TOKEN is required for AlawnCN/opslog-release" >&2; exit 1; }
           test -n "$GITEA_RELEASE_TOKEN" || { echo "GITEA_RELEASE_TOKEN is required for Alawn/opslog-release" >&2; exit 1; }
 
+      - name: Verify private source and release-only public repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-public-release-boundary.mjs "$GITHUB_REF_NAME"
+
       - name: Publish and verify Gitea release
         env:
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
@@ -329,18 +334,3 @@ jobs:
         env:
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
         run: node scripts/promote-gitea-manifests.mjs "$GITHUB_REF_NAME" publish/gitea
-
-      - name: Preserve old clients' GitHub update endpoint
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              publish/github/latest.json publish/github/reader-latest.json \
-              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "OpsLog ${GITHUB_REF_NAME#v}" --notes-file release-notes.md
-          fi
-          node scripts/verify-github-release.mjs "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" - publish/github release-notes.md
-          curl --fail --location --silent --show-error --output /dev/null \
-            "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json"

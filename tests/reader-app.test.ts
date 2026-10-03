@@ -49,7 +49,8 @@ test("release workflow builds both OpsLog applications", async () => {
   assert.match(workflow, /publish-gitea-release\.mjs/);
   assert.match(workflow, /verify-github-release\.mjs/);
   assert.match(workflow, /promote-gitea-manifests\.mjs/);
-  assert.match(workflow, /Preserve old clients' GitHub update endpoint/);
+  assert.match(workflow, /verify-public-release-boundary\.mjs/);
+  assert.doesNotMatch(workflow, /Preserve old clients' GitHub update endpoint/);
 });
 
 test("standalone reader uses its own signed update channel", async () => {

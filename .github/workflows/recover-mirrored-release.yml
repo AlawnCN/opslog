@@ -35,6 +35,11 @@ jobs:
           git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}"
           test -s "docs/releases/$RELEASE_TAG.md"
 
+      - name: Verify private source and release-only public repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-public-release-boundary.mjs "$RELEASE_TAG"
+
       - name: Download and verify GitHub draft assets
         env:
           GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
@@ -84,16 +89,3 @@ jobs:
         env:
           GITEA_RELEASE_TOKEN: ${{ secrets.GITEA_RELEASE_TOKEN }}
         run: node scripts/promote-gitea-manifests.mjs "$RELEASE_TAG" publish/gitea
-
-      - name: Preserve old clients' update endpoint
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              publish/github/latest.json publish/github/reader-latest.json \
-              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "OpsLog ${RELEASE_TAG#v}" --notes-file release-notes.md
-          fi
-          node scripts/verify-github-release.mjs "$GITHUB_REPOSITORY" "$RELEASE_TAG" - publish/github release-notes.md
