@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { version as buildVersion } from "../../package.json";
 import { associateTrcFiles, desktopMode, errorMessage, getTrcAssociationStatus, loadStartupTrcFile, type TrcAssociationStatus, type TrcDocument } from "./api";
 import { isQueryFocusShortcut } from "./keyboard-shortcuts";
 import { ImportIcon } from "./components/Icons";
@@ -7,6 +9,7 @@ import { LogReaderWorkspace, type TransactionLogDrawerHandle } from "./component
 import { TrcAssociationGuide } from "./components/TrcAssociationGuide";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { useAppUpdater } from "./use-app-updater";
+import { ReaderTitlebar } from "./components/ReaderTitlebar";
 
 const MAX_TRC_BYTES = 64 * 1024 * 1024;
 const ASSOCIATION_PROMPT_KEY = "opslog.reader.trc-association-prompt.v1";
@@ -20,7 +23,11 @@ const ReaderFamilyMark = () => <svg className="reader-family-mark" viewBox="0 0 
 </svg>;
 
 export default function ReaderApp() {
+  const [currentVersion, setCurrentVersion] = useState(buildVersion);
   const [document, setDocument] = useState<TrcDocument>();
+  const [opening, setOpening] = useState(desktopMode);
+  const [parsing, startParsing] = useTransition();
+  const openRequest = useRef(0);
   const [notice, setNotice] = useState<string>();
   const [associationStatus, setAssociationStatus] = useState<TrcAssociationStatus>();
   const [showAssociationGuide, setShowAssociationGuide] = useState(false);
@@ -29,15 +36,23 @@ export default function ReaderApp() {
   const notifyCurrentVersion = useCallback(() => setNotice("当前已是最新版本。"), []);
   const notifyUpdateError = useCallback((message: string) => setNotice(`检查更新失败：${message}`), []);
   const appUpdater = useAppUpdater({ enabled: desktopMode, onCurrent: notifyCurrentVersion, onError: notifyUpdateError });
+  useEffect(() => {
+    if (!desktopMode) return;
+    let disposed = false;
+    void getVersion().then((version) => { if (!disposed) setCurrentVersion(version); }).catch(() => { /* Keep the bundled version if the native API is unavailable. */ });
+    return () => { disposed = true; };
+  }, []);
 
   const openPendingFile = useCallback(async () => {
+    const request = ++openRequest.current;
+    setOpening(true);
     try {
       setNotice(undefined);
       const pendingDocument = await loadStartupTrcFile();
-      if (pendingDocument) setDocument(pendingDocument);
+      if (request === openRequest.current && pendingDocument) startParsing(()=>setDocument(pendingDocument));
     } catch (error) {
-      setNotice(errorMessage(error));
-    }
+      if (request === openRequest.current) setNotice(errorMessage(error));
+    } finally { if (request === openRequest.current) setOpening(false); }
   }, []);
 
   useEffect(() => {
@@ -50,10 +65,11 @@ export default function ReaderApp() {
       });
       if (!disposed) await openPendingFile();
     })().catch((error) => {
-      if (!disposed) setNotice(errorMessage(error));
+      if (!disposed) { setNotice(errorMessage(error)); setOpening(false); }
     });
     return () => {
       disposed = true;
+      openRequest.current++;
       unlisten?.();
     };
   }, [openPendingFile]);
@@ -100,12 +116,17 @@ export default function ReaderApp() {
       setNotice("日志文件超过 64 MB 安全上限");
       return;
     }
+    const request = ++openRequest.current;
     try {
+      setOpening(true);
       setNotice(undefined);
-      setDocument({ name: file.name, path: file.name, content: await file.text() });
+      // Paint the existing reader loading view before parsing the selected file.
+      await new Promise<void>((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+      const content = await file.text();
+      if (request === openRequest.current) startParsing(()=>setDocument({ name: file.name, path: file.name, content }));
     } catch (error) {
-      setNotice(errorMessage(error));
-    }
+      if (request === openRequest.current) setNotice(errorMessage(error));
+    } finally { if (request === openRequest.current) setOpening(false); }
   };
 
   const openControl = <label className="reader-open-file">
@@ -140,10 +161,12 @@ export default function ReaderApp() {
     {!associationStatus.associated && <button type="button" onClick={() => setShowAssociationGuide(true)}>设置关联</button>}
   </section>;
 
-  const updateControl = desktopMode && <button type="button" className="reader-update-control" aria-busy={appUpdater.state.phase === "checking"} onClick={appUpdater.checkForUpdates}>{appUpdater.state.phase === "checking" ? "正在检查…" : "检查更新"}</button>;
+  const updateBusy = ["checking", "downloading", "installing"].includes(appUpdater.state.phase);
+  const updateControl = desktopMode && <button type="button" className="reader-update-control" disabled={updateBusy} title={updateBusy ? "正在处理更新" : "点击版本号检查更新"} aria-label={`当前版本 ${currentVersion}，点击检查更新`} aria-busy={updateBusy} onClick={() => void appUpdater.checkForUpdates()}>{updateBusy && <span className="button-spinner" aria-hidden="true" />}v{currentVersion}</button>;
   const updateDialog = <UpdateDialog appName="OpsLog Reader" state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />;
 
-  if (!document) return <div className="reader-empty-state">
+  if (!document && !opening && !parsing) return <div className={`reader-empty-state${desktopMode?" has-titlebar":""}`}>
+    <ReaderTitlebar />
     {updateControl}
     <main className="reader-welcome-layout">
       <section className="reader-welcome-primary">
@@ -175,12 +198,13 @@ export default function ReaderApp() {
     {associationStatus?.supported && !associationStatus.associated && <button type="button" className="reader-association-shortcut" disabled={associating} onClick={() => void associateFiles()}>{associating ? "正在关联…" : "关联 .trc"}</button>}
   </>;
 
-  return <div className="reader-app">
+  return <div className={`reader-app${desktopMode?" has-titlebar":""}`}>
+    <ReaderTitlebar />
     <LogReaderWorkspace
       ref={readerRef}
-      logId={document.name}
-      content={document.content}
-      loading={false}
+      logId={document?.name ?? "正在打开 TRC…"}
+      content={opening || parsing ? "" : document?.content ?? ""}
+      loading={opening || parsing}
       onClose={() => setDocument(undefined)}
       presentation="standalone"
       eyebrow="TRC LOG · LOCAL FILE"

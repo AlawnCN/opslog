@@ -83,8 +83,9 @@ test("AI compaction folds repeated noise while preserving failures and marker hi
 
 test("AI result dialog exports Markdown and HTML without exposing a configuration action", async () => {
   const dialog = await readFile("web/src/components/AiLogAnalysisDialog.tsx", "utf8");
-  assert.match(dialog, /MarkdownFileIcon/);
-  assert.match(dialog, /HtmlFileIcon/);
+  assert.match(dialog, /aria-label="选择 Markdown 格式"/);
+  assert.match(dialog, /aria-label="选择 HTML 格式"/);
+  assert.doesNotMatch(dialog, /MarkdownFileIcon|HtmlFileIcon/);
   assert.match(dialog, /aria-pressed=\{exportFormat === "md"\}/);
   assert.doesNotMatch(dialog, /AppSelect/);
   assert.match(dialog, /buildAiAnalysisHtml/);

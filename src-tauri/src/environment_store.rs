@@ -125,6 +125,7 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
             }
             let mut application_names = std::collections::HashSet::new();
             for application in &environment.ssh_monitored_applications {
+                application.validate_log_sources()?;
                 if !application.directory.starts_with('/') || application.directory.contains("..") {
                     return Err(format!("环境 {} 的应用目录必须是安全的绝对路径", environment.name));
                 }
@@ -154,7 +155,7 @@ fn parse(contents: &str) -> Result<Vec<EnvironmentConfig>, String> {
         }
         if environment.ssh_monitored_applications.is_empty() {
             let base = environment.ssh_base_directory.as_deref().unwrap_or("/home/coradm").trim_end_matches('/');
-            environment.ssh_monitored_applications = environment.ssh_applications.iter().map(|name| SshApplicationConfig { name: name.clone(), directory: format!("{base}/{name}") }).collect();
+            environment.ssh_monitored_applications = environment.ssh_applications.iter().map(|name| SshApplicationConfig { name: name.clone(), directory: format!("{base}/{name}"), log_sources: Vec::new(), analysis_notes: Vec::new() }).collect();
         }
     }
     validate(&environments)?;

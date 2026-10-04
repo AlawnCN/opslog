@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { sshLogSourceSchema } from "../shared/ssh-log-rules.js";
 import type { EnvironmentConfig, PublicEnvironment } from "./domain.js";
 
 const sshServerSchema = z.object({
@@ -15,7 +16,9 @@ const sshServerSchema = z.object({
 
 const sshApplicationSchema = z.object({
   name: z.string().trim().regex(/^[A-Za-z0-9._-]+$/),
-  directory: z.string().trim().min(1)
+  directory: z.string().trim().min(1),
+  logSources: z.array(sshLogSourceSchema).max(12).optional(),
+  analysisNotes: z.array(z.string().max(1000)).max(30).optional()
 });
 
 const environmentSchema = z.object({

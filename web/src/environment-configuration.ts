@@ -1,3 +1,4 @@
+import { sshLogSourceSchema } from "../../shared/ssh-log-rules";
 import type {
   EnvironmentConfiguration,
   SshApplicationConfiguration,
@@ -41,7 +42,9 @@ const parseSshServers = (item: Record<string, unknown>): SshServerConfiguration[
 
 const parseSshApplications = (item: Record<string, unknown>): SshApplicationConfiguration[] => {
   if (Array.isArray(item.sshMonitoredApplications)) return item.sshMonitoredApplications.filter(isRecord).map((application) => ({
-    name: String(application.name ?? ""), directory: String(application.directory ?? "")
+    name: String(application.name ?? ""), directory: String(application.directory ?? ""),
+    ...(Array.isArray(application.logSources) ? { logSources: application.logSources as SshApplicationConfiguration["logSources"] } : {}),
+    ...(Array.isArray(application.analysisNotes) ? { analysisNotes: application.analysisNotes.filter((note): note is string => typeof note === "string") } : {})
   }));
   const base = String(item.sshBaseDirectory ?? "/home/coradm").replace(/\/+$/, "");
   const legacy = Array.isArray(item.sshApplications) ? item.sshApplications.map(String) : ["cte"];
@@ -123,6 +126,14 @@ export const validateEnvironmentConfigurations = (items: EnvironmentConfiguratio
       if (!item.sshMonitoredApplications?.length) return `${item.name}：至少配置一项应用目录映射`;
       const applicationNames = new Set<string>();
       for (const application of item.sshMonitoredApplications) {
+        if ((application.logSources?.length ?? 0) > 12) return `${item.name} / ${application.name}：日志源最多 12 项`;
+        for (const source of application.logSources ?? []) {
+          const parsed = sshLogSourceSchema.safeParse(source);
+          if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            return `${item.name} / ${application.name} / ${source.name || "未命名日志源"}：${issue?.path.join(".") || "参数"} ${issue?.message || "无效"}`;
+          }
+        }
         if (!/^[A-Za-z0-9._-]+$/.test(application.name)) return `${item.name}：应用标识仅支持字母、数字、点、下划线与连字符`;
         if (!application.directory.startsWith("/") || application.directory.includes("..")) return `${item.name} / ${application.name || "未命名应用"}：日志目录必须为不含 .. 的绝对路径`;
         if (applicationNames.has(application.name.toLocaleLowerCase())) return `${item.name}：应用标识不能重复`;

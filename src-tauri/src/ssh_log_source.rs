@@ -14,346 +14,14 @@ use crate::domain::{EnvironmentConfig, LogKind, QueryResult, SearchInput, Search
 const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PARALLEL_SERVERS: usize = 4;
 const TIME_PROFILE_CACHE_DURATION: StdDuration = StdDuration::from_secs(10 * 60);
-const TRANSACTION_SUMMARY_SCRIPT: &str = include_str!("ssh_transaction_summary.sh");
-const TRANSACTION_LIST_SCRIPT: &str = r#"set -eu
-decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
-root=$(decode_arg "$1")
-if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
-fi
-days=$(decode_arg "$2")
-start_time=$(decode_arg "$3")
-end_time=$(decode_arg "$4")
-limit=$(decode_arg "$5")
-txn_id=$(decode_arg "$6")
-txn_no=$(decode_arg "$7")
-business=$(decode_arg "$8")
-service=$(decode_arg "$9")
-shift 9
-node=$(decode_arg "$1")
-message_code=$(decode_arg "$2")
-message_info=$(decode_arg "$3")
-minimum_duration=$(decode_arg "$4")
-status=$(decode_arg "$5")
-seen=''
-list_truncated=0
-emit_file() {
-  file=$1
-  [ -f "$file" ] || return 0
-  case " $seen " in *" $file "*) return 0;; esac
-  seen="$seen $file"
-  size=$(wc -c < "$file")
-  if [ "$size" -gt 8388608 ]; then
-    list_truncated=1
-    tail -c 8388608 "$file" | sed '1d'
-  else
-    cat -- "$file"
-  fi
-}
-stream_files() {
-  for file in "$root"/log/txn_*.lst; do emit_file "$file"; done
-  oldifs=$IFS
-  IFS=,
-  for day in $days; do
-    for file in "$root"/log/"$day"/txn_*.lst; do emit_file "$file"; done
-  done
-  IFS=$oldifs
-  if [ "$list_truncated" -eq 1 ]; then printf '@OPSLOG_SCAN_LIMIT\t交易列表仅扫描文件末尾片段，结果可能不完整\n'; fi
-}
-stream_files | perl -e '
-use strict;
-use warnings;
-use Encode qw(decode encode);
-my ($start, $end, $limit, $id, $no, $business, $service, $node, $code_filter, $info, $minimum, $status) = @ARGV;
-$limit = int($limit);
-$minimum = 0 + ($minimum || 0);
-sub matches { my ($value, $needle) = @_; return !$needle || index(lc($value), lc($needle)) >= 0; }
-my @top;
-my $scan_warning = "";
-my $retain = sub {
-  my ($stamp, $row) = @_;
-  if (@top < $limit) {
-    push @top, [$stamp, $row];
-    my $index = $#top;
-    while ($index > 0) {
-      my $parent = int(($index - 1) / 2);
-      last if $top[$parent][0] le $top[$index][0];
-      @top[$parent, $index] = @top[$index, $parent];
-      $index = $parent;
-    }
-  } elsif ($stamp gt $top[0][0]) {
-    $top[0] = [$stamp, $row];
-    my $index = 0;
-    while (2 * $index + 1 < @top) {
-      my $child = 2 * $index + 1;
-      $child++ if $child + 1 < @top && $top[$child + 1][0] lt $top[$child][0];
-      last if $top[$index][0] le $top[$child][0];
-      @top[$index, $child] = @top[$child, $index];
-      $index = $child;
-    }
-  }
-};
-LINE: while (my $line = <STDIN>) {
-  $line =~ s/\r?\n$//;
-  if ($line =~ /^\@OPSLOG_SCAN_LIMIT\t(.*)$/) { $scan_warning = $1; next; }
-  my ($stamp, $body) = $line =~ /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\s+->\s+\|(.*)\|$/;
-  next unless defined $body;
-  $stamp =~ tr/,/./;
-  next if $stamp lt $start || $stamp ge $end;
-  my @fields;
-  my $cursor = 0;
-  for (1..9) {
-    my $separator = index($body, "|", $cursor);
-    next LINE if $separator < 0;
-    push @fields, substr($body, $cursor, $separator - $cursor);
-    $cursor = $separator + 1;
-  }
-  my $context_end;
-  if (substr($body, $cursor, 1) eq "{") {
-    my ($depth, $quoted, $escaped) = (0, 0, 0);
-    for (my $index = $cursor; $index < length($body); $index++) {
-      my $character = substr($body, $index, 1);
-      if ($escaped) { $escaped = 0; next; }
-      if ($quoted && $character eq "\\") { $escaped = 1; next; }
-      if ($character eq "\"") { $quoted = !$quoted; next; }
-      next if $quoted;
-      $depth++ if $character eq "{";
-      if ($character eq "}" && --$depth == 0) { $context_end = $index + 1; last; }
-    }
-  } else {
-    $context_end = index($body, "|", $cursor);
-  }
-  next if !defined($context_end) || $context_end < 0 || substr($body, $context_end, 1) ne "|";
-  my $tail = substr($body, $context_end + 1);
-  my $code_end = index($tail, "|");
-  my $source_start = rindex($tail, "|");
-  next if $code_end < 0 || $source_start <= $code_end;
-  my $code = substr($tail, 0, $code_end);
-  my $message = substr($tail, $code_end + 1, $source_start - $code_end - 1);
-  $message =~ s/\|$//;
-  my $source = substr($tail, $source_start + 1);
-  next unless matches($fields[0], $id) && matches($fields[1], $no)
-    && matches($fields[4], $business) && matches($fields[5], $service)
-    && matches($fields[3], $node) && matches($code, $code_filter) && matches($message, $info);
-  next if $minimum && (0 + $fields[6]) < $minimum;
-  next if $status ne "ALL" && $status ne "" && $code eq "";
-  next if $status eq "SUCCESS" && $code !~ /00000$/;
-  next if $status eq "FAIL" && $code =~ /00000$/;
-  # The full context and long message remain available in the per-transaction detail view.
-  my $preview = encode("UTF-8", substr(decode("UTF-8", $message), 0, 4096));
-  my $compact = "$stamp -> |" . join("|", @fields) . "|{}|$code|$preview|$source|\n";
-  $retain->($stamp, $compact);
-}
-print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
-print "\@OPSLOG_SCAN_LIMIT\t$scan_warning\n" if length $scan_warning;
-' "$start_time" "$end_time" "$limit" "$txn_id" "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info" "$minimum_duration" "$status"
-"#;
-const TIME_PROFILE_SCRIPT: &str = r#"set -eu
-zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
-[ -n "$zone" ] || zone=$(cat /etc/timezone 2>/dev/null || true)
-offset=$(date +%:z)
-printf '%s\n%s\n' "$zone" "$offset"
-"#;
-const TRANSACTION_CONTENT_SCRIPT: &str = r#"set -eu
-decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
-root=$(decode_arg "$1")
-if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
-fi
-log_id=$(decode_arg "$2")
-days=$(decode_arg "$3")
-base=$(printf '%s' "$log_id" | sed -E 's/-[0-9]+$//')
-found=0
-remaining=16777216
-truncated=0
-oldifs=$IFS
-IFS=,
-for day in $days; do
-  directory="$root/trc/$day"
-  [ -d "$directory" ] || continue
-  for file in "$directory/$base.trc" "$directory/$base"-[0-9]*.trc; do
-    [ -f "$file" ] || continue
-    found=1
-    if [ "$remaining" -le 0 ]; then truncated=1; continue; fi
-    printf '\n===== OPSLOG SOURCE: %s =====\n' "$(basename "$file")"
-    size=$(wc -c < "$file")
-    take=$size
-    [ "$take" -le 4194304 ] || take=4194304
-    [ "$take" -le "$remaining" ] || take=$remaining
-    if [ "$size" -le "$take" ]; then
-      cat -- "$file"
-    else
-      first=$((take / 2))
-      last=$((take - first))
-      head -c "$first" "$file"
-      printf '\n[日志过大，中间内容已省略]\n'
-      tail -c "$last" "$file"
-      truncated=1
-    fi
-    remaining=$((remaining - take))
-    printf '\n'
-  done
-done
-IFS=$oldifs
-if [ "$truncated" -eq 1 ]; then printf '\n[单笔日志已按读取预算截断]\n'; fi
-if [ "$found" -eq 0 ]; then
-  aggregate_found=0
-  aggregate_seen=''
-  aggregate_budget=33554432
-  aggregate_truncated=0
-  emit_aggregate() {
-    file=$1
-    [ -f "$file" ] || return 0
-    case " $aggregate_seen " in *" $file "*) return 0;; esac
-    aggregate_seen="$aggregate_seen $file"
-    if [ "$aggregate_budget" -le 0 ]; then aggregate_truncated=1; return 0; fi
-    size=$(wc -c < "$file")
-    take=$size
-    [ "$take" -le 4194304 ] || take=4194304
-    [ "$take" -le "$aggregate_budget" ] || take=$aggregate_budget
-    [ "$size" -le "$take" ] || aggregate_truncated=1
-    aggregate_budget=$((aggregate_budget - take))
-    matches=$(tail -c "$take" "$file" | grep -m 50 -F " §§ $base" | head -c 1048576 || true)
-    if [ -n "$matches" ]; then
-      if [ "$aggregate_found" -eq 0 ]; then
-        printf '\n===== OPSLOG SOURCE: transaction aggregate =====\n'
-        aggregate_found=1
-      fi
-      printf '%s\n' "$matches"
-    fi
-  }
-  for file in "$root"/log/txntrc_*.trc "$root"/log/txntrc_*.trc.*; do emit_aggregate "$file"; done
-  IFS=,
-  for day in $days; do
-    for file in "$root"/log/"$day"/txntrc_*.trc "$root"/log/"$day"/txntrc_*.trc.* "$root"/trc/"$day"/txntrc_*.trc "$root"/trc/"$day"/txntrc_*.trc.*; do emit_aggregate "$file"; done
-  done
-  IFS=$oldifs
-  if [ "$aggregate_truncated" -eq 1 ]; then printf '\n[汇总日志仅搜索末尾片段，结果可能不完整]\n'; fi
-fi
-"#;
-const LOG_SEARCH_SCRIPT: &str = r#"set -eu
-decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
-root=$(decode_arg "$1")
-if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
-fi
-days=$(decode_arg "$2")
-start_time=$(decode_arg "$3")
-end_time=$(decode_arg "$4")
-limit=$(decode_arg "$5")
-level=$(decode_arg "$6")
-keyword=$(decode_arg "$7")
-file_filter=$(decode_arg "$8")
-output_mode=$(decode_arg "$9")
-seen=''
-emit_path() {
-  file=$1
-  [ -f "$file" ] || return 0
-  case " $seen " in *" $file "*) return 0;; esac
-  seen="$seen $file"
-  name=$(basename "$file")
-  case "$name" in txn_*.lst|txntrc_*.trc*) return 0;; esac
-  if [ -n "$file_filter" ]; then case "$name" in *"$file_filter"*) ;; *) return 0;; esac; fi
-  printf '%s\n' "$file"
-}
-stream_paths() {
-  for file in "$root"/log/*.log "$root"/log/*.log.* "$root"/log/*.log_*; do emit_path "$file"; done
-  oldifs=$IFS
-  IFS=,
-  for day in $days; do
-    for file in "$root"/log/"$day"/*.log "$root"/log/"$day"/*.log.* "$root"/log/"$day"/*.log_*; do emit_path "$file"; done
-  done
-  IFS=$oldifs
-}
-stream_paths | perl -e '
-use strict;
-use warnings;
-use Encode qw(decode encode);
-use File::Basename qw(basename);
-use Time::Local qw(timegm);
-my ($start, $end, $limit, $level, $keyword, $output_mode) = @ARGV;
-$limit = int($limit);
-my $first_year = substr($start, 0, 4);
-my $last_year = substr($end, 0, 4);
-sub day_epoch {
-  my ($year, $month, $day) = @_;
-  return eval { timegm(0, 0, 0, $day, $month - 1, $year) };
-}
-my $start_day = day_epoch(substr($start, 0, 4), substr($start, 5, 2), substr($start, 8, 2));
-my $end_day = day_epoch(substr($end, 0, 4), substr($end, 5, 2), substr($end, 8, 2));
-my $max_record_bytes = int(48 * 1024 * 1024 / $limit);
-$max_record_bytes = 65536 if $max_record_bytes > 65536;
-my @top;
-my $retain = sub {
-  my ($stamp, $row) = @_;
-  if (@top < $limit) {
-    push @top, [$stamp, $row];
-    my $index = $#top;
-    while ($index > 0) {
-      my $parent = int(($index - 1) / 2);
-      last if $top[$parent][0] le $top[$index][0];
-      @top[$parent, $index] = @top[$index, $parent];
-      $index = $parent;
-    }
-  } elsif ($stamp gt $top[0][0]) {
-    $top[0] = [$stamp, $row];
-    my $index = 0;
-    while (2 * $index + 1 < @top) {
-      my $child = 2 * $index + 1;
-      $child++ if $child + 1 < @top && $top[$child + 1][0] lt $top[$child][0];
-      last if $top[$index][0] le $top[$child][0];
-      @top[$index, $child] = @top[$child, $index];
-      $index = $child;
-    }
-  }
-};
-while (my $path = <STDIN>) {
-  chomp $path;
-  my $source = basename($path);
-  if ($source =~ /(20\d{2})-(\d{2})-(\d{2})/) {
-    my $file_day = day_epoch($1, $2, $3);
-    next if defined($file_day) && defined($start_day) && defined($end_day)
-      && ($file_day < $start_day - 86400 || $file_day > $end_day + 86400);
-  }
-  open my $file, "<:raw", $path or next;
-  my $sample = "";
-  read($file, $sample, 1048576);
-  my $structured = index($sample, " §§ logEnd") >= 0;
-  seek($file, 0, 0);
-  local $/ = $structured ? " §§ logEnd" : "\n";
-  while (my $record = <$file>) {
-    $record =~ s/ §§ logEnd$// if $structured;
-    my $stamp;
-    if ($structured) {
-      my @fields = split(/ §§ /, $record, 3);
-      $stamp = $fields[1] if @fields >= 3;
-      next if $level ne "" && index($record, "§§ $level §§") < 0;
-    } else {
-      my ($raw_level, $local_time) = $record =~ /^([A-Z]+)\d*\[(\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\]/;
-      next unless defined $local_time;
-      next if $level ne "" && index($raw_level, $level) < 0;
-      $stamp = "$first_year-$local_time";
-      $stamp =~ tr/,/./;
-      if ($stamp lt $start && $last_year ne $first_year) { $stamp = "$last_year-$local_time"; }
-    }
-    next unless defined $stamp && $stamp =~ /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3}/;
-    $stamp = substr($stamp, 0, 23);
-    $stamp =~ tr/,/./;
-    next if $stamp lt $start || $stamp ge $end;
-    next if $keyword ne "" && index(lc($record), lc($keyword)) < 0;
-    if ($output_mode eq "PREVIEW" && length($record) > $max_record_bytes) {
-      $record = encode("UTF-8", substr(decode("UTF-8", substr($record, 0, $max_record_bytes - 32)), 0)) . "\n[日志内容已截断]";
-    }
-    $retain->($stamp, "$source\x1f$record\x1e");
-  }
-  close $file;
-}
-print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
-' "$start_time" "$end_time" "$limit" "$level" "$keyword" "$output_mode"
-"#;
+const TRANSACTION_SUMMARY_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_summary.sh");
+const SAMPLE_SCRIPT: &str = include_str!("../../server/ssh-scripts/sample.sh");
+const CONFIGURED_SCRIPT: &str = include_str!("../../server/ssh-scripts/configured_search.sh");
+const JSON_CODEC: &str = include_str!("../../server/ssh-scripts/json_codec.pl");
+const TRANSACTION_LIST_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_list.sh");
+const TIME_PROFILE_SCRIPT: &str = include_str!("../../server/ssh-scripts/time_profile.sh");
+const TRANSACTION_CONTENT_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_content.sh");
+const LOG_SEARCH_SCRIPT: &str = include_str!("../../server/ssh-scripts/log_search.sh");
 
 #[derive(Clone, Debug)]
 pub struct SshTimeProfile {
@@ -373,7 +41,7 @@ fn configured_servers(environment: &EnvironmentConfig) -> Vec<SshServerConfig> {
 fn configured_applications(environment: &EnvironmentConfig) -> Vec<SshApplicationConfig> {
     if !environment.ssh_monitored_applications.is_empty() { return environment.ssh_monitored_applications.clone(); }
     let base = environment.ssh_base_directory.as_deref().unwrap_or("/home/coradm").trim_end_matches('/');
-    environment.ssh_applications.iter().map(|name| SshApplicationConfig { name: name.clone(), directory: format!("{base}/{name}") }).collect()
+    environment.ssh_applications.iter().map(|name| SshApplicationConfig { name: name.clone(), directory: format!("{base}/{name}"), log_sources: Vec::new(), analysis_notes: Vec::new() }).collect()
 }
 
 fn selected_application(
@@ -555,7 +223,7 @@ async fn run_across_servers(
             Err(error) => warnings.push(format!("{}：{error}", if server.name.is_empty() { &server.host } else { &server.name })),
         }
     }
-    if outputs.is_empty() { return Err(format!("服务器组全部连接失败：{}", warnings.join("；"))); }
+    if outputs.is_empty() { return Err(format!("服务器组执行失败：{}", warnings.join("；"))); }
     Ok(SshServerGroupResult { outputs, warnings })
 }
 
@@ -905,7 +573,9 @@ async fn search_application_logs(
     let end_year = end.with_timezone(&offset).year();
     let mut rows = Vec::new();
     let group = run_across_servers(environment, LOG_SEARCH_SCRIPT, &args, 120).await?;
+    let mut warnings = group.warnings;
     for (server, raw) in group.outputs {
+        warnings.extend(raw.lines().filter_map(|line| line.strip_prefix("@OPSLOG_SCAN_LIMIT\t")).map(str::to_owned));
         rows.extend(raw.split('\u{1e}').filter_map(|record| parse_log_record(record, if server.name.is_empty() { &server.host } else { &server.name }, offset, year, end_year, &start, &end)));
     }
     let mut rows = rows.into_iter()
@@ -929,8 +599,75 @@ async fn search_application_logs(
             .map(ToString::to_string)
             .collect(),
         rows,
-        warnings: group.warnings,
+        warnings,
     })
+}
+
+pub async fn sample_logs(environment: &EnvironmentConfig) -> Result<Value, String> {
+    let applications = configured_applications(environment);
+    if applications.is_empty() || applications.len() > 20 { return Err("请先配置应用目录映射（最多20项）".to_string()); }
+    let mut sampled_environment = environment.clone();
+    let servers = configured_servers(environment);
+    sampled_environment.ssh_servers = servers.iter().take(4).cloned().collect();
+    let mut result = Vec::new();
+    for application in applications {
+        let script = SAMPLE_SCRIPT.replace("# OPSLOG_JSON_CODEC", JSON_CODEC);
+        let mut group = run_across_servers(&sampled_environment, &script, &[application_root(&application)?], 25).await?;
+        if servers.len() > 4 { group.warnings.push("限量采样仅包含前4台服务器，请确认服务器组日志模板一致".into()); }
+        let mut samples = Vec::new();
+        for (server, raw) in group.outputs {
+            let files = raw.lines().map(serde_json::from_str::<Value>).collect::<Result<Vec<_>, _>>().map_err(|_| "日志采样格式无效")?;
+            samples.push(serde_json::json!({"server": if server.name.is_empty() {server.host} else {server.name}, "files": files}));
+        }
+        result.push(serde_json::json!({"name": application.name, "samples": samples, "warnings": group.warnings}));
+    }
+    Ok(Value::Array(result))
+}
+
+async fn configured_output(environment: &EnvironmentConfig, application: &SshApplicationConfig, start: &str, end: &str, kind: &str, limit: usize, filters: Value) -> Result<(SshServerGroupResult, FixedOffset), String> {
+    application.validate_log_sources()?;
+    let offset = resolved_log_offset(environment).await?;
+    let args = vec![application_root(application)?, days_in_range(start, end, offset)?, local_timestamp_boundary(start, offset)?, local_timestamp_boundary(end, offset)?, limit.to_string(), kind.to_string(), serde_json::to_string(&application.log_sources).map_err(|_| "日志规则无效")?, filters.to_string()];
+    let script = CONFIGURED_SCRIPT.replace("# OPSLOG_JSON_CODEC", JSON_CODEC);
+    Ok((run_across_servers(environment, &script, &args, 120).await?, offset))
+}
+
+fn configured_records(raw: &str) -> Result<Vec<Value>, String> {
+    raw.lines().filter_map(|line| line.strip_prefix("@OPSLOG_ROW\t")).map(|line| serde_json::from_str(line).map_err(|_| "声明式日志解析返回无效记录".to_string())).collect()
+}
+
+async fn search_configured(environment: &EnvironmentConfig, application: &SshApplicationConfig, input: &SearchInput, export_all: bool) -> Result<QueryResult, String> {
+    let limit = if export_all {20_000} else {input.page.saturating_mul(input.page_size).saturating_add(1).min(10_001)};
+    let filters = serde_json::to_value(input).map_err(|_| "查询参数无效")?;
+    let kind = match input.kind {LogKind::Transaction=>"transaction",LogKind::Application=>"application",LogKind::Ecp=>"ecp",LogKind::Generic=>"generic"};
+    let (group, offset) = configured_output(environment, application, &input.start_time, &input.end_time, kind, limit, filters).await?;
+    let mut rows = Vec::new(); let mut warnings = group.warnings;
+    for (server, raw) in group.outputs {
+        let host = if server.name.is_empty() {&server.host} else {&server.name};
+        warnings.extend(raw.lines().filter_map(|line| line.strip_prefix("@OPSLOG_SCAN_LIMIT\t")).map(|message|format!("{host}：{message}")));
+        for record in configured_records(&raw)? {
+            let value = &record["values"];
+            let Some(timestamp) = value["timestamp"].as_str().and_then(|stamp| parse_timestamp(stamp, offset)).map(|stamp|stamp.to_rfc3339()) else {continue};
+            let mut row = Map::new();
+            row.insert("opslog.source.application".to_string(), Value::String(application.name.clone()));
+            if input.kind == LogKind::Transaction {
+                for (field,key) in [("id","logId"),("no","txnNo"),("business","business"),("service","service"),("node","node"),("tenant","tenant"),("trace","traceId"),("message.code","messageCode"),("message.info","messageInfo")] {
+                    row.insert(format!("ecp.txn.{field}"), Value::String(value[key].as_str().unwrap_or_default().to_string()));
+                }
+                row.insert("ecp.txn.timestamp".to_string(),Value::String(timestamp));
+                row.insert("ecp.txn.duration".to_string(),Value::from(value["duration"].as_str().and_then(|v|v.parse::<f64>().ok()).unwrap_or(0.0)));
+                row.insert("ecp.txn.server".to_string(),Value::String(host.clone()));
+                row.insert("ecp.txn.src.node.id".to_string(),Value::String(String::new()));
+            } else {
+                for (field,text) in [("@timestamp",timestamp.clone()),("ecp.log.timestamp",timestamp),("ecp.log.application",application.name.clone()),("ecp.log.file",record["file"].as_str().unwrap_or_default().to_string()),("ecp.log.level",value["level"].as_str().unwrap_or_default().to_string()),("ecp.log.thread",value["thread"].as_str().unwrap_or_default().to_string()),("message",value["message"].as_str().unwrap_or_default().to_string()),("trace.id",value["traceId"].as_str().unwrap_or_default().to_string()),("host.name",host.clone())] {row.insert(field.to_string(),Value::String(text));}
+            }
+            rows.push(row);
+        }
+    }
+    let timestamp = if input.kind==LogKind::Transaction {"ecp.txn.timestamp"} else {"ecp.log.timestamp"};
+    rows.sort_by(|a,b|b.get(timestamp).and_then(Value::as_str).cmp(&a.get(timestamp).and_then(Value::as_str)));
+    rows.truncate(limit);
+    Ok(QueryResult {columns:crate::domain::display_fields(input.kind).iter().map(ToString::to_string).collect(),rows,warnings})
 }
 
 pub async fn search(
@@ -938,6 +675,11 @@ pub async fn search(
     input: &SearchInput,
     export_all: bool,
 ) -> Result<QueryResult, String> {
+    let configured = selected_application(environment, input.application.as_deref())?;
+    if configured.log_sources.iter().any(|source| {
+        let role = source["role"].as_str().unwrap_or("");
+        match input.kind { LogKind::Transaction => role.starts_with("transaction"), LogKind::Application => role == "application", LogKind::Ecp => role == "ecp", LogKind::Generic => true }
+    }) { return search_configured(environment, &configured, input, export_all).await; }
     if input.kind != LogKind::Transaction {
         return search_application_logs(environment, input, export_all).await;
     }
@@ -1053,6 +795,17 @@ pub async fn read_transaction(
         return Err("日志 ID 包含不允许的字符".to_string());
     }
     let application = selected_application(environment, requested_application)?;
+    if application.log_sources.iter().any(|source| matches!(source["role"].as_str(), Some("detail" | "transactionEvent"))) {
+        let (group, _) = configured_output(environment, &application, start, end, "detail", 20_000, serde_json::json!({"txnId":id})).await?;
+        let mut content = String::new();
+        for (server, raw) in group.outputs {
+            content.push_str(&format!("\n===== OPSLOG SERVER: {} =====\n",if server.name.is_empty(){server.host}else{server.name}));
+            for record in configured_records(&raw)? {content.push_str(record["raw"].as_str().unwrap_or_default()); content.push('\n');}
+            for message in raw.lines().filter_map(|line|line.strip_prefix("@OPSLOG_SCAN_LIMIT\t")){content.push_str(&format!("\n[{message}]\n"));}
+        }
+        for warning in group.warnings {content.push_str(&format!("\n[{warning}]\n"));}
+        return Ok(content);
+    }
     let offset = resolved_log_offset(environment).await?;
     let days = days_in_range(start, end, offset)?;
     let root = application_root(&application)?;

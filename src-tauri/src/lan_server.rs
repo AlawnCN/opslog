@@ -15,7 +15,7 @@ use axum::{
 };
 use chrono::Utc;
 use local_ip_address::list_afinet_netifas;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::{AppHandle, State as TauriState};
 use tokio::{
@@ -282,11 +282,34 @@ async fn analyze_log(
     response
 }
 
-async fn search(State(state): State<LanApiState>, Json(input): Json<SearchInput>) -> Response {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancellableSearchInput {
+    #[serde(flatten)]
+    input: SearchInput,
+    request_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelSearchInput { request_id: String }
+
+async fn cancel_search(Json(input): Json<CancelSearchInput>) -> Response {
+    match commands::cancel_search(input.request_id) {
+        Ok(()) => Json(json!({ "cancelled": true })).into_response(),
+        Err(error) => api_error(error),
+    }
+}
+
+async fn search(State(state): State<LanApiState>, Json(input): Json<CancellableSearchInput>) -> Response {
     let Ok(_permit) = query_permit(&state).await else {
         return api_error("局域网查询服务已停止".to_string());
     };
-    match commands::search_logs(state.app, input).await {
+    let result = match input.request_id {
+        Some(id) => commands::search_logs_cancellable(state.app, input.input, id).await,
+        None => commands::search_logs(state.app, input.input).await,
+    };
+    match result {
         Ok(result) => Json(result).into_response(),
         Err(error) => api_error(error),
     }
@@ -426,6 +449,7 @@ fn router(state: LanApiState) -> Router {
         .route("/api/ai/configuration", get(ai_configuration))
         .route("/api/ai/analyze", post(analyze_log))
         .route("/api/search", post(search))
+        .route("/api/search/cancel", post(cancel_search))
         .route("/api/export", post(export))
         .route("/api/transaction-log", post(transaction_log))
         .route(

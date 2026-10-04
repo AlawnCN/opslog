@@ -35,7 +35,8 @@ const normalizeResult = (payload: unknown): QueryResult => {
 export const runEsql = async (
   environment: EnvironmentConfig,
   query: string,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  signal?: AbortSignal
 ): Promise<QueryResult> => {
   const base = environment.kibanaUrl.replace(/\/+$/, "");
   const url = new URL(`${base}/internal/search/esql`);
@@ -55,6 +56,7 @@ export const runEsql = async (
         "kbn-xsrf": "reporting"
       },
       timeout: timeoutMs,
+      signal,
       agent: agentFor(url, allowInsecureTls),
       ...(url.protocol === "https:" ? { rejectUnauthorized: !allowInsecureTls } : {})
     }, (response) => {

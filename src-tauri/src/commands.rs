@@ -1,4 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use futures_util::{stream, StreamExt};
@@ -21,7 +23,85 @@ use crate::query_builders::{
 use crate::ssh_log_source;
 
 const MAX_RANGE_DAYS: i64 = 31;
+
+#[tauri::command]
+pub async fn sample_ssh_logs(environment: EnvironmentConfig, request_id: Option<String>) -> Result<Value, String> {
+    if environment.source_type != EnvironmentSource::Ssh { return Err("仅支持 SSH 环境".to_string()); }
+    cancellable_task(request_id, ssh_log_source::sample_logs(&environment)).await
+}
 const MAX_TRANSACTION_LOG_BYTES: usize = 64 * 1024 * 1024;
+
+// None records cancellation arriving before the invoke has registered its task.
+type SearchTask = (Instant, Option<futures_util::future::AbortHandle>);
+static SEARCH_TASKS: OnceLock<Mutex<HashMap<String, SearchTask>>> = OnceLock::new();
+
+#[tauri::command]
+pub fn cancel_search(request_id: String) -> Result<(), String> {
+    let mut tasks = SEARCH_TASKS.get_or_init(Default::default).lock().map_err(|_| "查询任务锁不可用")?;
+    tasks.retain(|_, (created, handle)| handle.is_some() || created.elapsed() < StdDuration::from_secs(300));
+    if let Some((_, Some(handle))) = tasks.remove(&request_id) {
+        handle.abort();
+    } else {
+        tasks.insert(request_id, (Instant::now(), None));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn search_logs_cancellable(app: AppHandle, input: SearchInput, request_id: String) -> Result<SearchResponse, String> {
+    cancellable_task(Some(request_id), search_logs(app, input)).await
+}
+
+pub async fn cancellable_task<T>(request_id: Option<String>, task: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+    let Some(request_id) = request_id else { return task.await; };
+    let (handle, registration) = futures_util::future::AbortHandle::new_pair();
+    {
+        let mut tasks = SEARCH_TASKS.get_or_init(Default::default).lock().map_err(|_| "查询任务锁不可用")?;
+        tasks.retain(|_, (created, handle)| handle.is_some() || created.elapsed() < StdDuration::from_secs(300));
+        if matches!(tasks.remove(&request_id), Some((_, None))) {
+            return Err("查询已终止".to_string());
+        }
+        tasks.insert(request_id.clone(), (Instant::now(), Some(handle)));
+    }
+    let result = futures_util::future::Abortable::new(task, registration).await;
+    SEARCH_TASKS.get_or_init(Default::default).lock().map_err(|_| "查询任务锁不可用")?.remove(&request_id);
+    result.map_err(|_| "查询已终止".to_string())?
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+    struct DropMarker(Arc<AtomicBool>);
+    impl Drop for DropMarker { fn drop(&mut self) { self.0.store(true, Ordering::SeqCst); } }
+
+    #[tokio::test]
+    async fn cancel_drops_running_task_instead_of_only_discarding_result() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let marker = DropMarker(dropped.clone());
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(cancellable_task(Some("cancel-running-test".into()), async move {
+            let _marker = marker;
+            let _ = started.send(());
+            std::future::pending::<Result<(), String>>().await
+        }));
+        ready.await.unwrap();
+        cancel_search("cancel-running-test".into()).unwrap();
+        let result = tokio::time::timeout(StdDuration::from_secs(1), task).await.unwrap().unwrap();
+        assert_eq!(result.unwrap_err(), "查询已终止");
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn cancellation_before_registration_never_starts_work() {
+        cancel_search("cancel-queued-test".into()).unwrap();
+        let result = cancellable_task(Some("cancel-queued-test".into()), async {
+            panic!("cancelled task must not start");
+            #[allow(unreachable_code)] Ok::<(), String>(())
+        }).await;
+        assert_eq!(result.unwrap_err(), "查询已终止");
+    }
+}
 
 fn unknown_columns(error: &str) -> Vec<String> {
     let normalized = error.to_ascii_lowercase();

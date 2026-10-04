@@ -172,15 +172,29 @@ export const loadUpdateReleaseNotes = async (version: string): Promise<string | 
 };
 
 export const searchLogs = async (request: SearchRequest, signal?: AbortSignal): Promise<SearchResponse> => {
-  if (desktopMode) return desktopInvoke<SearchResponse>("search_logs", { input: request });
-  const response = await webFetch("/api/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-    signal
-  });
-  if (!response.ok) return parseError(response);
-  return response.json();
+  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const cancel = () => {
+    if (desktopMode) void desktopInvoke<void>("cancel_search", { requestId }).catch(() => undefined);
+    else void webFetch("/api/search/cancel", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }), keepalive: true
+    }).catch(() => undefined);
+  };
+  if (signal?.aborted) throw new DOMException("查询已终止", "AbortError");
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    if (desktopMode) return await desktopInvoke<SearchResponse>("search_logs_cancellable", { input: request, requestId });
+    const response = await webFetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...request, requestId }),
+      signal
+    });
+    if (!response.ok) return parseError(response);
+    return await response.json();
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
 };
 
 const download = async (url: string, request: unknown): Promise<string | undefined> => {
@@ -309,6 +323,26 @@ export const loadAiConfiguration = async (): Promise<AiConfiguration> => {
   return response.json();
 };
 
+export interface SshLogSample { name: string; samples: Array<{ server: string; files: Array<{ path: string; size: number; content: string }> }>; warnings: string[] }
+const cancellableDesktopInvoke = async <Result>(command: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Result> => {
+  if (signal?.aborted) throw new DOMException("Operation cancelled", "AbortError");
+  const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return new Promise<Result>((resolve, reject) => {
+    const abort = () => {
+      void desktopInvoke<void>("cancel_search", { requestId }).catch(() => undefined);
+      reject(new DOMException("Operation cancelled", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    void desktopInvoke<Result>(command, { ...args, requestId }).then(resolve, reject).finally(() => signal?.removeEventListener("abort", abort));
+  });
+};
+export const sampleSshLogs = async (environment: EnvironmentConfiguration, signal?: AbortSignal): Promise<SshLogSample[]> => {
+  if (desktopMode) return cancellableDesktopInvoke<SshLogSample[]>("sample_ssh_logs", { environment }, signal);
+  const response = await webFetch("/api/ssh/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment }), signal });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
 export const saveAiConfiguration = async (input: SaveAiConfigurationInput): Promise<AiConfiguration> => {
   if (desktopMode) return desktopInvoke<AiConfiguration>("save_ai_configuration", { input });
   const response = await webFetch("/api/ai/configuration", {
@@ -342,12 +376,12 @@ export const discoverAiModels = async (input: Pick<SaveAiConfigurationInput, "id
   return response.json();
 };
 
-export const analyzeLogWithAi = async (prompt: string, inputCharacters: number, truncated: boolean, onChunk?: (content: string) => void, signal?: AbortSignal): Promise<AiAnalyzeResult> => {
-  const input = { prompt, inputCharacters, truncated };
+export const analyzeLogWithAi = async (prompt: string, inputCharacters: number, truncated: boolean, onChunk?: (content: string) => void, signal?: AbortSignal, purpose?: "ssh-configuration"): Promise<AiAnalyzeResult> => {
+  const input = { prompt, inputCharacters, truncated, purpose };
   if (desktopMode) {
     const onEvent = new Channel<{ type: "chunk"; content: string }>();
     onEvent.onmessage = (event) => { if (!signal?.aborted && event.type === "chunk") onChunk?.(event.content); };
-    const result = await desktopInvoke<AiAnalyzeResult>("analyze_log_with_ai", { input, onEvent });
+    const result = await cancellableDesktopInvoke<AiAnalyzeResult>("analyze_log_with_ai", { input, onEvent }, signal);
     if (signal?.aborted) throw new DOMException("AI analysis was cancelled", "AbortError");
     return result;
   }

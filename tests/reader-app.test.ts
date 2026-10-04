@@ -5,6 +5,43 @@ import test from "node:test";
 const readJson = async (path: string): Promise<Record<string, unknown>> =>
   JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 
+test("reader version control displays the running version and retains update action", async () => {
+  const reader = await readFile("web/src/ReaderApp.tsx", "utf8");
+  assert.match(reader, /getVersion\(\)/);
+  assert.match(reader, /version as buildVersion/);
+  assert.match(reader, /v\{currentVersion\}/);
+  assert.match(reader, /点击版本号检查更新/);
+  assert.match(reader, /onClick=\{\(\) => void appUpdater\.checkForUpdates\(\)\}/);
+  assert.match(reader, /disabled=\{updateBusy\}/);
+});
+
+test("Reader opens into a loading workspace and shares the modern window chrome", async () => {
+  const reader = await readFile("web/src/ReaderApp.tsx", "utf8");
+  const titlebar = await readFile("web/src/components/ReaderTitlebar.tsx", "utf8");
+  const config = await readJson("src-tauri/tauri.reader.conf.json");
+  const window = (config.app as {windows:Array<Record<string,unknown>>}).windows[0];
+  assert.match(reader, /useState\(desktopMode\)/);
+  assert.match(reader, /if \(!document && !opening && !parsing\)/);
+  assert.match(reader, /loading=\{opening \|\| parsing\}/);
+  assert.match(titlebar, /startDragging\(\)/);
+  for (const operation of ["minimize", "toggleMaximize", "close"]) assert.ok(titlebar.includes(`${operation}()`));
+  assert.equal(window.titleBarStyle, "Overlay");
+  assert.equal(window.hiddenTitle, true);
+  assert.equal(window.visible, false, "restore geometry before showing the window");
+});
+
+test("Reader persists normal geometry separately from maximized bounds", async () => {
+  const native = await readFile("src-tauri/src/reader_window.rs", "utf8");
+  const startup = await readFile("src-tauri/src/lib.rs", "utf8");
+  assert.match(startup, /reader_window::initialize\(app\)/);
+  assert.match(native, /reader-window\.json/);
+  assert.match(native, /WindowEvent::CloseRequested/);
+  assert.match(native, /available_monitors\(\)/);
+  assert.match(native, /scale \/ saved\.scale/);
+  assert.match(native, /target_os = "windows"/);
+  assert.match(native, /set_decorations\(false\)/);
+});
+
 test("standalone reader keeps a distinct app identity without forcing a global association", async () => {
   const config = await readJson("src-tauri/tauri.reader.conf.json");
   assert.equal(config.productName, "OpsLog Reader");
@@ -13,7 +50,7 @@ test("standalone reader keeps a distinct app identity without forcing a global a
 
   const app = config.app as { windows?: Array<{ decorations?: boolean; titleBarStyle?: string }> };
   assert.equal(app.windows?.[0]?.decorations, true);
-  assert.equal(app.windows?.[0]?.titleBarStyle, undefined);
+  assert.equal(app.windows?.[0]?.titleBarStyle, "Overlay");
 
   const bundle = config.bundle as { fileAssociations?: unknown; macOS?: { infoPlist?: string } };
   assert.equal(bundle.fileAssociations, undefined);

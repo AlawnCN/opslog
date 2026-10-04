@@ -15,6 +15,8 @@ export interface SshServerConfig {
 export interface SshApplicationConfig {
   name: string;
   directory: string;
+  logSources?: import("../shared/ssh-log-rules.js").SshLogSource[];
+  analysisNotes?: string[];
 }
 
 export interface EnvironmentConfig {

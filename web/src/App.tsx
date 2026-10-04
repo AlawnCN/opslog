@@ -32,6 +32,7 @@ export default function App() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [searchPerformance, setSearchPerformance] = useState<{ durationMs: number; cached: boolean }>();
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
   const [canImportConfig, setCanImportConfig] = useState(desktopMode);
@@ -46,6 +47,8 @@ export default function App() {
   const filterPanelRef = useRef<FilterPanelHandle>(null);
   const transactionLogDrawerRef = useRef<TransactionLogDrawerHandle>(null);
   const previousTimeZoneRef = useRef(DEFAULT_TIME_ZONE);
+
+  useEffect(() => () => { controller.current?.abort(); }, []);
 
   const environment = environments.find((item) => item.name === environmentName);
   const environmentTimeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
@@ -112,6 +115,11 @@ export default function App() {
 
   useEffect(() => {
     setResult(undefined);
+    ++searchRunId.current;
+    controller.current?.abort();
+    controller.current = undefined;
+    setLoading(false);
+    setSearching(false);
     setSearchPerformance(undefined);
     setPage(1);
     if (environment) setFilters((current) => {
@@ -205,6 +213,7 @@ export default function App() {
     }
     if (!activeRequest) { setNotice({ tone: "error", text: "请选择环境并填写有效时间范围" }); return; }
     const runId = ++searchRunId.current;
+    setSearching(true);
     controller.current?.abort();
     const nextRequest = { ...activeRequest, page: targetPage, pageSize: targetPageSize };
     const cacheKey = searchCacheKey(nextRequest);
@@ -222,6 +231,7 @@ export default function App() {
       if (cached.warnings?.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${cached.warnings.join("；")}` });
       setSearchPerformance({ durationMs: 0, cached: true });
       setLoading(false);
+      setSearching(false);
       return;
     }
     const nextController = new AbortController();
@@ -230,6 +240,7 @@ export default function App() {
     setNotice(undefined);
     try {
       const response = await searchLogs(nextRequest, nextController.signal);
+      if (runId !== searchRunId.current || nextController.signal.aborted) return;
       const remoteDurationMs = performance.now() - startedAt;
       sessionCache.current.saveSearch(cacheKey, response);
       await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.search);
@@ -248,8 +259,21 @@ export default function App() {
         setNotice({ tone: "error", text: errorMessage(error) });
       }
     } finally {
-      if (runId === searchRunId.current) setLoading(false);
+      if (runId === searchRunId.current) {
+        controller.current = undefined;
+        setLoading(false);
+        setSearching(false);
+      }
     }
+  };
+
+  const cancelSearch = () => {
+    ++searchRunId.current;
+    controller.current?.abort();
+    controller.current = undefined;
+    setLoading(false);
+    setSearching(false);
+    setNotice({ tone: "info", text: "查询已终止，可调整条件后重新查询。" });
   };
 
   const updateFilter = (field: keyof SearchFilters, value: string) => {
@@ -280,7 +304,7 @@ export default function App() {
     <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} environment={environment} />
     <main>
-      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
+      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
       <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} timeZone={environmentTimeZone} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <AppSelect value={String(pageSize)} disabled={loading} ariaLabel="每页记录数" options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} 条` }))} onChange={(value) => changePageSize(Number(value))} /></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}

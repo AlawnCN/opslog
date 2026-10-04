@@ -21,7 +21,7 @@ impl LogKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SearchStatus {
     All,
@@ -70,6 +70,50 @@ pub struct SshServerConfig {
 pub struct SshApplicationConfig {
     pub name: String,
     pub directory: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub log_sources: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub analysis_notes: Vec<String>,
+}
+
+impl SshApplicationConfig {
+    pub fn validate_log_sources(&self) -> Result<(), String> {
+        let invalid = || format!("应用 {} 的日志解析规则无效", self.name);
+        if self.log_sources.len() > 12 || self.analysis_notes.len() > 30 { return Err(invalid()); }
+        for source in &self.log_sources {
+            let role = source["role"].as_str().ok_or_else(invalid)?;
+            if !["transaction", "transactionEvent", "application", "ecp", "detail"].contains(&role)
+                || !["|", " §§ ", ""].contains(&source["delimiter"].as_str().unwrap_or("invalid"))
+                || !["newline", " §§ logEnd"].contains(&source["recordEnd"].as_str().unwrap_or(""))
+                || !["full", "month-day"].contains(&source["timestampStyle"].as_str().unwrap_or(""))
+                || source["ordered"].as_bool().is_none() { return Err(invalid()); }
+            let paths = source["paths"].as_array().ok_or_else(invalid)?;
+            if paths.is_empty() || paths.len() > 8 { return Err(invalid()); }
+            for path in paths {
+                let path = path.as_str().ok_or_else(invalid)?;
+                if source["pathMode"].as_str() == Some("regex") {
+                    let tail = path.strip_prefix("^log/").or_else(||path.strip_prefix("^trc/")).and_then(|v|v.strip_suffix('$')).ok_or_else(invalid)?;
+                    let filename = tail.strip_prefix("{day}/").unwrap_or(tail);
+                    if path.len()>240 || filename.is_empty() || filename.contains('/') || path.chars().any(|c|c.is_control()) || path.contains("(?{") || path.contains("(??{") { return Err(invalid()); }
+                    continue;
+                }
+                if !source["pathMode"].is_null() && source["pathMode"].as_str() != Some("glob") { return Err(invalid()); }
+                if path.len() > 240 || !(path.starts_with("log/") || path.starts_with("trc/")) || path.contains("..")
+                    || path.replace("{day}", "").contains(['{', '}'])
+                    || !path.chars().all(|c| c.is_ascii_alphanumeric() || "_.*?{}/-".contains(c)) { return Err(invalid()); }
+            }
+            let fields = source["fields"].as_object().ok_or_else(invalid)?;
+            if !fields.contains_key("timestamp") || (["transaction", "transactionEvent", "detail"].contains(&role) && !fields.contains_key("logId")) { return Err(invalid()); }
+            for (key, mapping) in fields {
+                if !["timestamp", "logId", "txnNo", "business", "service", "node", "messageCode", "messageInfo", "duration", "tenant", "level", "thread", "message", "traceId"].contains(&key.as_str()) { return Err(invalid()); }
+                let index = mapping["index"].as_u64(); let regex = mapping["regex"].as_str();
+                if index.is_none() && regex.is_none() || index.is_some_and(|v|v>100) || regex.is_some_and(|v|v.len()>500 || v.contains("(?{") || v.contains("(??{")) { return Err(invalid()); }
+            }
+            let pattern = source["successPattern"].as_str().unwrap_or("00000$");
+            if pattern.len()>200 || pattern.contains("(?{") || pattern.contains("(??{") { return Err(invalid()); }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -135,7 +179,7 @@ pub struct PublicEnvironment {
     pub time_zone_source: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchInput {
     pub environment: String,

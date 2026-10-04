@@ -1,14 +1,24 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 
 const execute = promisify(execFile);
-const script = new URL("../src-tauri/src/ssh_transaction_summary.sh", import.meta.url);
+const script = new URL("../server/ssh-scripts/transaction_summary.sh", import.meta.url);
 const encode = (value) => value ? Buffer.from(value).toString("hex") : "-";
+
+test("WEB and desktop reference the same SSH collection scripts", async () => {
+  const web = await readFile(new URL("../server/ssh-log-source.ts", import.meta.url), "utf8");
+  const desktop = await readFile(new URL("../src-tauri/src/ssh_log_source.rs", import.meta.url), "utf8");
+  for (const name of ["transaction_list", "transaction_summary", "transaction_content", "log_search", "time_profile"]) {
+    assert.ok(web.includes(`./ssh-scripts/${name}.sh`));
+    assert.ok(desktop.includes(`../../server/ssh-scripts/${name}.sh`));
+  }
+  assert.ok(!web.includes("TRANSACTION_DETAIL_SCRIPT"), "unbounded legacy fallback must not return");
+});
 
 test("SSH summary fallback returns only records inside the selected interval", { skip: process.platform === "win32" }, async () => {
   const root = await mkdtemp(join(tmpdir(), "opslog-ssh-summary-"));

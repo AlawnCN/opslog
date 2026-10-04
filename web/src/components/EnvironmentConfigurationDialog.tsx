@@ -15,6 +15,7 @@ import { EnvironmentCredentialImportDialog } from "./EnvironmentCredentialImport
 import { EnvironmentSourceBadge } from "./EnvironmentSourceBadge";
 import { SearchableSelect } from "./SearchableSelect";
 import { PasswordInput } from "./PasswordInput";
+import { SshAiConfigurationAnalysis } from "./SshAiConfigurationAnalysis";
 
 interface EnvironmentConfigurationDialogProps {
   environments: EnvironmentConfiguration[];
@@ -353,6 +354,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
                 <div className="environment-time-zone-mode is-wide"><span><strong>服务器时区自动探测</strong><small>探测失败时使用配置时区与 UTC 偏移。</small></span><button type="button" className={current.sshAutoDetectTimeZone !== false ? "is-on" : undefined} aria-pressed={current.sshAutoDetectTimeZone !== false} onClick={() => update({ sshAutoDetectTimeZone: current.sshAutoDetectTimeZone === false })}><i /></button></div>
                 <SshServerList key={selected} value={current.sshServers ?? []} onChange={(sshServers) => update({ sshServers })} />
                 <SshApplicationList value={current.sshMonitoredApplications ?? []} onChange={(sshMonitoredApplications) => update({ sshMonitoredApplications })} />
+                <SshAiConfigurationAnalysis key={selected} environment={current} onApply={(sshMonitoredApplications) => update({ sshMonitoredApplications })} />
                 <div className="environment-config-ssh-note is-wide"><strong>检索范围</strong><span>按日期检索 log/01～31 与 trc/01～31，并合并服务器组结果。密码认证依赖本机 sshpass；建议使用 SSH Config 或私钥。</span></div>
               </>}
             </div>

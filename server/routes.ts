@@ -2,13 +2,13 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { toCsv } from "./csv.js";
 import { DISPLAY_FIELDS, type EnvironmentConfig, type LogKind, type QueryResult, type SearchInput } from "./domain.js";
-import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvironment } from "./environment-store.js";
+import { findEnvironment, loadEnvironments, saveEnvironmentConfig, toPublicEnvironment, parseEnvironmentConfig } from "./environment-store.js";
 import { runEsql } from "./kibana-client.js";
 import { buildSearchQuery, buildSearchQueryWithOmittedFields, buildTraceQuery, buildTrcQuery, logKeywordFields, pageRows } from "./query-builders.js";
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
-import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs } from "./ssh-log-source.js";
+import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs } from "./ssh-log-source.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
@@ -42,17 +42,18 @@ const constrainedFields = (input: SearchInput): Set<string> => {
 const availableColumns = (input: SearchInput, omitted: ReadonlySet<string>): string[] =>
   DISPLAY_FIELDS[input.kind].filter((field) => !omitted.has(field));
 
-const searchElkLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll = false): Promise<QueryResult> => {
+const searchElkLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll = false, signal?: AbortSignal): Promise<QueryResult> => {
   const omitted = new Set<string>();
   const required = constrainedFields(input);
   for (let attempt = 0; attempt < 32; attempt += 1) {
+    signal?.throwIfAborted();
     const columns = availableColumns(input, omitted);
     if (!columns.length || (input.kind !== "transaction" && input.keyword?.trim() && logKeywordFields(input.kind).every((field) => omitted.has(field)))) return { columns, rows: [] };
     try {
       const query = omitted.size
         ? buildSearchQueryWithOmittedFields(input, environment, exportAll, omitted)
         : buildSearchQuery(input, environment, exportAll);
-      return await runEsql(environment, query, exportAll ? 300_000 : 120_000);
+      return await runEsql(environment, query, exportAll ? 300_000 : 120_000, signal);
     } catch (error) {
       const missing = unknownColumns(error);
       if (!missing.length) throw error;
@@ -229,12 +230,33 @@ apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
   response.json({ path });
 }));
 
+const activeSearches = new Map<string, AbortController>();
+
+apiRouter.post("/ssh/sample", asyncRoute(async (request, response) => {
+  const environment = parseEnvironmentConfig(JSON.stringify([request.body.environment]))[0]!;
+  if (environment.sourceType !== "ssh") throw new Error("仅支持 SSH 环境");
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  response.once("close", abort);
+  try { response.json(await sampleSshLogs(environment, controller.signal)); }
+  catch (error) { if (!controller.signal.aborted) throw error; }
+  finally { response.off("close", abort); }
+}));
+
 apiRouter.post("/search", asyncRoute(async (request, response) => {
+  const controller = new AbortController();
+  const requestId = typeof request.body?.requestId === "string" && /^[a-f0-9]{32}$/.test(request.body.requestId) ? request.body.requestId : undefined;
+  if (requestId) activeSearches.set(requestId, controller);
+  const abort = () => controller.abort();
+  request.once("aborted", abort);
+  response.once("close", abort);
+  try {
   const input = searchSchema.parse(request.body) as SearchInput;
   const environment = await findEnvironment(input.environment);
   const result = environment.sourceType === "ssh"
-    ? await searchSshLogs(environment, input)
-    : await searchElkLogs(environment, input);
+    ? await searchSshLogs(environment, input, false, controller.signal)
+    : await searchElkLogs(environment, input, false, controller.signal);
+  if (controller.signal.aborted) return;
   const rows = pageRows(result.rows, input.page, input.pageSize);
   response.json({
     columns: result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind],
@@ -248,7 +270,20 @@ apiRouter.post("/search", asyncRoute(async (request, response) => {
     truncated: input.page * input.pageSize >= 10_000,
     queryTime: new Date().toISOString()
   });
+  } catch (error) {
+    if (!controller.signal.aborted) throw error;
+  } finally {
+    if (requestId) activeSearches.delete(requestId);
+    request.off("aborted", abort);
+    response.off("close", abort);
+  }
 }));
+
+apiRouter.post("/search/cancel", (request, response) => {
+  const { requestId } = z.object({ requestId: z.string().regex(/^[a-f0-9]{32}$/) }).parse(request.body);
+  activeSearches.get(requestId)?.abort();
+  response.json({ cancelled: true });
+});
 
 apiRouter.post("/export", asyncRoute(async (request, response) => {
   const input = searchSchema.parse({ ...request.body, page: 1 }) as SearchInput;

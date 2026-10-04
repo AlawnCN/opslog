@@ -13,6 +13,8 @@ mod query_builders;
 mod reader_association;
 #[cfg(feature = "reader-app")]
 mod reader_files;
+#[cfg(feature = "reader-app")]
+mod reader_window;
 mod reader_settings;
 mod ssh_log_source;
 mod update_mirrors;
@@ -49,6 +51,9 @@ pub fn run() {
             commands::load_environment_configuration,
             commands::save_environment_config,
             commands::search_logs,
+            commands::sample_ssh_logs,
+            commands::search_logs_cancellable,
+            commands::cancel_search,
             commands::export_logs,
             commands::download_transaction_log,
             commands::read_transaction_log,
@@ -78,6 +83,7 @@ pub fn run_reader() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            reader_window::initialize(app)?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -97,6 +103,7 @@ pub fn run_reader() {
             reader_association::get_trc_association_status,
             reader_association::associate_trc_files,
             reader_files::load_startup_trc_file,
+            commands::cancel_search,
             reader_settings::load_reader_settings,
             reader_settings::save_reader_setting,
             commands::save_custom_log_markers,
@@ -110,6 +117,9 @@ pub fn run_reader() {
         .expect("OpsLog Reader application failed to build");
 
     app.run(|app_handle, event| {
+        if matches!(&event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            reader_window::save(app_handle);
+        }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Opened { urls } = event {
             for path in urls.into_iter().filter_map(|url| url.to_file_path().ok()) {
