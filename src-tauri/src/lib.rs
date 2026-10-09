@@ -17,6 +17,7 @@ mod reader_files;
 mod reader_window;
 mod reader_settings;
 mod ssh_log_source;
+mod ssh_password_transport;
 mod update_mirrors;
 mod update_release;
 

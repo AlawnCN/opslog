@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import { normalizeKibanaUrl, parseEnvironmentConfig } from "../dist-server/server/environment-store.js";
+
+test("环境切换隔离表单生命周期，SSH 组件不再使用重复的兄弟 key", async () => {
+  const source = await readFile("web/src/components/EnvironmentConfigurationDialog.tsx", "utf8");
+  assert.match(source, /<Fragment key=\{`\$\{selected\}-\$\{current\.sourceType\}`\}>/);
+  assert.match(source, /current\.sourceType === "elk" \? <Fragment key="elk-fields">/);
+  assert.match(source, /<\/Fragment> : <Fragment key="ssh-fields">/);
+  assert.doesNotMatch(source, /<(?:SshServerList|SshAiConfigurationAnalysis) key=\{selected\}/);
+});
 
 test("Web 网关将遗留 Kibana IP 迁移为证书域名", () => {
   assert.equal(

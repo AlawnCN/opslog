@@ -193,8 +193,6 @@ export default function ReaderApp() {
   </div>;
 
   const headerActions = <>
-    {openControl}
-    {updateControl}
     {associationStatus?.supported && !associationStatus.associated && <button type="button" className="reader-association-shortcut" disabled={associating} onClick={() => void associateFiles()}>{associating ? "正在关联…" : "关联 .trc"}</button>}
   </>;
 

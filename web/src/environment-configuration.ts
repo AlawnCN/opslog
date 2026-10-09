@@ -34,7 +34,8 @@ const parseSshServers = (item: Record<string, unknown>): SshServerConfiguration[
   if (Array.isArray(item.sshServers)) return item.sshServers.filter(isRecord).map((server, index): SshServerConfiguration => ({
     name: String(server.name ?? `server-${index + 1}`), host: String(server.host ?? ""), ...(server.port == null || server.port === "" ? {} : { port: Number(server.port) }),
     username: String(server.username ?? ""), authentication: server.authentication === "password" || server.authentication === "private-key" ? server.authentication : "ssh-config",
-    password: String(server.password ?? ""), privateKeyPath: String(server.privateKeyPath ?? "")
+    password: String(server.password ?? ""), privateKeyPath: String(server.privateKeyPath ?? ""),
+    hostKeyFingerprint: String(server.hostKeyFingerprint ?? "")
   })).map(normalizeSshServer);
   const legacyHost = String(item.sshHost ?? "");
   return legacyHost ? [{ ...defaultSshServer(), name: legacyHost, host: legacyHost }] : [defaultSshServer()];
@@ -93,7 +94,8 @@ export const serializeEnvironmentConfigurations = (items: EnvironmentConfigurati
       name: server.name, host: server.host, authentication: server.authentication,
       ...(server.authentication !== "ssh-config" && server.port !== undefined ? { port: server.port } : {}),
       ...(server.authentication !== "ssh-config" ? { username: server.username ?? "" } : {}),
-      ...(server.authentication === "private-key" ? { privateKeyPath: server.privateKeyPath ?? "" } : {})
+      ...(server.authentication === "private-key" ? { privateKeyPath: server.privateKeyPath ?? "" } : {}),
+      ...(server.hostKeyFingerprint ? { hostKeyFingerprint: server.hostKeyFingerprint } : {})
     })),
     sshMonitoredApplications: normalized.sshMonitoredApplications
   };
@@ -121,6 +123,7 @@ export const validateEnvironmentConfigurations = (items: EnvironmentConfiguratio
         if (serverNames.has(server.name.trim().toLocaleLowerCase())) return `${item.name}：服务器名称不能重复`;
         serverNames.add(server.name.trim().toLocaleLowerCase());
         if (server.authentication === "password" && (!server.username?.trim() || !server.password)) return `${item.name} / ${server.name}：密码认证需要用户名和密码`;
+        if (server.hostKeyFingerprint && !/^SHA256:[A-Za-z0-9+/]{43}$/.test(server.hostKeyFingerprint)) return `${item.name} / ${server.name}：SSH 主机指纹格式不正确`;
         if (server.authentication === "private-key" && (!server.username?.trim() || !server.privateKeyPath?.trim())) return `${item.name} / ${server.name}：密钥认证需要用户名和私钥路径`;
       }
       if (!item.sshMonitoredApplications?.length) return `${item.name}：至少配置一项应用目录映射`;

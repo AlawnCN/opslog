@@ -114,6 +114,11 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
                 {
                     return Err(format!("环境 {} 的密码认证需要用户名和密码", environment.name));
                 }
+                if let Some(fingerprint) = server.host_key_fingerprint.as_deref().filter(|value| !value.is_empty()) {
+                    if !fingerprint.starts_with("SHA256:") || fingerprint.len() != 50 || !fingerprint[7..].bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/') {
+                        return Err(format!("环境 {} 的 SSH 主机指纹格式不正确", environment.name));
+                    }
+                }
                 if matches!(server.authentication, SshAuthentication::PrivateKey)
                     && (server.username.as_deref().unwrap_or("").trim().is_empty() || server.private_key_path.as_deref().unwrap_or("").trim().is_empty())
                 {
@@ -150,7 +155,7 @@ fn parse(contents: &str) -> Result<Vec<EnvironmentConfig>, String> {
         }
         if environment.ssh_servers.is_empty() {
             if let Some(host) = environment.ssh_host.clone().filter(|host| !host.trim().is_empty()) {
-                environment.ssh_servers.push(SshServerConfig { name: host.clone(), host, port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None });
+                environment.ssh_servers.push(SshServerConfig { name: host.clone(), host, port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None, host_key_fingerprint: None });
             }
         }
         if environment.ssh_monitored_applications.is_empty() {

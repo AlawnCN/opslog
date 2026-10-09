@@ -208,7 +208,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
       outlineTargetDecorationState,
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
-      EditorView.contentAttributes.of({ "aria-label": "结构化交易日志内容" }),
+      EditorView.contentAttributes.of({ "aria-label": "结构化交易日志内容", tabindex: "0", role: "textbox", "aria-readonly": "true" }),
       logTheme
     ];
     if (wrapLines) extensions.push(EditorView.lineWrapping);

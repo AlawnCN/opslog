@@ -63,6 +63,7 @@ pub struct SshServerConfig {
     pub authentication: SshAuthentication,
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    pub host_key_fingerprint: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

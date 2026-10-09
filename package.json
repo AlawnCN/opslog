@@ -1,9 +1,11 @@
 {
   "name": "opslog-web",
-  "version": "3.1.9",
+  "version": "3.1.10",
   "private": true,
   "type": "module",
   "scripts": {
+    "test:search-warnings": "node --import tsx --test tests/search-warnings.test.ts",
+    "posttest": "node --import tsx --test tests/search-warnings.test.ts tests/ssh-password-transport.test.ts",
     "dev": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"npm run web:dev\"",
     "dev:lan": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"vite --host 0.0.0.0\"",
     "build": "tsc -p tsconfig.server.json && node scripts/copy-ssh-scripts.mjs && vite build",
@@ -37,6 +39,7 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "ssh2": "^1.17.0",
     "zod": "^4.5.0"
   },
   "devDependencies": {
@@ -45,6 +48,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ssh2": "^1.15.6",
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^9.0.0",
     "tsx": "^4.0.0",

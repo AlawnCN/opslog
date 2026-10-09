@@ -37,3 +37,7 @@ export const isQueryFocusShortcut = (
   if (isMacPlatform(platform)) return event.metaKey && !event.altKey && !event.ctrlKey;
   return event.altKey && !event.metaKey && !event.ctrlKey;
 };
+
+export const isSelectAllShortcut = (event: ShortcutKeyboardEvent): boolean =>
+  !event.isComposing && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a"
+    && (event.metaKey || event.ctrlKey);

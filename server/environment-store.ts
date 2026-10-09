@@ -11,7 +11,8 @@ const sshServerSchema = z.object({
   username: z.string().trim().optional(),
   authentication: z.enum(["ssh-config", "password", "private-key"]).default("ssh-config"),
   password: z.string().optional(),
-  privateKeyPath: z.string().trim().optional()
+  privateKeyPath: z.string().trim().optional(),
+  hostKeyFingerprint: z.string().trim().regex(/^SHA256:[A-Za-z0-9+/]{43}$/).optional().or(z.literal(""))
 });
 
 const sshApplicationSchema = z.object({

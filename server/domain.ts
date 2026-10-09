@@ -10,6 +10,7 @@ export interface SshServerConfig {
   authentication: SshAuthentication;
   password?: string;
   privateKeyPath?: string;
+  hostKeyFingerprint?: string;
 }
 
 export interface SshApplicationConfig {

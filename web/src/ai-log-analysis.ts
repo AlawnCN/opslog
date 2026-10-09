@@ -13,6 +13,7 @@ export interface AiProviderPreset {
   protocol: AiProtocol;
   baseUrl: string;
   model: string;
+  configurationHint?: string;
   local?: boolean;
 }
 
@@ -22,6 +23,10 @@ export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
   { id: "gemini", label: "Gemini", description: "Google OpenAI 兼容接口", protocol: "openai-compatible", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-2.5-flash" },
   { id: "deepseek", label: "DeepSeek", description: "DeepSeek OpenAI 兼容接口", protocol: "openai-compatible", baseUrl: "https://api.deepseek.com", model: "deepseek-flash" },
   { id: "kimi", label: "Kimi", description: "Moonshot OpenAI 兼容接口", protocol: "openai-compatible", baseUrl: "https://api.moonshot.cn/v1", model: "kimi-k2.5" },
+  { id: "doubao", label: "豆包（火山方舟）", description: "火山方舟标准 API", protocol: "openai-compatible", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", model: "doubao-seed-2-1-pro-260628", configurationHint: "使用火山方舟 API Key，并填写账号已开通的模型 ID 或推理接入点 ID。当前地址为北京地域标准 API，不是 Coding Plan 接口。" },
+  { id: "zhipu", label: "智谱 GLM", description: "智谱开放平台标准 API", protocol: "openai-compatible", baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.7", configurationHint: "使用智谱开放平台 API Key；模型可按账号权限修改。当前为标准 API，不是 GLM Coding Plan 专用接口。" },
+  { id: "minimax", label: "MiniMax", description: "MiniMax OpenAI 兼容接口", protocol: "openai-compatible", baseUrl: "https://api.minimax.io/v1", model: "MiniMax-M2.7", configurationHint: "默认使用 MiniMax 国际站标准 API；请按 API Key 所属平台填写对应服务地址和已开通的模型 ID。" },
+  { id: "qwen", label: "阿里 Qwen（通义千问）", description: "阿里云百炼 OpenAI 兼容接口", protocol: "openai-compatible", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", configurationHint: "默认使用北京地域兼容地址，API Key 必须与服务地址地域一致。也可填写百炼控制台提供的业务空间专属地址；模型按账号权限修改。" },
   { id: "ollama", label: "Ollama", description: "本机 Ollama 服务", protocol: "ollama-native", baseUrl: "http://127.0.0.1:11434", model: "qwen3:8b", local: true },
   { id: "lm-studio", label: "LM Studio", description: "本机 OpenAI 兼容服务", protocol: "openai-compatible", baseUrl: "http://127.0.0.1:1234/v1", model: "local-model", local: true },
   { id: "custom", label: "自定义", description: "自定义兼容服务", protocol: "openai-compatible", baseUrl: "", model: "" }

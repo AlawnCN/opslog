@@ -3,6 +3,7 @@ import { useColumnPreferences } from "../column-preferences";
 import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "../loading-feedback";
 import { DEFAULT_TIME_ZONE, displayTime } from "../time";
+import { classifySearchWarnings } from "../search-warnings";
 import type { LogKind, SearchResponse } from "../types";
 import { ColumnSelector } from "./ColumnSelector";
 import { DownloadIcon, TextReaderIcon, TraceIcon } from "./Icons";
@@ -127,6 +128,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
           <span className="eyebrow">SEARCH RESULTS</span>
           <div className="results-heading-main">
             <strong>{loading ? "正在从日志集群读取…" : `本页 ${rows.length} 条记录`}</strong>
+            {!loading && classifySearchWarnings(result?.warnings).coverage.length > 0 && <span className="query-metric" title="本次查询达到安全扫描范围，较早的记录可能未覆盖；原始日志未被修改。">范围受限</span>}
             {!loading && queryPerformance && <span className={`query-metric${queryPerformance.cached ? " is-cached" : ""}`} title={queryPerformance.cached ? "本次结果来自当前会话缓存" : "包含 Kibana 查询和 VPN 传输时间"}>{queryPerformance.cached ? "已缓存" : `查询 ${(queryPerformance.durationMs / 1000).toFixed(2)} 秒`}</span>}
           </div>
         </div>

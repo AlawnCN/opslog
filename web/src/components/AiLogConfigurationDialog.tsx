@@ -108,6 +108,7 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
   const savedKey = Boolean(saved?.hasApiKey) && !form.clearApiKey;
   const dirty = profileChanged(form, saved);
   const selectedModel = models.find(({ id }) => id === form.model);
+  const providerHint = AI_PROVIDER_PRESETS.find(({ id }) => id === form.provider)?.configurationHint;
   const modelOptions = models.map((model) => ({
     value: model.id,
     label: model.label,
@@ -129,6 +130,7 @@ export const AiLogConfigurationDialog = ({ configuration, saving, analyzeAfterSa
             <label><span>配置名称</span><input required value={form.name} onChange={(event) => update({ name: event.target.value })} /></label>
             <label><span>接口协议</span><AppSelect value={form.protocol} ariaLabel="选择接口协议" options={protocolOptions} onChange={(value) => update({ protocol: value as AiProtocol })} /></label>
             <label className="is-wide"><span>服务地址</span><input required type="url" value={form.baseUrl} onChange={(event) => update({ baseUrl: event.target.value })} /></label>
+            {providerHint && <p className="is-wide ai-data-notice">{providerHint} 如果同步模型不可用，可直接输入模型 ID 后保存。</p>}
             <label className="ai-model-field"><span>模型</span><div>{models.length
               ? <AppSelect value={form.model} placeholder="选择模型" ariaLabel="选择模型" options={modelOptions} onChange={(value) => { const model = models.find(({ id }) => id === value); if (model) applyModel(model); }} />
               : <input required value={form.model} placeholder="同步模型列表或输入模型 ID" onChange={(event) => update({ model: event.target.value })} />}

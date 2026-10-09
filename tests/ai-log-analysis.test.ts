@@ -27,9 +27,28 @@ const configuration: AiProfile = {
 
 test("provider presets cover cloud, local, and custom OpenAI-compatible services", () => {
   const ids = AI_PROVIDER_PRESETS.map(({ id }) => id);
-  assert.deepEqual(ids, ["openai", "grok", "gemini", "deepseek", "kimi", "ollama", "lm-studio", "custom"]);
+  assert.deepEqual(ids, ["openai", "grok", "gemini", "deepseek", "kimi", "doubao", "zhipu", "minimax", "qwen", "ollama", "lm-studio", "custom"]);
   assert.equal(AI_PROVIDER_PRESETS.find(({ id }) => id === "ollama")?.local, true);
   assert.equal(AI_PROVIDER_PRESETS.find(({ id }) => id === "lm-studio")?.baseUrl, "http://127.0.0.1:1234/v1");
+});
+
+test("new cloud presets use standard compatible endpoints and preserve provider identity", () => {
+  const endpoints = {
+    doubao: "https://ark.cn-beijing.volces.com/api/v3",
+    zhipu: "https://open.bigmodel.cn/api/paas/v4",
+    minimax: "https://api.minimax.io/v1",
+    qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  };
+  for (const [id, baseUrl] of Object.entries(endpoints)) {
+    const preset = AI_PROVIDER_PRESETS.find((candidate) => candidate.id === id)!;
+    assert.equal(preset.protocol, "openai-compatible");
+    assert.equal(preset.baseUrl, baseUrl);
+    assert.ok(preset.model);
+    assert.ok(preset.configurationHint);
+    const stored = storedProfileSchema.parse({ ...configuration, provider: id, baseUrl, model: preset.model, apiKey: "test-key" });
+    assert.equal(stored.provider, id);
+    assert.equal(stored.model, preset.model);
+  }
 });
 
 test("platform prompt is shared and legacy defaults upgrade without replacing custom prompts", () => {

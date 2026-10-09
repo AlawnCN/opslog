@@ -187,6 +187,10 @@ jobs:
           test -d "$app_path"
           executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
           file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
+          if otool -L "$executable" | grep -Eq '/opt/homebrew/|/usr/local/'; then
+            echo "Portable application links to non-system libraries" >&2
+            exit 1
+          fi
           updater_archive="$(find "$bundle_root/macos" -type f -name '*.app.tar.gz' -print -quit)"
           test -n "$updater_archive"
           test -f "$updater_archive.sig"
@@ -213,6 +217,10 @@ jobs:
           test -d "$app_path"
           executable="$(find "$app_path/Contents/MacOS" -type f -perm -111 -print -quit)"
           file "$executable" | grep -q "${{ matrix.expected_mach_o }}"
+          if otool -L "$executable" | grep -Eq '/opt/homebrew/|/usr/local/'; then
+            echo "Portable Reader links to non-system libraries" >&2
+            exit 1
+          fi
           updater_archive="$(find "$bundle_root/macos" -type f -name '*.app.tar.gz' -print -quit)"
           test -n "$updater_archive"
           test -f "$updater_archive.sig"

@@ -617,9 +617,17 @@
     if (outline && !outline.contains(event.target) && !event.target.closest(".marker")) closeOutline();
   });
   document.addEventListener("keydown", function (event) {
+    if (!event.isComposing && !event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      var active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA") && typeof active.select === "function") {
+        event.preventDefault(); event.stopPropagation();
+        var selection = document.getSelection(); if (selection) selection.removeAllRanges();
+        active.select(); return;
+      }
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") { event.preventDefault(); searchInput.focus(); searchInput.select(); }
     if (event.key === "Escape" && outline) closeOutline();
-  });
+  }, true);
 
   previousButton.disabled = true;
   nextButton.disabled = true;

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration as StdDuration, Instant};
@@ -23,6 +24,26 @@ const TIME_PROFILE_SCRIPT: &str = include_str!("../../server/ssh-scripts/time_pr
 const TRANSACTION_CONTENT_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_content.sh");
 const LOG_SEARCH_SCRIPT: &str = include_str!("../../server/ssh-scripts/log_search.sh");
 
+fn normalized_ssh_script(script: &str) -> Cow<'_, str> {
+    if !script.as_bytes().contains(&b'\r') { return Cow::Borrowed(script); }
+    Cow::Owned(script.replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+#[cfg(test)]
+mod line_ending_tests {
+    use super::{normalized_ssh_script, TRANSACTION_LIST_SCRIPT};
+    use std::borrow::Cow;
+
+    #[test]
+    fn windows_checkout_script_is_safe_for_remote_posix_shell() {
+        let windows_script = TRANSACTION_LIST_SCRIPT.replace('\n', "\r\n");
+        let normalized = normalized_ssh_script(&windows_script);
+        assert!(normalized.starts_with("set -eu\n"));
+        assert!(!normalized.contains('\r'));
+        assert!(matches!(normalized_ssh_script(TRANSACTION_LIST_SCRIPT), Cow::Borrowed(_)));
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SshTimeProfile {
     pub time_zone: String,
@@ -35,7 +56,7 @@ static TIME_PROFILE_CACHE: OnceLock<Mutex<HashMap<String, (Instant, SshTimeProfi
 
 fn configured_servers(environment: &EnvironmentConfig) -> Vec<SshServerConfig> {
     if !environment.ssh_servers.is_empty() { return environment.ssh_servers.clone(); }
-    environment.ssh_host.as_ref().filter(|host| !host.trim().is_empty()).map(|host| vec![SshServerConfig { name: host.clone(), host: host.clone(), port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None }]).unwrap_or_default()
+    environment.ssh_host.as_ref().filter(|host| !host.trim().is_empty()).map(|host| vec![SshServerConfig { name: host.clone(), host: host.clone(), port: None, username: None, authentication: SshAuthentication::SshConfig, password: None, private_key_path: None, host_key_fingerprint: None }]).unwrap_or_default()
 }
 
 fn configured_applications(environment: &EnvironmentConfig) -> Vec<SshApplicationConfig> {
@@ -150,6 +171,9 @@ async fn run_script(
                 .collect::<String>()
         })
         .collect::<Vec<_>>();
+    if matches!(server.authentication, SshAuthentication::Password) {
+        return crate::ssh_password_transport::run(server, normalized_ssh_script(script).into_owned(), args, timeout_seconds, connect_timeout).await;
+    }
     let mut ssh_args = vec![
         "-o".to_string(), format!("ConnectTimeout={connect_timeout}"),
         "-o".to_string(), "NumberOfPasswordPrompts=1".to_string(),
@@ -163,20 +187,20 @@ async fn run_script(
     let destination = if matches!(server.authentication, SshAuthentication::SshConfig) || server.username.as_deref().unwrap_or("").is_empty() { host } else { format!("{}@{}", server.username.as_deref().unwrap_or_default(), host) };
     ssh_args.extend([destination, "timeout".to_string(), timeout_seconds.to_string(), "sh".to_string(), "-s".to_string(), "--".to_string()]);
     ssh_args.extend(args);
-    let mut command = if matches!(server.authentication, SshAuthentication::Password) { let mut command = Command::new("sshpass"); command.args(["-e", "ssh"]); command.env("SSHPASS", server.password.as_deref().unwrap_or_default()); command } else { Command::new("ssh") };
+    let mut command = Command::new("ssh");
     #[cfg(windows)]
-    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies to the SSH/sshpass child of the GUI app.
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW applies to the SSH child of the GUI app.
     command.kill_on_drop(true);
     let mut child = command.args(ssh_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| if matches!(server.authentication, SshAuthentication::Password) && error.kind() == std::io::ErrorKind::NotFound { "密码认证需要本机安装 sshpass；建议改用 SSH Config 或私钥认证".to_string() } else { format!("无法启动 SSH：{error}") })?;
+        .map_err(|error| format!("无法启动 SSH：{error}"))?;
     let deadline = StdDuration::from_secs(timeout_seconds.saturating_add(connect_timeout).saturating_add(10));
     let output = tokio::time::timeout(deadline, async {
         let mut stdin = child.stdin.take().ok_or_else(|| "无法写入 SSH 命令".to_string())?;
-        stdin.write_all(script.as_bytes()).await.map_err(|error| format!("无法发送 SSH 查询：{error}"))?;
+        stdin.write_all(normalized_ssh_script(script).as_bytes()).await.map_err(|error| format!("无法发送 SSH 查询：{error}"))?;
         drop(stdin);
         child.wait_with_output().await.map_err(|error| format!("SSH 查询失败：{error}"))
     }).await.map_err(|_| format!("SSH 查询超过 {} 秒，已终止本地进程；请检查网络、认证及远端负载", deadline.as_secs()))??;

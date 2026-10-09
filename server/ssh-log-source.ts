@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { sshLogSourceSchema } from "../shared/ssh-log-rules.js";
 import type { EnvironmentConfig, QueryResult, SearchInput, SshApplicationConfig, SshServerConfig } from "./domain.js";
+import { runPasswordSshScript } from "./ssh-password-transport.js";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_PARALLEL_SERVERS = 4;
@@ -96,6 +97,10 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
   const host = server.host.trim();
   if (!host || !/^[A-Za-z0-9_.@-]+$/.test(host)) return Promise.reject(new Error("SSH 主机配置不合法"));
   const connectTimeout = environment.sshConnectTimeoutSeconds ?? 10;
+  if (server.authentication === "password") {
+    const encodedArgs = args.map((value) => value ? Buffer.from(value, "utf8").toString("hex") : "-");
+    return runPasswordSshScript(server, script, encodedArgs, connectTimeout, timeoutSeconds, signal);
+  }
   return new Promise((resolve, reject) => {
     const encodedArgs = args.map((value) => value ? Buffer.from(value, "utf8").toString("hex") : "-");
     const sshArgs = ["-o", `ConnectTimeout=${connectTimeout}`];
@@ -104,9 +109,7 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
     else if (server.authentication === "ssh-config") sshArgs.push("-o", "BatchMode=yes");
     const destination = server.authentication === "ssh-config" || !server.username ? host : `${server.username}@${host}`;
     sshArgs.push(destination, "timeout", String(timeoutSeconds), "sh", "-s", "--", ...encodedArgs);
-    const command = server.authentication === "password" ? "sshpass" : "ssh";
-    const commandArgs = server.authentication === "password" ? ["-e", "ssh", ...sshArgs] : sshArgs;
-    const child = spawn(command, commandArgs, { stdio: ["pipe", "pipe", "pipe"], env: server.authentication === "password" ? { ...process.env, SSHPASS: server.password ?? "" } : process.env });
+    const child = spawn("ssh", sshArgs, { stdio: ["pipe", "pipe", "pipe"] });
     const abort = () => child.kill("SIGKILL");
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
@@ -121,7 +124,7 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
       else stdout.push(chunk);
     });
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.once("error", (error) => { clearTimeout(timer); reject(new Error(server.authentication === "password" && (error as NodeJS.ErrnoException).code === "ENOENT" ? "密码认证需要本机安装 sshpass；建议改用 SSH Config 或私钥认证" : `无法启动 SSH：${error.message}`)); });
+    child.once("error", (error) => { clearTimeout(timer); reject(new Error(`无法启动 SSH：${error.message}`)); });
     child.once("close", (code, signal) => {
       clearTimeout(timer);
       if (size > MAX_OUTPUT_BYTES) { reject(new Error("SSH 返回内容超过 64 MB 安全上限，请缩小查询范围")); return; }
@@ -131,7 +134,7 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
       resolve(Buffer.concat(stdout).toString("utf8"));
     });
     child.once("close", () => signal?.removeEventListener("abort", abort));
-    child.stdin.end(script);
+    child.stdin.end(script.replace(/\r\n?/g, "\n"));
   });
 };
 

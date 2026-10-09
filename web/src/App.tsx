@@ -17,6 +17,8 @@ import { useAppUpdater } from "./use-app-updater";
 import { useLogResources } from "./use-log-resources";
 import { isEditableFocusTarget, isQueryFocusShortcut } from "./keyboard-shortcuts";
 import { useLanShare } from "./use-lan-share";
+import { classifySearchWarnings } from "./search-warnings";
+import { parseSshHostKeyChallenge, type SshHostKeyChallenge } from "./ssh-host-key";
 import type { TransactionLogDrawerHandle } from "./components/TransactionLogDrawer";
 
 const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawer")
@@ -35,6 +37,8 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [searchPerformance, setSearchPerformance] = useState<{ durationMs: number; cached: boolean }>();
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
+  const [pendingHostKey, setPendingHostKey] = useState<(SshHostKeyChallenge & { page: number; pageSize: number; environment: string })>();
+  const [hostKeyBusy, setHostKeyBusy] = useState(false);
   const [canImportConfig, setCanImportConfig] = useState(desktopMode);
   const [environmentConfigOpen, setEnvironmentConfigOpen] = useState(false);
   const [environmentConfiguration, setEnvironmentConfiguration] = useState<EnvironmentConfiguration[]>([]);
@@ -228,7 +232,10 @@ export default function App() {
       setPage(targetPage);
       setPageSize(targetPageSize);
       setResult(cached);
-      if (cached.warnings?.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${cached.warnings.join("；")}` });
+      const challenge = cached.warnings?.map(parseSshHostKeyChallenge).find(Boolean);
+      if (challenge) setPendingHostKey({ ...challenge, environment: environmentName, page: targetPage, pageSize: targetPageSize });
+      const { failures } = classifySearchWarnings(cached.warnings);
+      if (failures.length && !challenge) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${failures.join("；")}` });
       setSearchPerformance({ durationMs: 0, cached: true });
       setLoading(false);
       setSearching(false);
@@ -241,22 +248,28 @@ export default function App() {
     try {
       const response = await searchLogs(nextRequest, nextController.signal);
       if (runId !== searchRunId.current || nextController.signal.aborted) return;
+      const challenge = response.warnings?.map(parseSshHostKeyChallenge).find(Boolean);
       const remoteDurationMs = performance.now() - startedAt;
-      sessionCache.current.saveSearch(cacheKey, response);
+      if (!challenge) sessionCache.current.saveSearch(cacheKey, response);
       await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.search);
       if (runId !== searchRunId.current) return;
       setPage(targetPage);
       setPageSize(targetPageSize);
       setResult(response);
       setSearchPerformance({ durationMs: remoteDurationMs, cached: false });
-      if (response.warnings?.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${response.warnings.join("；")}` });
+      const { failures } = classifySearchWarnings(response.warnings);
+      if (challenge) setPendingHostKey({ ...challenge, environment: environmentName, page: targetPage, pageSize: targetPageSize });
+      else if (failures.length) setNotice({ tone: "error", text: `部分服务器查询失败，结果不完整：${failures.join("；")}` });
       else if (response.truncated) setNotice({ tone: "info", text: "已达到 10,000 条交互查询深度，请增加筛选条件或使用导出。" });
     } catch (error) {
       if (runId === searchRunId.current) {
         await keepLoadingFeedbackVisible(startedAt, MINIMUM_LOADING_FEEDBACK_MS.search);
       }
       if (runId === searchRunId.current && !(error instanceof Error && error.name === "AbortError")) {
-        setNotice({ tone: "error", text: errorMessage(error) });
+        const message = errorMessage(error);
+        const challenge = parseSshHostKeyChallenge(message);
+        if (challenge) setPendingHostKey({ ...challenge, environment: environmentName, page: targetPage, pageSize: targetPageSize });
+        else setNotice({ tone: "error", text: message });
       }
     } finally {
       if (runId === searchRunId.current) {
@@ -274,6 +287,35 @@ export default function App() {
     setLoading(false);
     setSearching(false);
     setNotice({ tone: "info", text: "查询已终止，可调整条件后重新查询。" });
+  };
+
+  const approveHostKey = async () => {
+    const pending = pendingHostKey;
+    if (!pending) return;
+    setHostKeyBusy(true);
+    try {
+      const items = await loadEnvironmentConfiguration();
+      let updated = false;
+      const next = items.map((item) => item.name === pending.environment ? {
+        ...item,
+        sshServers: item.sshServers?.map((server) => {
+          if (server.host !== pending.host || (server.port ?? 22) !== pending.port || server.authentication !== "password") return server;
+          if (server.hostKeyFingerprint) throw new Error("服务器原有主机指纹已改变，请联系管理员核对后在配置中重置");
+          updated = true;
+          return { ...server, hostKeyFingerprint: pending.fingerprint };
+        })
+      } : item);
+      if (!updated) throw new Error("服务器配置已变更，请重新查询");
+      await importEnvironmentConfig(JSON.stringify(next));
+      await reloadEnvironments();
+      setPendingHostKey(undefined);
+      setNotice(undefined);
+      void runSearch(pending.page, pending.pageSize, true);
+    } catch (error) {
+      setNotice({ tone: "error", text: errorMessage(error) });
+    } finally {
+      setHostKeyBusy(false);
+    }
   };
 
   const updateFilter = (field: keyof SearchFilters, value: string) => {
@@ -312,6 +354,12 @@ export default function App() {
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} timeZone={environmentTimeZone} />
     {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
     {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
+    {pendingHostKey && <div className="ssh-host-key-backdrop"><section className="ssh-host-key-dialog" role="dialog" aria-modal="true" aria-labelledby="ssh-host-key-title">
+      <h2 id="ssh-host-key-title">确认 SSH 服务器身份</h2>
+      <p>首次连接 {pendingHostKey.host}:{pendingHostKey.port}。请向服务器管理员核对以下主机指纹，确认相符后再继续。</p>
+      <code>{pendingHostKey.fingerprint}</code>
+      <div><button type="button" disabled={hostKeyBusy} onClick={() => setPendingHostKey(undefined)}>取消</button><button type="button" disabled={hostKeyBusy} onClick={() => void approveHostKey()}>{hostKeyBusy ? "保存中…" : "指纹相符，信任并重试"}</button></div>
+    </section></div>}
     <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />
   </div>;
 }

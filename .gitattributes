@@ -1,0 +1,2 @@
+server/ssh-scripts/*.sh text eol=lf
+server/ssh-scripts/*.pl text eol=lf

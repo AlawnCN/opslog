@@ -6,6 +6,7 @@ import {
   serializeEncryptedEnvironmentConfigurations
 } from "../web/src/environment-credential-transfer";
 import type { EnvironmentConfiguration } from "../web/src/types";
+import { parseEnvironmentConfigurationFile, serializeEnvironmentConfigurations } from "../web/src/environment-configuration";
 
 const environments: EnvironmentConfiguration[] = [{
   name: "uat-elk",
@@ -25,7 +26,7 @@ const environments: EnvironmentConfiguration[] = [{
   txnlstIndex: "",
   txntrcIndex: "",
   applogIndex: "",
-  sshServers: [{ name: "primary", host: "logs.example.test", username: "ops", authentication: "password", password: "ssh-secret" }],
+  sshServers: [{ name: "primary", host: "logs.example.test", username: "ops", authentication: "password", password: "ssh-secret", hostKeyFingerprint: `SHA256:${"A".repeat(43)}` }],
   sshMonitoredApplications: [{ name: "cte", directory: "/var/log/cte" }]
 }];
 
@@ -44,6 +45,7 @@ test("加密环境配置不保存明文密码并可还原 ELK 与 SSH 密码", a
   assert.equal(restored[0]?.password, "elk-secret");
   assert.equal(restored[1]?.password, "");
   assert.equal(restored[1]?.sshServers?.[0]?.password, "ssh-secret");
+  assert.equal(restored[1]?.sshServers?.[0]?.hostKeyFingerprint, `SHA256:${"A".repeat(43)}`);
 });
 
 test("加密环境配置拒绝错误密钥、被篡改的元数据和明文密码", async () => {
@@ -60,4 +62,11 @@ test("加密环境配置拒绝错误密钥、被篡改的元数据和明文密�
   const withPlaintext = structuredClone(parsed.file);
   withPlaintext.environments[0]!.password = "leaked-secret";
   assert.throws(() => parseEnvironmentTransfer(JSON.stringify(withPlaintext)), /包含明文密码/);
+});
+
+test("SSH 主机指纹随配置导出并可在重新导入后保留", () => {
+  const contents = serializeEnvironmentConfigurations(environments);
+  assert.equal(contents.includes(`SHA256:${"A".repeat(43)}`), true);
+  const imported = parseEnvironmentConfigurationFile(contents);
+  assert.equal(imported[1]?.sshServers?.[0]?.hostKeyFingerprint, `SHA256:${"A".repeat(43)}`);
 });

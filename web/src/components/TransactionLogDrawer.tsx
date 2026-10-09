@@ -118,13 +118,15 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
         setActiveCustomMarkerId(undefined);
         return;
       }
-      onClose();
+      // Escape closes an embedded drawer, never the document in the standalone app.
+      if (presentation === "drawer") onClose();
+      else searchInputRef.current?.blur();
     },
     focusSearch: () => {
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
     }
-  }), [activeCustomMarkerId, onClose, outlineCategory, structuredPreview]);
+  }), [activeCustomMarkerId, onClose, outlineCategory, presentation, structuredPreview]);
 
   useEffect(() => {
     setKeyword("");

@@ -5,6 +5,19 @@ import test from "node:test";
 const readJson = async (path: string): Promise<Record<string, unknown>> =>
   JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 
+test("Escape preserves the standalone Reader document and closes only transient layers", async () => {
+  const workspace = await readFile("web/src/components/TransactionLogDrawer.tsx", "utf8");
+  const start = workspace.indexOf("closeTopLayer: () => {");
+  const closeTopLayer = workspace.slice(start, workspace.indexOf("focusSearch: () => {", start));
+  assert.match(closeTopLayer, /aiAssistantRef\.current\?\.closeTopLayer\(\)/);
+  assert.match(closeTopLayer, /setStructuredPreview\(undefined\)/);
+  assert.match(closeTopLayer, /if \(presentation === "drawer"\) onClose\(\);\s*else searchInputRef\.current\?\.blur\(\);/);
+  assert.equal((closeTopLayer.match(/onClose\(\)/g) ?? []).length, 1);
+  const reader = await readFile("web/src/ReaderApp.tsx", "utf8");
+  assert.match(reader, /readerRef\.current\?\.closeTopLayer\(\)/);
+  assert.match(reader, /presentation="standalone"/);
+});
+
 test("reader version control displays the running version and retains update action", async () => {
   const reader = await readFile("web/src/ReaderApp.tsx", "utf8");
   assert.match(reader, /getVersion\(\)/);
@@ -13,6 +26,15 @@ test("reader version control displays the running version and retains update act
   assert.match(reader, /点击版本号检查更新/);
   assert.match(reader, /onClick=\{\(\) => void appUpdater\.checkForUpdates\(\)\}/);
   assert.match(reader, /disabled=\{updateBusy\}/);
+});
+
+test("Reader keeps file opening and version controls on welcome screen only", async () => {
+  const reader = await readFile("web/src/ReaderApp.tsx", "utf8");
+  const welcome = reader.slice(reader.indexOf("if (!document && !opening && !parsing)"), reader.indexOf("const headerActions"));
+  assert.match(welcome, /\{openControl\}/);
+  assert.match(welcome, /\{updateControl\}/);
+  const header = reader.slice(reader.indexOf("const headerActions"), reader.indexOf("return <div className={`reader-app"));
+  assert.doesNotMatch(header, /openControl|updateControl/);
 });
 
 test("Reader opens into a loading workspace and shares the modern window chrome", async () => {

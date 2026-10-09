@@ -75,7 +75,7 @@ export const StructuredLogPreviewEditor = forwardRef<StructuredLogPreviewEditorH
           EditorView.decorations.of(Decoration.set(decorations, true)),
           EditorState.readOnly.of(true),
           EditorView.editable.of(false),
-          EditorView.contentAttributes.of({ "aria-label": `${preview.kind.toUpperCase()} 格式化预览内容` }),
+          EditorView.contentAttributes.of({ "aria-label": `${preview.kind.toUpperCase()} 格式化预览内容`, tabindex: "0", role: "textbox", "aria-readonly": "true" }),
           previewTheme
         ]
       }),

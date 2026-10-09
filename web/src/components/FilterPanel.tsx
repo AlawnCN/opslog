@@ -121,8 +121,8 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
             <path d="m4 10 8-7 8 7" />
           </svg>
         </button>
-        <div><button type="button" className="secondary" onClick={onExport} disabled={loading}><DownloadIcon />导出 CSV</button>{searching
-          ? <button key="cancel-search" type="button" className="query-stop" title="立即终止本次查询" onClick={(event) => { event.preventDefault(); onCancel(); }}><span className="query-stop-symbol" aria-hidden="true" />终止查询</button>
+        <div className="query-action-buttons"><button type="button" className="secondary" onClick={onExport} disabled={loading}><DownloadIcon />导出 CSV</button>{searching
+          ? <button key="cancel-search" type="button" className="query-stop" title="立即终止本次查询" onClick={(event) => { event.preventDefault(); onCancel(); }}><span className="query-action-icon" aria-hidden="true"><span className="query-stop-symbol" /></span>终止查询</button>
           : <button key="start-search" type="submit" className="primary" title="执行查询（Enter）" disabled={loading}><SearchIcon />执行查询</button>}</div>
       </div>
     </form>
