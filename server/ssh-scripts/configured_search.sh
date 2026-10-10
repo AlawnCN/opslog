@@ -7,10 +7,12 @@ use strict; use warnings; use utf8;
 # OPSLOG_JSON_CODEC
 my ($root,$days,$start,$end,$limit,$kind,$rules,$filters)=@ARGV;
 my $sources=decode_json($rules); my $query=decode_json($filters); my $budget=8*1024*1024;
-my (%transactions,@rows,%visited,$truncated,%directories); my $entries=0; my $year=substr($start,0,4); my $end_year=substr($end,0,4);
+my (%transactions,@rows,%visited,$truncated,%directories,$primary_transactions); my $entries=0; my $year=substr($start,0,4); my $end_year=substr($end,0,4);
 my $realroot=realpath($root)//die "Invalid application directory";
+$root=$realroot;
 die "Invalid source count" unless ref($sources) eq "ARRAY" && @$sources<=12;
 for my $source (@$sources) {
+  die "Invalid file selection" unless ($source->{fileSelection}//"all")=~/^(all|latest)$/;
   $source->{successPattern}//="00000\$"; $source->{stripAsyncSuffix}//=1;
   die "Invalid fields" unless ref($source->{fields}) eq "HASH" && $source->{fields}{timestamp};
   for my $mapping(values %{$source->{fields}}) {if (defined $mapping->{regex}) {die "Unsafe regex" if length($mapping->{regex})>500 || $mapping->{regex}=~/\(\?\??\s*\{/; eval {qr/$mapping->{regex}/}; die "Invalid regex" if $@;}}
@@ -28,7 +30,9 @@ sub extract {
 }
 sub parts {
   my ($body,$separator)=@_; return ($body) unless length $separator;
-  $body=~s/^.*? -> \|// if $separator eq "|";
+  # Legacy summaries exist both with and without a leading pipe after ->.
+  # Anchor the envelope so an arrow inside a JSON/message field is never stripped.
+  $body=~s/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3}\s*->\s*\|?// if $separator eq "|";
   my (@fields,$field,$depth,$quoted,$escaped); $field=""; $depth=0;
   for (my $i=0;$i<length($body);$i++) {
     my $c=substr($body,$i,1);
@@ -55,6 +59,9 @@ sub record_row {
   if ($kind eq "detail") {return unless $id eq ($query->{txnId}//""); push @rows,$row; return;}
   if ($kind eq "transaction") {
     return unless length $id;
+    # Summary rows are service-level facts, just like ELK documents. Only
+    # transactionEvent sources opt into latest-fields/max-duration aggregation.
+    if ($source->{role} eq "transaction") {$primary_transactions++ unless $source->{fallbackOnly}; push @rows,$row; return;}
     my $old=$transactions{$id};
     if (!$old) {$transactions{$id}=$row;}
     else {my $maximum=($values{duration}//0)>($old->{values}{duration}//0)?$values{duration}:$old->{values}{duration}; my $newer=$stamp gt $old->{values}{timestamp}; for my $key(keys %values) { $old->{values}{$key}=$values{$key} if ($newer || !length($old->{values}{$key}//"")) && length($values{$key}//""); } $old->{values}{duration}=$maximum if defined $maximum;}
@@ -81,7 +88,8 @@ sub end_position {
   }
   return $left;
 }
-SOURCE: for my $source (@$sources) {
+SOURCE: for my $source (sort {($a->{fallbackOnly}//0)<=>($b->{fallbackOnly}//0)} @$sources) {
+  next if $kind eq "transaction" && $source->{fallbackOnly} && $primary_transactions;
   next if $kind eq "transaction" && $source->{role}!~/^transaction/;
   next if $kind eq "detail" && $source->{role}!~/^(detail|transactionEvent)$/;
   next if $kind eq "application" && $source->{role} ne "application";
@@ -89,33 +97,48 @@ SOURCE: for my $source (@$sources) {
   my @files;
   for my $pattern (@{$source->{paths}}) {
     if (($source->{pathMode}//"glob") eq "regex") {
-      die "Unsafe file regex" unless length($pattern)<=240 && $pattern=~m{^\^(log|trc)/(\{day\}/)?([^/]+)\$$} && $pattern!~/\(\?\??\s*\{/;
-      my ($base,$daily,$body)=($1,$2,$3); my $match=eval {qr/^(?:$body)$/}; die "Invalid file regex" unless $match;
+      die "Unsafe file regex" if !length($pattern) || length($pattern)>240 || $pattern=~/[\x00-\x1f]/ || $pattern=~m{^\^?/} || $pattern=~m{(?:^\^?|/)\.\.(?:/|$)} || $pattern=~/\(\?\??\s*\{/;
+      my $daily=index($pattern,"{day}")>=0;
       for my $day($daily ? split(/,/,$days) : ("")) {
         die "Unsafe day" if $daily && $day!~/^\d{2}$/;
-        my $directory="$root/$base".($daily?"/$day":"");
-        next if -l $directory;
-        my $real=realpath($directory)//next; next unless index($real,"$realroot/$base")==0;
-        if (!exists $directories{$directory}) {
-          opendir(my $handle,$directory) or next; my @names;
-          while (defined(my $name=readdir($handle))) {
-            next if $name eq "." || $name eq "..";
-            if (++$entries>6000) {$truncated=1;last;}
-            push @names,$name;
+        my $expanded=$pattern; $expanded=~s/\{day\}/$day/g;
+        my $match=eval {qr/^(?:$expanded)$/}; die "Invalid file regex" unless $match;
+        # Start at a literal directory prefix when possible; dynamic directories
+        # are traversed within the same root and shared enumeration budget.
+        my ($prefix)=$expanded=~m{^\^((?:[A-Za-z0-9_-]+/)+)};
+        my @queue=(defined($prefix)?"$root/$prefix":$root);
+        while (@queue) {
+          my $directory=shift @queue; $directory=~s{/+$}{}; next if -l $directory;
+          my $real=realpath($directory)//next;
+          next unless $real eq $realroot || index($real,"$realroot/")==0;
+          if (!exists $directories{$directory}) {
+            opendir(my $handle,$directory) or next; my @names;
+            while (defined(my $name=readdir($handle))) {
+              next if $name eq "." || $name eq "..";
+              if (++$entries>6000) {$truncated=1;last;}
+              push @names,$name;
+            }
+            closedir($handle); $directories{$directory}=\@names;
           }
-          closedir($handle); $directories{$directory}=\@names;
+          for my $name (@{$directories{$directory}}) {
+            my $path="$directory/$name"; next if -l $path;
+            if (-d $path) { push @queue,$path if $entries<=6000; next; }
+            my $relative=substr($path,length($root)); $relative=~s{^/+}{};
+            push @files,$path if $relative=~$match;
+          }
         }
-        push @files,map {"$directory/$_"} grep {/$match/} @{$directories{$directory}};
       }
     } else {
-      die "Unsafe path" if $pattern!~m{^(log|trc)/[A-Za-z0-9_.*?{}/-]+$} || $pattern=~/\.\./;
+      die "Unsafe path" if !length($pattern) || length($pattern)>240 || $pattern!~m{^[A-Za-z0-9_.*?{}/-]+$} || $pattern=~m{^/|(?:^|/)\.\.(?:/|$)};
+      my $literal=$pattern; $literal=~s/\{day\}//g; die "Unsafe path" if $literal=~/[{}]/;
       for my $day(split /,/,$days) {my $p=$pattern; $p=~s/\{day\}/$day/g; push @files,glob("$root/$p");}
     }
   }
   my $files=0;
-  for my $path(sort {(stat($b))[9]<=>(stat($a))[9]} @files) {
+  for my $path(sort {(stat($b))[9]<=>(stat($a))[9] || $a cmp $b} @files) {
     next if $visited{$source->{name}."\0".$path}++ || !-f $path || -l $path;
-    my $real=realpath($path)//next; next unless index($real,"$realroot/log/")==0 || index($real,"$realroot/trc/")==0;
+    my $real=realpath($path)//next; next unless index($real,"$realroot/")==0;
+    last if ($source->{fileSelection}//"all") eq "latest" && $files;
     if (++$files>64 || !$budget) {$truncated=1; last SOURCE;}
     open my $file,"<:raw",$path or next;
     my $position=-s $file; my $pending=""; my $delimiter=$source->{recordEnd} eq "newline"?"\n":encode("UTF-8",$source->{recordEnd});
@@ -138,7 +161,7 @@ SOURCE: for my $source (@$sources) {
     close $file;
   }
 }
-@rows=values %transactions if $kind eq "transaction";
+push @rows,values %transactions if $kind eq "transaction";
 my %map=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",node=>"node",messageCode=>"messageCode",messageInfo=>"messageInfo",level=>"level");
 @rows=grep {
   my $row=$_; my $ok=1;
@@ -149,10 +172,13 @@ my %map=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",n
   if ($kind eq "transaction" && ($query->{status}//"ALL") ne "ALL") {my $code=$row->{values}{messageCode}//""; my $re=eval{qr/$row->{successPattern}/}; my $success=$re && $code=~$re; $ok=0 unless length($code) && (($query->{status} eq "SUCCESS")?$success:!$success);}
   $ok;
 } @rows;
-@rows=sort {$b->{values}{timestamp} cmp $a->{values}{timestamp}} @rows;
+@rows=sort {$b->{values}{timestamp} cmp $a->{values}{timestamp} || $a->{file} cmp $b->{file} || $a->{raw} cmp $b->{raw}} @rows;
 if (@rows>$limit) {splice @rows,$limit; $truncated=1 if $kind eq "detail";}
 my $output_budget=16*1024*1024;
 for my $row(@rows) {
+  # Transaction tables consume mapped fields only. Do not transmit duplicate
+  # context/message payloads; filtering above still sees the original record.
+  if ($kind eq "transaction") {delete $row->{values}{message}; $row->{raw}="";}
   $row->{values}{message}=substr($row->{values}{message}//"",0,4096);
   my $raw_limit=$kind eq "detail"?65536:4096;
   $truncated=1 if $kind eq "detail" && length($row->{raw})>$raw_limit;

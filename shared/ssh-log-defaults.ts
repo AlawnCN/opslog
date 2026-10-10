@@ -7,7 +7,7 @@ export const SSH_ROLE_LABELS: Record<SshLogSource["role"], string> = {
 };
 export const SSH_FIELD_LABELS = {
   timestamp: "时间", logId: "日志 ID", txnNo: "流水号", business: "业务 Key", service: "交易码",
-  node: "节点", messageCode: "结果码", messageInfo: "结果信息", duration: "耗时（ms）",
+  node: "节点", sourceNode: "来源节点", messageCode: "结果码", messageInfo: "结果信息", duration: "耗时（ms）",
   tenant: "租户", level: "日志级别", thread: "线程", message: "日志内容", traceId: "Trace ID"
 };
 const common = { recordEnd: "newline", timestampStyle: "full", ordered: false, successPattern: "00000$", stripAsyncSuffix: false } as const;
@@ -16,11 +16,11 @@ const common = { recordEnd: "newline", timestampStyle: "full", ordered: false, s
 // Displaying these never changes the selected environment until the user edits/applies.
 export const defaultSshLogSources = (): SshLogSource[] => [
   {
-    ...common, name: "交易列表", role: "transaction", paths: ["log/txn_*.lst", "log/{day}/txn_*.lst"], delimiter: "|",
-    fields: { timestamp: { regex: "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[.,]\\d{3})" }, logId: { index: 0 }, txnNo: { index: 1 }, tenant: { index: 2 }, node: { index: 3 }, business: { index: 4 }, service: { index: 5 }, duration: { index: 6 }, messageCode: { index: 10 }, messageInfo: { index: 11 } }
+    ...common, name: "交易列表", role: "transaction", fileSelection: "latest", paths: ["log/*.lst", "filebeat/trc/*.lst", "log/{day}/*.lst"], delimiter: "|",
+    fields: { timestamp: { regex: "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[.,]\\d{3})" }, logId: { index: 0 }, txnNo: { index: 1 }, tenant: { index: 2 }, node: { index: 3 }, business: { index: 4 }, service: { index: 5 }, duration: { index: 6 }, traceId: { index: 8 }, sourceNode: { regex: "\\|([^|]*)\\|$" }, messageCode: { index: 10 }, messageInfo: { index: 11 } }
   },
   {
-    ...common, name: "交易摘要", role: "transaction", paths: ["trc/{day}/transaction_*.trc"], delimiter: "|", timestampStyle: "month-day", stripAsyncSuffix: true,
+    ...common, name: "交易摘要", role: "transaction", fallbackOnly: true, paths: ["trc/{day}/transaction_*.trc"], delimiter: "|", timestampStyle: "month-day", stripAsyncSuffix: true,
     fields: { timestamp: { regex: "\\[(\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[.,]\\d{3})\\]" }, logId: { regex: " -> ([A-Za-z0-9._-]+)\\s*\\|" }, business: { index: 1 }, service: { index: 2 }, duration: { index: 4 } }
   },
   {

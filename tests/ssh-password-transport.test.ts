@@ -4,7 +4,8 @@ import { AddressInfo } from "node:net";
 import test from "node:test";
 import ssh2 from "ssh2";
 import { runPasswordSshScript } from "../server/ssh-password-transport";
-import { parseSshHostKeyChallenge } from "../web/src/ssh-host-key";
+import { parseSshHostKeyChallenge, trustSshHostKey } from "../web/src/ssh-host-key";
+import type { SshServerConfiguration } from "../web/src/types";
 
 const { Server } = ssh2;
 
@@ -13,6 +14,19 @@ test("host-key challenge is recognized inside a server-group error or warning", 
   const message = `服务器组执行失败：182.188.5.151：首次连接需核对 SSH 服务器指纹。SSH_HOST_KEY_REQUIRED|182.188.5.151|22|${fingerprint}`;
   assert.deepEqual(parseSshHostKeyChallenge(message), { host: "182.188.5.151", port: 22, fingerprint });
   assert.deepEqual(parseSshHostKeyChallenge(`server：SSH_HOST_KEY_REQUIRED|2001:db8::1|2222|${fingerprint}`), { host: "2001:db8::1", port: 2222, fingerprint });
+});
+
+test("confirming a host key pins only the matching password server", () => {
+  const fingerprint = `SHA256:${"A".repeat(43)}`;
+  const servers: SshServerConfiguration[] = [
+    { name: "one", host: "182.188.5.151", authentication: "password" as const, username: "reader", password: "secret" },
+    { name: "two", host: "182.188.5.152", authentication: "password" as const, username: "reader", password: "secret" }
+  ];
+  const trusted = trustSshHostKey(servers, { host: "182.188.5.151", port: 22, fingerprint });
+  assert.equal(trusted[0]?.hostKeyFingerprint, fingerprint);
+  assert.equal(trusted[1], servers[1]);
+  assert.equal(servers[0]?.hostKeyFingerprint, undefined);
+  assert.throws(() => trustSshHostKey(trusted, { host: "182.188.5.151", port: 22, fingerprint: `SHA256:${"B".repeat(43)}` }), /主机指纹已改变/);
 });
 
 test("password SSH confirms host key before authentication and runs a script after approval", async () => {

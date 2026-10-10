@@ -18,7 +18,8 @@ import { useLogResources } from "./use-log-resources";
 import { isEditableFocusTarget, isQueryFocusShortcut } from "./keyboard-shortcuts";
 import { useLanShare } from "./use-lan-share";
 import { classifySearchWarnings } from "./search-warnings";
-import { parseSshHostKeyChallenge, type SshHostKeyChallenge } from "./ssh-host-key";
+import { parseSshHostKeyChallenge, trustSshHostKey, type SshHostKeyChallenge } from "./ssh-host-key";
+import { SshHostKeyDialog } from "./components/SshHostKeyDialog";
 import type { TransactionLogDrawerHandle } from "./components/TransactionLogDrawer";
 
 const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawer")
@@ -183,7 +184,7 @@ export default function App() {
         }
         if (environmentConfigOpen) {
           event.preventDefault();
-          if (!environmentConfigSaving) setEnvironmentConfigOpen(false);
+          // The configuration dialog owns Escape and its unsaved-draft guard.
           return;
         }
         if (logResources.transactionLog) {
@@ -295,17 +296,11 @@ export default function App() {
     setHostKeyBusy(true);
     try {
       const items = await loadEnvironmentConfiguration();
-      let updated = false;
       const next = items.map((item) => item.name === pending.environment ? {
         ...item,
-        sshServers: item.sshServers?.map((server) => {
-          if (server.host !== pending.host || (server.port ?? 22) !== pending.port || server.authentication !== "password") return server;
-          if (server.hostKeyFingerprint) throw new Error("服务器原有主机指纹已改变，请联系管理员核对后在配置中重置");
-          updated = true;
-          return { ...server, hostKeyFingerprint: pending.fingerprint };
-        })
+        sshServers: trustSshHostKey(item.sshServers ?? [], pending)
       } : item);
-      if (!updated) throw new Error("服务器配置已变更，请重新查询");
+      if (!items.some((item) => item.name === pending.environment)) throw new Error("运行环境已变更，请重新查询");
       await importEnvironmentConfig(JSON.stringify(next));
       await reloadEnvironments();
       setPendingHostKey(undefined);
@@ -353,13 +348,8 @@ export default function App() {
     </main>
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} timeZone={environmentTimeZone} />
     {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
-    {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
-    {pendingHostKey && <div className="ssh-host-key-backdrop"><section className="ssh-host-key-dialog" role="dialog" aria-modal="true" aria-labelledby="ssh-host-key-title">
-      <h2 id="ssh-host-key-title">确认 SSH 服务器身份</h2>
-      <p>首次连接 {pendingHostKey.host}:{pendingHostKey.port}。请向服务器管理员核对以下主机指纹，确认相符后再继续。</p>
-      <code>{pendingHostKey.fingerprint}</code>
-      <div><button type="button" disabled={hostKeyBusy} onClick={() => setPendingHostKey(undefined)}>取消</button><button type="button" disabled={hostKeyBusy} onClick={() => void approveHostKey()}>{hostKeyBusy ? "保存中…" : "指纹相符，信任并重试"}</button></div>
-    </section></div>}
+    {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} activeEnvironmentName={environmentName} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
+    {pendingHostKey && <SshHostKeyDialog challenge={pendingHostKey} busy={hostKeyBusy} onCancel={() => setPendingHostKey(undefined)} onConfirm={() => void approveHostKey()} />}
     <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />
   </div>;
 }

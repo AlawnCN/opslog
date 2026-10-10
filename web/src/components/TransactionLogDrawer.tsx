@@ -311,7 +311,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
         </div>
       </div>}
       {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在准备日志内容与阅读视图</span></div>}
-      {!loading && !content && <div className="log-reader-status">当前时间范围内未找到日志内容。</div>}
+      {!loading && !content && <div className="log-reader-status">未找到明细日志。对应日志可能已清理，或当前时间范围内不存在；不会使用数据库或事件日志替代。</div>}
       {!loading && content && <div className="log-reader-body" ref={logReaderBodyRef}>
         <StructuredLogViewer ref={viewerRef} analysis={analysis} content={content} matches={matches} activeMatch={visibleActiveMatch} wrapLines={wrapLines} foldMode={readerPreferences.foldMode} onInspectStructure={(kind, source) => setStructuredPreview({ kind, source })} />
         {outlineCategory && <LogOutlinePopover

@@ -2,8 +2,8 @@ set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
 if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+  printf '%s\n' 'Configured application directory does not exist; refusing to search parent directories' >&2
+  exit 1
 fi
 days=$(decode_arg "$2")
 start_time=$(decode_arg "$3")
@@ -38,8 +38,10 @@ use strict;
 use warnings;
 use Encode qw(decode encode);
 use File::Basename qw(basename);
+use Cwd qw(realpath);
 use Time::Local qw(timegm);
-my ($start, $end, $limit, $level, $keyword, $output_mode) = @ARGV;
+my ($root, $start, $end, $limit, $level, $keyword, $output_mode) = @ARGV;
+my $realroot = realpath($root) // die "Invalid application directory";
 $limit = int($limit);
 my $first_year = substr($start, 0, 4);
 my $last_year = substr($end, 0, 4);
@@ -113,6 +115,8 @@ while (my $path = <STDIN>) {
   if (@paths >= 6000) { $truncated = 1; last; }
 }
 for my $path (sort { (stat($b))[9] <=> (stat($a))[9] } @paths) {
+  my $real = realpath($path) // next;
+  next unless index($real, "$realroot/") == 0;
   if (++$file_count > 64 || $budget <= 0) { $truncated = 1; last; }
   my $source = basename($path);
   if ($source =~ /(20\d{2})-(\d{2})-(\d{2})/) {
@@ -167,4 +171,4 @@ for my $path (sort { (stat($b))[9] <=> (stat($a))[9] } @paths) {
 }
 print $_->[1] for sort { $b->[0] cmp $a->[0] } @top;
 print "\n\@OPSLOG_SCAN_LIMIT\tSSH log scan reached the 8 MiB / 64 file budget; results may be incomplete\n" if $truncated;
-' "$start_time" "$end_time" "$limit" "$level" "$keyword" "$output_mode"
+' "$root" "$start_time" "$end_time" "$limit" "$level" "$keyword" "$output_mode"

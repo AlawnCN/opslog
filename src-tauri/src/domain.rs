@@ -82,6 +82,8 @@ impl SshApplicationConfig {
         let invalid = || format!("应用 {} 的日志解析规则无效", self.name);
         if self.log_sources.len() > 12 || self.analysis_notes.len() > 30 { return Err(invalid()); }
         for source in &self.log_sources {
+            if !source["fileSelection"].is_null() && !["all", "latest"].contains(&source["fileSelection"].as_str().unwrap_or("")) { return Err(invalid()); }
+            if !source["fallbackOnly"].is_null() && !source["fallbackOnly"].is_boolean() { return Err(invalid()); }
             let role = source["role"].as_str().ok_or_else(invalid)?;
             if !["transaction", "transactionEvent", "application", "ecp", "detail"].contains(&role)
                 || !["|", " §§ ", ""].contains(&source["delimiter"].as_str().unwrap_or("invalid"))
@@ -93,20 +95,19 @@ impl SshApplicationConfig {
             for path in paths {
                 let path = path.as_str().ok_or_else(invalid)?;
                 if source["pathMode"].as_str() == Some("regex") {
-                    let tail = path.strip_prefix("^log/").or_else(||path.strip_prefix("^trc/")).and_then(|v|v.strip_suffix('$')).ok_or_else(invalid)?;
-                    let filename = tail.strip_prefix("{day}/").unwrap_or(tail);
-                    if path.len()>240 || filename.is_empty() || filename.contains('/') || path.chars().any(|c|c.is_control()) || path.contains("(?{") || path.contains("(??{") { return Err(invalid()); }
+                    let relative = path.strip_prefix('^').unwrap_or(path);
+                    if path.is_empty() || path.len()>240 || relative.starts_with('/') || relative.split('/').any(|part|part=="..") || path.chars().any(|c|c.is_control()) || path.contains("(?{") || path.contains("(??{") { return Err(invalid()); }
                     continue;
                 }
                 if !source["pathMode"].is_null() && source["pathMode"].as_str() != Some("glob") { return Err(invalid()); }
-                if path.len() > 240 || !(path.starts_with("log/") || path.starts_with("trc/")) || path.contains("..")
+                if path.is_empty() || path.len() > 240 || path.starts_with('/') || path.split('/').any(|part|part=="..")
                     || path.replace("{day}", "").contains(['{', '}'])
                     || !path.chars().all(|c| c.is_ascii_alphanumeric() || "_.*?{}/-".contains(c)) { return Err(invalid()); }
             }
             let fields = source["fields"].as_object().ok_or_else(invalid)?;
             if !fields.contains_key("timestamp") || (["transaction", "transactionEvent", "detail"].contains(&role) && !fields.contains_key("logId")) { return Err(invalid()); }
             for (key, mapping) in fields {
-                if !["timestamp", "logId", "txnNo", "business", "service", "node", "messageCode", "messageInfo", "duration", "tenant", "level", "thread", "message", "traceId"].contains(&key.as_str()) { return Err(invalid()); }
+                if !["timestamp", "logId", "txnNo", "business", "service", "node", "sourceNode", "messageCode", "messageInfo", "duration", "tenant", "level", "thread", "message", "traceId"].contains(&key.as_str()) { return Err(invalid()); }
                 let index = mapping["index"].as_u64(); let regex = mapping["regex"].as_str();
                 if index.is_none() && regex.is_none() || index.is_some_and(|v|v>100) || regex.is_some_and(|v|v.len()>500 || v.contains("(?{") || v.contains("(??{")) { return Err(invalid()); }
             }
@@ -114,6 +115,40 @@ impl SshApplicationConfig {
             if pattern.len()>200 || pattern.contains("(?{") || pattern.contains("(??{") { return Err(invalid()); }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod configurable_path_tests {
+    use super::SshApplicationConfig;
+    use serde_json::json;
+
+    #[test]
+    fn accepts_custom_relative_directories_and_rejects_traversal() {
+        let mut application = SshApplicationConfig {
+            name: "cte".into(), directory: "/apps/cte".into(), analysis_notes: vec![],
+            log_sources: vec![json!({
+                "role": "application", "delimiter": "", "recordEnd": "newline",
+                "timestampStyle": "full", "ordered": true, "pathMode": "regex",
+                "paths": ["^filebeat/trc/txn_.*\\.lst$", "^archive/\\d{4}/[^/]+/.*$", "^app\\.log$"],
+                "fields": {"timestamp": {"regex": "^(.*)$"}}
+            })],
+        };
+        assert!(application.validate_log_sources().is_ok());
+        for selection in ["all", "latest"] {
+            application.log_sources[0]["fileSelection"] = json!(selection);
+            assert!(application.validate_log_sources().is_ok());
+        }
+        application.log_sources[0]["fileSelection"] = json!("invalid");
+        assert!(application.validate_log_sources().is_err());
+        application.log_sources[0]["fileSelection"] = json!("latest");
+        for path in ["^../.*$", "^/etc/.*$"] {
+            application.log_sources[0]["paths"] = json!([path]);
+            assert!(application.validate_log_sources().is_err());
+        }
+        application.log_sources[0]["pathMode"] = json!("glob");
+        application.log_sources[0]["paths"] = json!(["filebeat/trc/*.lst"]);
+        assert!(application.validate_log_sources().is_ok());
     }
 }
 

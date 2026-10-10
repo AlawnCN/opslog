@@ -69,6 +69,10 @@ export const useLogResources = ({ environmentName, request, cache, onNotice }: L
     if (!request || !id) return;
     try {
       const loaded = await loadLog(row);
+      if (!loaded.value.trim()) {
+        onNotice({ tone: "info", text: "未找到明细日志，文件可能已清理；未生成空日志文件。" });
+        return;
+      }
       const path = await saveTransactionLogContent(id, loaded.value);
       if (path) onNotice({ tone: "info", text: `交易日志已保存：${path}` });
     } catch (error) {

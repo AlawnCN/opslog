@@ -323,7 +323,7 @@ export const loadAiConfiguration = async (): Promise<AiConfiguration> => {
   return response.json();
 };
 
-export interface SshLogSample { name: string; samples: Array<{ server: string; files: Array<{ path: string; size: number; content: string }> }>; warnings: string[] }
+export interface SshLogSample { name: string; samples: Array<{ server: string; files: Array<{ path: string; size: number; modifiedAt?: number; summarySelected?: boolean; content: string }> }>; warnings: string[] }
 const cancellableDesktopInvoke = async <Result>(command: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Result> => {
   if (signal?.aborted) throw new DOMException("Operation cancelled", "AbortError");
   const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0")).join("");

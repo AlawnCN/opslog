@@ -38,3 +38,8 @@ src-tauri/icons/64x64.png
 src-tauri/icons/icon.png
 .idea/
 .vscode/
+
+# Local integration reports contain real infrastructure and business identifiers.
+docs/environment-configuration-fixes.md
+docs/ssh-138-ai-detail-fixes.md
+docs/ssh-elk-uat-comparison.md

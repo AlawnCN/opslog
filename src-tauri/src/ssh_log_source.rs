@@ -31,7 +31,7 @@ fn normalized_ssh_script(script: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod line_ending_tests {
-    use super::{normalized_ssh_script, TRANSACTION_LIST_SCRIPT};
+    use super::{normalized_ssh_script, parse_transaction_line, TRANSACTION_LIST_SCRIPT};
     use std::borrow::Cow;
 
     #[test]
@@ -41,6 +41,21 @@ mod line_ending_tests {
         assert!(normalized.starts_with("set -eu\n"));
         assert!(!normalized.contains('\r'));
         assert!(matches!(normalized_ssh_script(TRANSACTION_LIST_SCRIPT), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn uat_summary_envelopes_preserve_result_trace_and_source() {
+        let trace = "0123456789abcdef0123456789abcdef";
+        for prefix in ["", "|"] {
+            let line = format!("2026-10-09 12:00:00,123 -> {prefix}TX-123|FT1|KE|cte.u_0_71|transflow|dynamicCall|22|09 12:00:00,101|{trace}|{{\"text\":\"a|b\"}}|SCM60001|key [BSP|batch|default] not found||cte.u_0_71|");
+            let row = parse_transaction_line(&line, "uat1", "cte", chrono::FixedOffset::east_opt(10800).unwrap()).unwrap();
+            assert_eq!(row["ecp.txn.id"], "TX-123");
+            assert_eq!(row["ecp.txn.trace"], trace);
+            assert_eq!(row["ecp.txn.message.code"], "SCM60001");
+            assert_eq!(row["ecp.txn.message.info"], "key [BSP|batch|default] not found");
+            assert_eq!(row["ecp.txn.src.node.id"], "cte.u_0_71");
+            assert_eq!(row["ecp.txn.duration"], 22);
+        }
     }
 }
 
@@ -375,7 +390,8 @@ fn parse_transaction_line(
     application: &str,
     offset: FixedOffset,
 ) -> Option<Map<String, Value>> {
-    let (timestamp, body) = line.split_once(" -> |")?;
+    let (timestamp, body) = line.split_once(" -> ")?;
+    let body = body.strip_prefix('|').unwrap_or(body);
     let body = body.strip_suffix('|')?;
     let (parts, code, message, source_node) = transaction_fields(body)?;
     let timestamp = parse_timestamp(timestamp, offset)?.to_rfc3339();
@@ -390,7 +406,7 @@ fn parse_transaction_line(
         ("ecp.txn.service", parts[5].to_string()),
         ("ecp.txn.message.code", code.to_string()),
         ("ecp.txn.message.info", message.to_string()),
-        ("ecp.txn.trace", String::new()),
+        ("ecp.txn.trace", parts[8].to_string()),
         ("ecp.txn.server", host.to_string()),
         ("ecp.txn.src.node.id", source_node.to_string()),
         ("opslog.source.application", application.to_string()),
@@ -681,7 +697,7 @@ async fn search_configured(environment: &EnvironmentConfig, application: &SshApp
                 row.insert("ecp.txn.timestamp".to_string(),Value::String(timestamp));
                 row.insert("ecp.txn.duration".to_string(),Value::from(value["duration"].as_str().and_then(|v|v.parse::<f64>().ok()).unwrap_or(0.0)));
                 row.insert("ecp.txn.server".to_string(),Value::String(host.clone()));
-                row.insert("ecp.txn.src.node.id".to_string(),Value::String(String::new()));
+                row.insert("ecp.txn.src.node.id".to_string(),Value::String(value["sourceNode"].as_str().unwrap_or_default().to_string()));
             } else {
                 for (field,text) in [("@timestamp",timestamp.clone()),("ecp.log.timestamp",timestamp),("ecp.log.application",application.name.clone()),("ecp.log.file",record["file"].as_str().unwrap_or_default().to_string()),("ecp.log.level",value["level"].as_str().unwrap_or_default().to_string()),("ecp.log.thread",value["thread"].as_str().unwrap_or_default().to_string()),("message",value["message"].as_str().unwrap_or_default().to_string()),("trace.id",value["traceId"].as_str().unwrap_or_default().to_string()),("host.name",host.clone())] {row.insert(field.to_string(),Value::String(text));}
             }
@@ -819,17 +835,7 @@ pub async fn read_transaction(
         return Err("日志 ID 包含不允许的字符".to_string());
     }
     let application = selected_application(environment, requested_application)?;
-    if application.log_sources.iter().any(|source| matches!(source["role"].as_str(), Some("detail" | "transactionEvent"))) {
-        let (group, _) = configured_output(environment, &application, start, end, "detail", 20_000, serde_json::json!({"txnId":id})).await?;
-        let mut content = String::new();
-        for (server, raw) in group.outputs {
-            content.push_str(&format!("\n===== OPSLOG SERVER: {} =====\n",if server.name.is_empty(){server.host}else{server.name}));
-            for record in configured_records(&raw)? {content.push_str(record["raw"].as_str().unwrap_or_default()); content.push('\n');}
-            for message in raw.lines().filter_map(|line|line.strip_prefix("@OPSLOG_SCAN_LIMIT\t")){content.push_str(&format!("\n[{message}]\n"));}
-        }
-        for warning in group.warnings {content.push_str(&format!("\n[{warning}]\n"));}
-        return Ok(content);
-    }
+    // Only the exact ID-named TRC is a transaction detail resource.
     let offset = resolved_log_offset(environment).await?;
     let days = days_in_range(start, end, offset)?;
     let root = application_root(&application)?;

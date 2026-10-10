@@ -6,7 +6,8 @@ import {
   serializeEncryptedEnvironmentConfigurations
 } from "../web/src/environment-credential-transfer";
 import type { EnvironmentConfiguration } from "../web/src/types";
-import { parseEnvironmentConfigurationFile, serializeEnvironmentConfigurations } from "../web/src/environment-configuration";
+import { nextSshServerName, sshOffsetForTimeZone, parseEnvironmentConfigurationFile, prepareEnvironmentConfigurationsForSave, serializeEnvironmentConfigurations, validateEnvironmentConfigurations } from "../web/src/environment-configuration";
+import { defaultSshLogSources } from "../shared/ssh-log-defaults";
 
 const environments: EnvironmentConfiguration[] = [{
   name: "uat-elk",
@@ -29,6 +30,69 @@ const environments: EnvironmentConfiguration[] = [{
   sshServers: [{ name: "primary", host: "logs.example.test", username: "ops", authentication: "password", password: "ssh-secret", hostKeyFingerprint: `SHA256:${"A".repeat(43)}` }],
   sshMonitoredApplications: [{ name: "cte", directory: "/var/log/cte" }]
 }];
+
+test("保存保留所有 SSH 应用的解析参数和分析说明，不受其他环境修改影响", () => {
+  const drafts = structuredClone(environments);
+  const sources = defaultSshLogSources();
+  sources[0]!.paths = ["^log/txn_.*\\.lst$", "^trc/{day}/.*\\.trc$"];
+  drafts[1]!.sshMonitoredApplications = [{ name: "cte", directory: "/var/log/cte/", logSources: sources, analysisNotes: ["review-note"] }];
+  drafts[0]!.name = "changed-elk";
+  const before = structuredClone(drafts);
+  assert.equal(validateEnvironmentConfigurations(drafts), undefined);
+  const saved = prepareEnvironmentConfigurationsForSave(drafts);
+  assert.deepEqual(saved[1]?.sshMonitoredApplications?.[0]?.logSources, sources);
+  assert.deepEqual(saved[1]?.sshMonitoredApplications?.[0]?.analysisNotes, ["review-note"]);
+  assert.equal(saved[1]?.sshMonitoredApplications?.[0]?.directory, "/var/log/cte");
+  assert.equal(saved[1]?.sshServers?.[0]?.password, "ssh-secret");
+  assert.deepEqual(drafts, before);
+  const restored = parseEnvironmentConfigurationFile(JSON.stringify(saved));
+  assert.deepEqual(restored[1]?.sshMonitoredApplications, saved[1]?.sshMonitoredApplications);
+});
+
+test("路径正则语法错误返回具体行号，不静默保存非法正则", () => {
+  const draft = structuredClone(environments[1]!);
+  const sources = defaultSshLogSources().slice(0, 1);
+  sources[0]!.paths = ["^log/txn_.*\\.lst$", "^trc/{day}/(*\\.trc$"];
+  draft.sshMonitoredApplications = [{ name: "cte", directory: "/var/log/cte", logSources: sources }];
+  assert.match(validateEnvironmentConfigurations([draft]) ?? "", /第 2 行无效/);
+  sources[0]!.paths[1] = "^trc/{day}/.*\\.trc$";
+  assert.equal(validateEnvironmentConfigurations([draft]), undefined);
+});
+
+test("保存规范化保留根目录映射", () => {
+  const draft = structuredClone(environments[1]!);
+  draft.sshMonitoredApplications = [{ name: "cte", directory: "/" }];
+  assert.equal(prepareEnvironmentConfigurationsForSave([draft])[0]?.sshMonitoredApplications?.[0]?.directory, "/");
+});
+
+test("新增服务器名称跳过已占用名称（包含大小写差异）", () => {
+  const servers = ["server-1", "SERVER-3"].map((name) => ({ name, host: "example.test", authentication: "ssh-config" as const }));
+  assert.equal(nextSshServerName(servers), "server-2");
+  assert.equal(nextSshServerName([...servers, { ...servers[0]!, name: "server-2" }]), "server-4");
+});
+
+test("时区联动派生正确偏移，包括负数和夏令时", () => {
+  assert.equal(sshOffsetForTimeZone("Asia/Shanghai"), "+08:00");
+  assert.equal(sshOffsetForTimeZone("UTC"), "+00:00");
+  assert.equal(sshOffsetForTimeZone("America/New_York", new Date("2026-01-01T00:00:00Z")), "-05:00");
+  assert.equal(sshOffsetForTimeZone("America/New_York", new Date("2026-07-01T00:00:00Z")), "-04:00");
+  assert.equal(sshOffsetForTimeZone("invalid-zone"), "未知时区");
+});
+
+test("字段提取及成功码正则在保存前校验语法与捕获组", () => {
+  const draft = structuredClone(environments[1]!);
+  const source = defaultSshLogSources()[0]!;
+  draft.sshMonitoredApplications = [{ name: "cte", directory: "/var/log/cte", logSources: [source] }];
+  source.fields.timestamp = { regex: "(" };
+  assert.match(validateEnvironmentConfigurations([draft]) ?? "", /正则语法无效/);
+  source.fields.timestamp = { regex: "\\d+" };
+  assert.match(validateEnvironmentConfigurations([draft]) ?? "", /捕获组/);
+  source.fields.timestamp = { regex: "(\\d+)" };
+  source.successPattern = "[";
+  assert.match(validateEnvironmentConfigurations([draft]) ?? "", /正则语法无效/);
+  source.successPattern = "00000$";
+  assert.equal(validateEnvironmentConfigurations([draft]), undefined);
+});
 
 test("加密环境配置不保存明文密码并可还原 ELK 与 SSH 密码", async () => {
   const contents = await serializeEncryptedEnvironmentConfigurations(environments, "long-enough-passphrase");

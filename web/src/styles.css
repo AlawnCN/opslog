@@ -96,6 +96,22 @@ body.is-reordering-environments, body.is-reordering-environments * { cursor: gra
 .environment-config-group-title { display: flex; align-items: center; gap: 9px; margin-top: 3px; padding: 13px 0 1px; border-top: 1px solid #172f41; }.environment-config-group-title > span { color: #b9ccd8; font-size: var(--font-body); font-weight: 650; }.environment-config-group-title small { color: #5e7d92; font-size: var(--font-caption); }
 .environment-remove-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding: 13px 14px; border: 1px solid rgba(255, 107, 122, .2); border-radius: 5px; background: rgba(255, 107, 122, .025); }.environment-remove-zone > div:first-child { display: flex; flex-direction: column; gap: 3px; }.environment-remove-zone strong { color: #d9b4ba; font-size: var(--font-control); }.environment-remove-zone span { color: #806f79; font-size: var(--font-caption); }.environment-remove-zone > button, .environment-remove-confirm button { min-height: 31px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid #79434c; border-radius: 4px; background: transparent; color: #d17c88; font-size: var(--font-control); cursor: pointer; }.environment-remove-zone > button:disabled { opacity: .35; cursor: default; }.environment-remove-zone svg { width: 14px; height: 14px; }.environment-remove-confirm { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }.environment-remove-confirm > span { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.environment-remove-confirm button { border-color: #3a4f60; color: #92a7b5; }.environment-remove-confirm button.danger { border-color: #a94d59; background: #913e49; color: #fff; }
 .environment-config-error { margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--red); background: rgba(255, 107, 122, .06); color: #efa1ab; font-size: var(--font-control); }
+.environment-config-save-error { flex: 0 0 auto; margin: 0; padding: 10px 22px; max-height: 100px; overflow: auto; overflow-wrap: anywhere; }
+.environment-config-workspace > aside { overflow-y: auto; }
+.environment-config-list { min-height: 180px; flex-shrink: 0; }
+.environment-config-transfer, .environment-create-actions { flex-shrink: 0; }
+.environment-draft-status { flex: 1; align-self: center; color: #91b6c8; font-size: var(--font-caption); }
+.environment-time-zone-warning { color: #efbf79; font-size: var(--font-caption); }
+.environment-discard-backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; background: #020b13b8; }
+.environment-discard-backdrop > section { width: min(440px, calc(100vw - 40px)); padding: 24px; border: 1px solid #315269; border-radius: 7px; background: #081624; color: var(--text); box-shadow: 0 20px 70px #0008; }
+.environment-discard-backdrop h2 { margin-top: 0; font-size: var(--font-title); }
+.environment-discard-backdrop p { color: #91b6c8; }
+.environment-discard-backdrop section > div { display: flex; justify-content: flex-end; gap: 10px; }
+.environment-discard-backdrop button { padding: 9px 14px; background: #0a1b2a; border: 1px solid #315269; color: var(--text); cursor: pointer; }
+.ssh-rule-validation { color: #efa1ab; border-left: 2px solid var(--red); padding: 8px 12px; margin-bottom: 12px; background: rgba(255, 107, 122, .06); }
+.ssh-rule-validation p { margin: 0; }
+.ssh-source-card .ssh-rule-invalid-badge { color: #efa1ab; }
+.ssh-source-parameters textarea[aria-invalid="true"], .ssh-source-parameters input[aria-invalid="true"] { border-color: var(--red); }
 .environment-config-notice { margin: 14px 0 0; padding: 10px 12px; border-left: 2px solid var(--cyan); background: rgba(42, 212, 224, .05); color: #8fc4d3; font-size: var(--font-control); }
 .environment-config-dialog > footer { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 9px; padding: 12px 21px; border-top: 1px solid #20394e; background: #071421; }.environment-config-dialog > footer button { min-width: 84px; height: 33px; padding: 0 14px; border: 1px solid #2b485c; border-radius: 4px; background: #0a1b2a; color: #94aebf; font-size: var(--font-control); cursor: pointer; }.environment-config-dialog > footer button.primary { min-width: 112px; border-color: #23869b; background: #16758a; color: #f1fdff; font-weight: 700; box-shadow: 0 5px 16px rgba(15, 104, 124, .22); }.environment-config-dialog > footer button.primary:hover:not(:disabled) { border-color: #35ccda; background: #1b899e; }.environment-config-dialog > footer button:disabled { opacity: .45; cursor: wait; }
 .environment-control { display: flex; align-items: center; gap: 10px; }
@@ -290,7 +306,7 @@ h1, h2 { margin: 3px 0 0; font-size: 18px; font-weight: 600; letter-spacing: .02
 .notice.error { border-color: #6a3040; color: #ffb2bc; }.notice.error i { background: var(--red); }
 .notice.info { border-color: #27576e; color: #a7d9ee; }.notice.info i { background: var(--blue); }
 .notice button { margin-left: auto; border: 0; background: none; color: inherit; cursor: pointer; font-size: 18px; }
-.ssh-host-key-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(2, 8, 17, .82); }
+.ssh-host-key-backdrop { position: fixed; z-index: 130; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(2, 8, 17, .82); }
 .ssh-host-key-dialog { width: min(520px, 100%); padding: 28px; border: 1px solid #29647a; background: #071b2b; color: #d4e8f1; box-shadow: 0 20px 60px #0008; }
 .ssh-host-key-dialog h2 { margin: 0 0 16px; }
 .ssh-host-key-dialog p { line-height: 1.6; }

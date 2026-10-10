@@ -247,7 +247,7 @@ const transactionFields = (body: string): { prefix: string[]; code: string; mess
 };
 
 const parseTransactionLine = (line: string, host: string, offset: string): Record<string, unknown> | undefined => {
-  const match = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\s+->\s+\|(.*)\|$/.exec(line);
+  const match = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.,]\d{3})\s+->\s+\|?(.*)\|$/.exec(line);
   if (!match) return undefined;
   const fields = transactionFields(match[2]!);
   if (!fields) return undefined;
@@ -265,7 +265,7 @@ const parseTransactionLine = (line: string, host: string, offset: string): Recor
     "ecp.txn.duration": Number(parts[6]) || 0,
     "ecp.txn.message.code": fields.code,
     "ecp.txn.message.info": fields.message,
-    "ecp.txn.trace": "",
+    "ecp.txn.trace": parts[8],
     "ecp.txn.server": host,
     "ecp.txn.src.node.id": fields.source
   };
@@ -402,7 +402,7 @@ const searchConfiguredLogs = async (environment: EnvironmentConfig, input: Searc
       for (const [field, key] of Object.entries({ timestamp: "timestamp", id: "logId", no: "txnNo", business: "business", service: "service", node: "node", tenant: "tenant", trace: "traceId", "message.code": "messageCode", "message.info": "messageInfo" })) row[`ecp.txn.${field}`] = field === "timestamp" ? timestamp : value[key] ?? "";
       row["ecp.txn.duration"] = Number(value.duration) || 0;
       row["ecp.txn.server"] = server.name || server.host;
-      row["ecp.txn.src.node.id"] = "";
+      row["ecp.txn.src.node.id"] = value.sourceNode ?? "";
     } else {
       Object.assign(row, { "@timestamp": timestamp, "ecp.log.timestamp": timestamp, "ecp.log.application": application.name, "ecp.log.file": file,
         "ecp.log.level": value.level ?? "", "ecp.log.thread": value.thread ?? "", message: value.message ?? content, "trace.id": value.traceId ?? "", "host.name": server.name || server.host });
@@ -476,10 +476,8 @@ export const searchSshLogs = async (environment: EnvironmentConfig, input: Searc
 export const readSshTransactionLog = async (environment: EnvironmentConfig, id: string, startTime: string, endTime: string, application?: string): Promise<string> => {
   if (!SAFE_LOG_ID.test(id)) throw new Error("日志 ID 包含不允许的字符");
   const selected = selectedApplication(environment, { application } as SearchInput);
-  if (selected.logSources?.some((source) => source.role === "detail" || source.role === "transactionEvent")) {
-    const result = await configuredOutput(environment, { environment: environment.name, kind: "transaction", application, txnId: id, startTime, endTime, page: 1, pageSize: 100 }, "detail", 20_000);
-    return result.outputs.map(({ server, raw }) => `===== OPSLOG SERVER: ${server.name || server.host} =====\n${configuredRows(raw).map((row) => row.raw).join("\n")}`).join("\n") + result.warnings.concat(scanWarnings(result)).map((warning) => `\n[${warning}]`).join("");
-  }
+  // A transaction resource is the exact ID-named file, never matching fragments
+  // from configurable event/database sources (even when those share its MsgId).
   const { offset } = await resolveSshTimeProfile(environment);
   const days = daysInRange(startTime, endTime, offset).join(",");
   const group = await runAcrossServers(environment, TRANSACTION_CONTENT_SCRIPT, [applicationRoot(selected), id, days], 300);

@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SSH_CONFIGURATION_PROMPT } from "../../../shared/ssh-log-rules";
 import { parseSshAiResult } from "../../../shared/ssh-ai-result";
+import { prepareSshAiSamples, validateSshAiSamples } from "../../../shared/ssh-ai-samples";
 import { activateAiConfiguration, analyzeLogWithAi, deleteAiConfiguration, errorMessage, loadAiConfiguration, sampleSshLogs, saveAiConfiguration, type AiConfiguration, type SaveAiConfigurationInput, type SshLogSample } from "../api";
-import type { EnvironmentConfiguration, SshApplicationConfiguration } from "../types";
+import type { EnvironmentConfiguration, SshApplicationConfiguration, SshServerConfiguration } from "../types";
 import { validateEnvironmentConfigurations } from "../environment-configuration";
+import { parseSshHostKeyChallenge, trustSshHostKey, type SshHostKeyChallenge } from "../ssh-host-key";
 import { AiLogConfigurationDialog } from "./AiLogConfigurationDialog";
 import { AiSparkIcon, SettingsIcon } from "./Icons";
 import { SshLogRulesEditor } from "./SshLogRulesEditor";
+import { SshHostKeyDialog } from "./SshHostKeyDialog";
 
-interface Props { environment: EnvironmentConfiguration; onApply: (applications: SshApplicationConfiguration[]) => void }
-export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
+interface Props { environment: EnvironmentConfiguration; onApply: (applications: SshApplicationConfiguration[]) => void; onTrustServer: (servers: SshServerConfiguration[]) => void; onPendingChange: (pending: boolean) => void }
+export const SshAiConfigurationAnalysis = ({ environment, onApply, onTrustServer, onPendingChange }: Props) => {
   const [configuration, setConfiguration] = useState<AiConfiguration>();
   const [configOpen, setConfigOpen] = useState(false);
   const [analyzeAfterSave, setAnalyzeAfterSave] = useState(false);
@@ -21,30 +24,43 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
   const [proposal, setProposal] = useState<SshApplicationConfiguration[]>();
   const [rawResponse, setRawResponse] = useState("");
   const [status, setStatus] = useState("");
-  const [phase, setPhase] = useState<"idle" | "preparing" | "sampling" | "analyzing" | "complete" | "applied" | "cancelled" | "error">("idle");
+  const [pendingHostKey, setPendingHostKey] = useState<SshHostKeyChallenge>();
+  const [phase, setPhase] = useState<"idle" | "preparing" | "sampling" | "trust" | "analyzing" | "complete" | "applied" | "cancelled" | "error">("idle");
   const feedback = useRef<HTMLDivElement>(null);
   const controller = useRef<AbortController | undefined>(undefined);
   const snapshot = useRef("");
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => { onPendingChange(busy || !!proposal || !!pendingHostKey || configOpen); }, [busy, proposal, pendingHostKey, configOpen, onPendingChange]);
+  useEffect(() => () => onPendingChange(false), [onPendingChange]);
   useEffect(() => {
     if (!["complete", "error"].includes(phase)) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     feedback.current?.scrollIntoView({block:"nearest",behavior:reducedMotion?"auto":"smooth"});
     feedback.current?.focus({preventScroll:true});
   }, [phase]);
-  const sample = async (current: AiConfiguration) => {
-    const invalid = validateEnvironmentConfigurations([environment]);
+  const requireHostKeyTrust = (message: string): boolean => {
+    const challenge = parseSshHostKeyChallenge(message);
+    if (!challenge) return false;
+    setPendingHostKey(challenge);
+    setError(undefined);
+    setPhase("trust");
+    setStatus("请先核对并确认 SSH 服务器指纹；确认后将自动继续采样和 AI 分析。");
+    return true;
+  };
+  const sample = async (current: AiConfiguration, target = environment) => {
+    const invalid = validateEnvironmentConfigurations([target]);
     if (invalid) { setError(invalid); setPhase("error"); setBusy(false); return; }
     controller.current?.abort(); const next = new AbortController(); controller.current = next;
-    snapshot.current = JSON.stringify(environment);
+    snapshot.current = JSON.stringify(target);
     setBusy(true); setPhase("sampling"); setError(undefined); setProposal(undefined); setRawResponse(""); setSamples(undefined); setStatus("正在限量采样服务器日志…");
     try {
-      const result = await sampleSshLogs(environment, next.signal);
+      const result = await sampleSshLogs(target, next.signal);
       if (next.signal.aborted) return;
+      if (result.some((app) => app.warnings.some(requireHostKeyTrust))) return;
       if (!result.some((app) => app.samples.some((server) => server.files.length))) throw new Error("未找到日志样本，请检查应用目录与读取权限");
       setSamples(result);
-      await analyze(result, current, next);
-    } catch (cause) { if (!next.signal.aborted) { setError(errorMessage(cause)); setPhase("error"); setStatus(""); } }
+      await analyze(result, current, next, target);
+    } catch (cause) { if (!next.signal.aborted && !requireHostKeyTrust(errorMessage(cause))) { setError(errorMessage(cause)); setPhase("error"); setStatus(""); } }
     finally { if (!next.signal.aborted) setBusy(false); }
   };
   const begin = async () => {
@@ -56,19 +72,15 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
       await sample(current);
     } catch (cause) { if(!next.signal.aborted) {setError(errorMessage(cause));setBusy(false);setPhase("error");setStatus("");} }
   };
-  const analyze = async (collected: SshLogSample[], current: AiConfiguration, next: AbortController) => {
+  const analyze = async (collected: SshLogSample[], current: AiConfiguration, next: AbortController, target: EnvironmentConfiguration) => {
     if (next.signal.aborted) return;
     const profile = current.profiles.find((item) => item.id === current.activeProfileId);
     if (!profile?.configured) throw new Error("请先配置 AI 服务");
-    if (snapshot.current !== JSON.stringify(environment)) throw new Error("环境配置已变更，请重新采样");
+    if (snapshot.current !== JSON.stringify(target)) throw new Error("环境配置已变更，请重新采样");
     const budget = Math.min(profile.maxLogCharacters, 120_000);
-    const context = collected.map((app) => ({ ...app, samples: app.samples.map((server) => ({ ...server, files: server.files.slice(0, 6).map((file) => ({ ...file, content: file.content.slice(0, 3000) })) })) }));
+    const context = prepareSshAiSamples(collected, budget - SSH_CONFIGURATION_PROMPT.length - 1000);
     const buildPrompt = () => `${SSH_CONFIGURATION_PROMPT}\n用户已配置应用：${JSON.stringify(collected.map(({name})=>name))}\n以下是限量日志样本，可能截断、缺失或已脱敏：\n${JSON.stringify(context)}`;
-    while (buildPrompt().length > budget) {
-      const file = context.flatMap((app) => app.samples.flatMap((server) => server.files)).sort((a,b) => b.content.length - a.content.length)[0];
-      if (!file || file.content.length < 256) throw new Error("当前模型输入上限不足，请提高日志输入上限或减少监控应用");
-      file.content = file.content.slice(0, Math.floor(file.content.length / 2));
-    }
+    if (buildPrompt().length > budget) throw new Error("当前模型输入上限不足，请提高日志输入上限或减少监控应用");
     const prompt = buildPrompt();
     setBusy(true); setPhase("analyzing"); setError(undefined); setProposal(undefined); setRawResponse(""); setStatus("正在分析日志样本并校验参数…");
     try {
@@ -78,9 +90,10 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
       // Applying always revalidates it; invalid output never changes the draft.
       setRawResponse(result.content);
       const parsed = parseSshAiResult(result.content);
-      const names = new Set(environment.sshMonitoredApplications?.map((app) => app.name));
+      validateSshAiSamples(parsed, context);
+      const names = new Set(target.sshMonitoredApplications?.map((app) => app.name));
       if (new Set(parsed.applications.map((app) => app.name)).size !== parsed.applications.length || parsed.applications.some((app) => !names.has(app.name))) throw new Error("AI 返回了未配置或重复的应用，未应用结果");
-      setProposal((environment.sshMonitoredApplications ?? []).map((app)=>{
+      setProposal((target.sshMonitoredApplications ?? []).map((app)=>{
         const inferred=parsed.applications.find((item)=>item.name===app.name);
         return inferred?{...app,logSources:inferred.logSources,analysisNotes:parsed.notes}:app;
       }));
@@ -92,6 +105,7 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
     try {
       if (snapshot.current !== JSON.stringify(environment)) throw new Error("环境配置已变更，请重新分析");
       if (!proposal) return;
+      if (samples) validateSshAiSamples({ applications: proposal.map(app => ({ name: app.name, logSources: app.logSources ?? [] })), notes: [] }, samples);
       const invalid = validateEnvironmentConfigurations([{...environment,sshMonitoredApplications:proposal}]);
       if (invalid) throw new Error(invalid);
       onApply(proposal);
@@ -104,9 +118,20 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
     catch (cause) { setError(errorMessage(cause)); }
     finally { setSaving(false); }
   };
+  const confirmHostKey = () => {
+    const challenge = pendingHostKey;
+    if (!challenge || !configuration) return;
+    try {
+      const sshServers = trustSshHostKey(environment.sshServers ?? [], challenge);
+      const trusted = { ...environment, sshServers };
+      onTrustServer(sshServers);
+      setPendingHostKey(undefined);
+      void sample(configuration, trusted);
+    } catch (cause) { setPendingHostKey(undefined); setError(errorMessage(cause)); setPhase("error"); setStatus(""); }
+  };
   return <section className="ssh-ai-rules is-wide">
     <div className="environment-repeatable-heading"><div><strong>日志解析参数</strong><small>支持手动配置；AI 辅助生成参数，应用目录由用户维护。</small></div><div className="ssh-ai-actions" role="group" aria-label="AI 分析与设置">
-      <button type="button" disabled={busy} aria-busy={busy} onClick={() => void begin()}>{busy?<span className="button-spinner" aria-hidden="true"/>:<AiSparkIcon />}{busy?(phase==="analyzing"?"分析中…":phase==="sampling"?"采样中…":"准备中…"):"AI 分析"}</button>
+      <button type="button" disabled={busy || !!proposal} title={proposal ? "请先应用参数或放弃当前结果" : undefined} aria-busy={busy} onClick={() => void begin()}>{busy?<span className="button-spinner" aria-hidden="true"/>:<AiSparkIcon />}{busy?(phase==="analyzing"?"分析中…":phase==="sampling"?"采样中…":"准备中…"):"AI 分析"}</button>
       <button type="button" className="ssh-ai-settings" disabled={busy} aria-label="AI 设置" title="AI 设置" onClick={() => void loadAiConfiguration().then((value) => { setConfiguration(value); setAnalyzeAfterSave(false); setConfigOpen(true); }).catch((cause) => setError(errorMessage(cause)))}><SettingsIcon /></button>
     </div></div>
     <div ref={feedback} tabIndex={-1} className={`ssh-ai-feedback is-${phase}`}>
@@ -126,5 +151,6 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply }: Props) => {
       onActivate={(id)=>void activateAiConfiguration(id).then(setConfiguration).catch((cause)=>setError(errorMessage(cause)))}
       onDelete={async(id)=>{setConfiguration(await deleteAiConfiguration(id));}}
       onImport={async(profiles,activeId)=>{for(const input of profiles)setConfiguration(await saveAiConfiguration({...input,setActive:input.id===activeId}));}} />, document.body)}
+    {pendingHostKey && <SshHostKeyDialog challenge={pendingHostKey} busy={false} detail="确认后先更新当前环境草稿，并自动继续 AI 分析；请在完成后保存配置。" onCancel={() => { setPendingHostKey(undefined); setPhase("cancelled"); setStatus("已取消主机指纹确认；当前参数未变更。"); }} onConfirm={confirmHostKey} />}
   </section>;
 };

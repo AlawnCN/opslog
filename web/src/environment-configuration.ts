@@ -1,4 +1,5 @@
 import { sshLogSourceSchema } from "../../shared/ssh-log-rules";
+import { timeZoneOffsetLabel } from "./time";
 import type {
   EnvironmentConfiguration,
   SshApplicationConfiguration,
@@ -13,6 +14,18 @@ const defaultSshServer = (sequence = 1): SshServerConfiguration => ({
 });
 
 const defaultSshApplication = (): SshApplicationConfiguration => ({ name: "cte", directory: "/home/coradm/cte" });
+
+export const nextSshServerName = (servers: SshServerConfiguration[]): string => {
+  const used = new Set(servers.map((server) => server.name.trim().toLowerCase()));
+  let sequence = 1;
+  while (used.has(`server-${sequence}`)) sequence++;
+  return `server-${sequence}`;
+};
+
+export const sshOffsetForTimeZone = (timeZone: string, date = new Date()): string => {
+  try { return timeZoneOffsetLabel(timeZone, date).replace("UTC ", "").replace("−", "-"); }
+  catch { return "未知时区"; }
+};
 
 const normalizeSshServer = (server: SshServerConfiguration): SshServerConfiguration => {
   const { port, ...rest } = server;
@@ -105,6 +118,18 @@ const validTimeZone = (timeZone: string): boolean => {
   try { new Intl.DateTimeFormat("zh-CN", { timeZone }).format(); return true; } catch { return false; }
 };
 
+export const prepareEnvironmentConfigurationsForSave = (items: EnvironmentConfiguration[]): EnvironmentConfiguration[] => items.map((rawItem) => {
+  const item = normalizeEnvironmentConfiguration(rawItem);
+  return {
+    ...item, name: item.name.trim(), kibanaUrl: item.kibanaUrl.trim(), timeZone: item.timeZone?.trim(),
+    sshHost: undefined, sshBaseDirectory: undefined, sshApplications: undefined,
+    sshServers: item.sourceType === "ssh" ? item.sshServers?.map((server) => ({ ...server, name: server.name.trim(), host: server.host.trim(), username: server.username?.trim(), privateKeyPath: server.privateKeyPath?.trim() })) : [],
+    sshMonitoredApplications: item.sourceType === "ssh" ? item.sshMonitoredApplications?.map((application) => ({
+      ...application, name: application.name.trim(), directory: application.directory.trim().replace(/\/+$/, "") || "/"
+    })) : []
+  };
+});
+
 export const validateEnvironmentConfigurations = (items: EnvironmentConfiguration[]): string | undefined => {
   if (!items.length) return "至少需要保留一个运行环境";
   const names = new Set<string>();
@@ -134,7 +159,8 @@ export const validateEnvironmentConfigurations = (items: EnvironmentConfiguratio
           const parsed = sshLogSourceSchema.safeParse(source);
           if (!parsed.success) {
             const issue = parsed.error.issues[0];
-            return `${item.name} / ${application.name} / ${source.name || "未命名日志源"}：${issue?.path.join(".") || "参数"} ${issue?.message || "无效"}`;
+            const field = issue?.path[0] === "paths" ? "" : `${issue?.path.join(".") || "参数"} `;
+            return `${item.name} / ${application.name} / ${source.name || "未命名日志源"}：${field}${issue?.message || "无效"}`;
           }
         }
         if (!/^[A-Za-z0-9._-]+$/.test(application.name)) return `${item.name}：应用标识仅支持字母、数字、点、下划线与连字符`;

@@ -2,8 +2,8 @@ set -eu
 decode_arg() { if [ "$1" = "-" ]; then return 0; fi; printf '%s' "$1" | perl -pe 's/([0-9a-f]{2})/chr(hex($1))/ge'; }
 root=$(decode_arg "$1")
 if [ ! -d "$root" ]; then
-  parent=$(dirname "$root")
-  if [ "$(basename "$root")" = "$(basename "$parent")" ] && [ -d "$parent/log" ] && [ -d "$parent/trc" ]; then root=$parent; fi
+  printf '%s\n' 'Configured application directory does not exist; refusing to search parent directories' >&2
+  exit 1
 fi
 days=$(decode_arg "$2")
 txn_id=$(decode_arg "$3")
@@ -32,7 +32,9 @@ stream_summaries | perl -e '
 use strict;
 use warnings;
 use File::Basename qw(dirname);
-my ($start, $end, $limit, $id_filter, @needles) = @ARGV;
+use Cwd qw(realpath);
+my ($root, $start, $end, $limit, $id_filter, @needles) = @ARGV;
+my $realroot = realpath($root) // die "Invalid application directory";
 my $minimum = pop @needles;
 $limit = int($limit);
 $minimum = 0 + ($minimum || 0);
@@ -103,6 +105,8 @@ sub collect_line {
 my @paths = sort { (stat($b))[9] <=> (stat($a))[9] } map { chomp; $_ } <STDIN>;
 my $scanned_paths = 0;
 for my $path (@paths) {
+  my $real = realpath($path) // next;
+  next unless index($real, "$realroot/") == 0;
   $scanned_paths++;
   my @stat = stat($path);
   next unless @stat;
@@ -159,6 +163,8 @@ sub matches_details {
   my $overlap = 0;
   for my $needle (@needles) { $overlap = length($needle) - 1 if length($needle) - 1 > $overlap; }
   for my $path (@{$detail_files{"$record->{directory}\0$id"} || []}) {
+    my $real = realpath($path) // next;
+    next unless index($real, "$realroot/") == 0;
     if (!$detail_budget) { $incomplete = 1; last; }
     open my $file, "<:raw", $path or next;
     my $remaining = $detail_budget < 1048576 ? $detail_budget : 1048576;
@@ -195,4 +201,4 @@ for my $record (sort { $b->{stamp} cmp $a->{stamp} } values %records) {
   last if ++$emitted >= $limit;
 }
 print "\@OPSLOG_SCAN_LIMIT\t扫描达到预算上限，当前结果可能不完整\n" if $incomplete;
-' "$start_time" "$end_time" "$limit" "$txn_id" "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info" "$minimum_duration"
+' "$root" "$start_time" "$end_time" "$limit" "$txn_id" "$txn_no" "$business" "$service" "$node" "$message_code" "$message_info" "$minimum_duration"
