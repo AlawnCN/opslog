@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironmentConfiguration, loadEnvironments, loadWebRuntimeInfo, searchLogs } from "./api";
+import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironmentConfiguration, loadEnvironments, loadWebRuntimeInfo, searchLogs, releaseSshConnections } from "./api";
 import { initialFilters, initialPageSize, PAGE_SIZE_KEY, PAGE_SIZES } from "./app-defaults";
 import { DataTable } from "./components/DataTable";
 import { AppSelect } from "./components/AppSelect";
@@ -28,6 +28,16 @@ const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawe
 export default function App() {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [environmentName, setEnvironmentName] = useState("");
+  const connectionEnvironment = useRef("");
+  useEffect(() => {
+    const previous = connectionEnvironment.current;
+    connectionEnvironment.current = environmentName;
+    if (previous && previous !== environmentName) {
+      void releaseSshConnections(previous).catch((error: unknown) => {
+        console.warn("SSH 旧环境连接释放失败；将按空闲超时回收", errorMessage(error));
+      });
+    }
+  }, [environmentName]);
   const [kind, setKind] = useState<LogKind>("transaction");
   const [filters, setFilters] = useState<SearchFilters>(initialFilters);
   const [selectedRangeDays, setSelectedRangeDays] = useState<number | null>(1);

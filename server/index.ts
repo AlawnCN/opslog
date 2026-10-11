@@ -2,6 +2,13 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiRouter, errorHandler } from "./routes.js";
+import { closePasswordSshConnections } from "./ssh-password-transport.js";
+import { closeSshControlMasters } from "./ssh-control-master.js";
+
+process.once("exit", () => {
+  closePasswordSshConnections();
+  closeSshControlMasters();
+});
 
 const app = express();
 const port = Number.parseInt(process.env.OPSLOG_PORT ?? "8787", 10);

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { collapseRangesOneLevel, collapseTreeOneLevel, expandTreeOneLevel, visibleCollapsedRanges } from "../web/src/progressive-expansion";
 import { clampLogOutlineGeometry, moveLogOutlineGeometry, resizeLogOutlineGeometry } from "../web/src/log-outline-geometry";
 import { createSqlOutlinePreviews } from "../web/src/log-outline-preview";
 import { directChildLogFolds, serviceFoldExpansionAnchor } from "../web/src/log-fold-hierarchy";
@@ -14,6 +15,59 @@ import { analyzeTransactionLog } from "../web/src/transaction-log-analysis";
 import { findPlainLogMatchesInLowercase, findRegexLogMatches } from "../web/src/transaction-log-search";
 import { directChildStructuredPreviewFolds, formatStructuredLogPreview } from "../web/src/structured-log-preview";
 import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot, encodePortableLogSnapshot, portableLogFilename, PORTABLE_LOG_FORMAT } from "../web/src/portable-log-export-data";
+
+test("progressive folds open only the visible frontier, including equal-boundary nesting", () => {
+  assert.deepEqual(visibleCollapsedRanges([
+    { from: 2, to: 8 }, { from: 20, to: 30 }, { from: 0, to: 10 },
+    { from: 0, to: 9 }, { from: 21, to: 30 }
+  ]), [{ from: 0, to: 10 }, { from: 20, to: 30 }]);
+  assert.deepEqual(visibleCollapsedRanges([]), []);
+});
+
+test("collapse closes one innermost visible layer per branch and skips hidden descendants", () => {
+  const root = { from: 0, to: 100 };
+  const child = { from: 10, to: 90 };
+  const leaf = { from: 20, to: 80 };
+  const sibling = { from: 110, to: 150 };
+  const ranges = [root, child, leaf, sibling];
+  assert.deepEqual(collapseRangesOneLevel(ranges, []), [leaf, sibling]);
+  assert.deepEqual(collapseRangesOneLevel(ranges, [leaf, sibling]), [child]);
+  assert.deepEqual(collapseRangesOneLevel(ranges, [child, sibling]), [root]);
+  assert.deepEqual(collapseRangesOneLevel(ranges, [root, sibling]), []);
+});
+
+test("tree collapse walks outwards one level, ignoring remembered hidden expansions", () => {
+  const paths = ["root", "root.0", "root.0.0", "root.1"];
+  let expanded = collapseTreeOneLevel(paths, new Set(paths));
+  assert.deepEqual([...expanded], ["root", "root.0"]);
+  expanded = collapseTreeOneLevel(paths, expanded);
+  assert.deepEqual([...expanded], ["root"]);
+  assert.deepEqual([...collapseTreeOneLevel(paths, expanded)], []);
+  assert.deepEqual([...collapseTreeOneLevel(paths, new Set(["root", "root.0.0"]))], ["root.0.0"]);
+});
+
+test("offline reader uses the same collapse frontier as the live reader", () => {
+  const context: Record<string, unknown> = {};
+  runInNewContext(readFileSync(new URL("../web/src/portable-log-preview-runtime.js", import.meta.url), "utf8"), context);
+  const portable = context.OpsLogPortablePreview as { collapseRangesOneLevel: typeof collapseRangesOneLevel };
+  const ranges = [{ from: 0, to: 100 }, { from: 10, to: 90 }, { from: 20, to: 80 }, { from: 110, to: 150 }];
+  for (const collapsed of [[], [ranges[2]], [ranges[1], ranges[3]], [ranges[0], ranges[3]]]) {
+    assert.equal(JSON.stringify(portable.collapseRangesOneLevel(ranges, collapsed)), JSON.stringify(collapseRangesOneLevel(ranges, collapsed)));
+  }
+});
+
+test("object previews expand one level per click without reopening hidden descendants", () => {
+  const paths = ["root", "root.0", "root.0.0", "root.1", "root.1.0"];
+  let expanded = expandTreeOneLevel(paths, new Set());
+  assert.deepEqual([...expanded], ["root"]);
+  expanded = expandTreeOneLevel(paths, expanded);
+  assert.deepEqual([...expanded], ["root", "root.0", "root.1"]);
+  expanded = expandTreeOneLevel(paths, expanded);
+  assert.deepEqual(new Set(expanded), new Set(paths));
+  assert.deepEqual(expandTreeOneLevel(paths, expanded), expanded);
+  // A user manually collapsed the root while its descendants remained expanded.
+  assert.deepEqual([...expandTreeOneLevel(paths, new Set(paths.slice(1)))], ["root"]);
+});
 
 test("plain and regular-expression searches return exact highlight ranges", () => {
   assert.deepEqual(findPlainLogMatchesInLowercase("alpha beta alpha", "ALPHA"), [

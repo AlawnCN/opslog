@@ -1,0 +1,113 @@
+@import "./theme-palettes.css";
+@import "./theme-components.css";
+@import "./theme-palettes-extra.css";
+
+.theme-picker { flex-shrink: 0; width: 162px; height: 34px; }
+.theme-picker svg { width: 16px; height: 16px; flex-shrink: 0; }
+.theme-picker.app-select > button { height: 100%; gap: 8px; padding: 0 10px; font: 11px var(--font-ui); }
+.theme-picker.app-select > button > span { flex: 1; }
+.theme-picker-menu > button { position: relative; padding-right: 30px; }
+.theme-picker-menu > button small { max-width: 100%; color: var(--muted); font: 11px var(--font-ui); line-height: 1.5; white-space: normal; }
+.theme-picker-menu > button[aria-selected="true"]::after { content: ""; position: absolute; right: 12px; width: 5px; height: 9px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+:root[data-theme-ui="modern"] .theme-picker-menu > button { border-radius: var(--radius); background: transparent; color: var(--text); }
+:root[data-theme-ui="modern"] .theme-picker-menu > button:is(:hover, .is-highlighted, .is-selected) { background: var(--selected-surface); color: var(--accent-text); }
+:root[data-theme="glassmorphism"] .theme-picker-menu { background: var(--surface-solid); background-image: linear-gradient(to bottom, rgb(255 255 255 / 8%), transparent); backdrop-filter: blur(40px) saturate(180%); }
+.reader-theme-control { margin-left: auto; margin-right: 12px; }
+.reader-titlebar .theme-picker { height: 27px; }
+.reader-web-theme { position: absolute; z-index: 4; top: 12px; right: 22px; }
+.reader-app:not(.has-titlebar) .drawer-heading-actions { margin-right: 174px; }
+@media (max-width: 1280px) { .topbar-context { gap: 12px; } }
+
+/* One material contract; no override variables are defined for Cyberpunk. */
+:root[data-theme-ui="modern"] {
+  font-family: var(--font-ui); background: var(--canvas); color: var(--text);
+  --theme-text: var(--text); --theme-muted: var(--muted); --theme-surface: var(--surface);
+  --theme-line: var(--line); --theme-selected: var(--selected-surface);
+  --theme-error: var(--red); --theme-success: var(--green); --theme-warning: var(--amber);
+  --theme-error-line: var(--red); --theme-error-surface: var(--error-surface);
+  --theme-shadow-color: var(--shadow-color); --theme-backdrop: var(--backdrop);
+  --reader-accent: var(--cyan);
+}
+:root[data-theme-tone="light"] { color-scheme: light; }
+:root[data-theme-tone="dark"] { color-scheme: dark; }
+:root[data-theme-ui="modern"] :is(.app-shell, .reader-app, .reader-empty-state) { background: var(--scene, var(--canvas)); background-attachment: fixed; background-size: var(--scene-size, auto); }
+:root[data-theme-ui="modern"] :is(.topbar, .reader-titlebar, .sidebar) { background: var(--chrome-surface); border-color: var(--line); box-shadow: var(--chrome-shadow); }
+:root[data-theme-ui="modern"] .topbar::after { display: none; }
+:root[data-theme-ui="modern"] .reader-app { --reader-accent: var(--cyan); }
+:root[data-theme-ui="modern"] :is(button, input, select, textarea, label, summary, .eyebrow, .nav-caption, .brand strong, .brand span, .nav-code, .version-chip, .timezone-card *, .reader-titlebar > span, .reader-welcome-primary h1, .reader-welcome-side li b, th, .results-heading, .query-metric, .pagination) { font-family: var(--font-ui); letter-spacing: normal; }
+:root[data-theme-ui="modern"] :is(.eyebrow, .nav-caption) { color: var(--muted); font-size: 11px; }
+:root[data-theme-ui="modern"] .brand strong { color: var(--text); font-weight: 700; letter-spacing: .06em; }
+:root[data-theme-ui="modern"] .brand span { font-size: 9px; letter-spacing: .04em; }
+:root[data-theme-ui="modern"] button :is(span, b, strong, small) { font-family: inherit; letter-spacing: normal; }
+:root[data-theme-ui="modern"] .brand-mark { color: var(--accent-text); background: var(--control-surface); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--control-shadow); }
+:root[data-theme-ui="modern"] .reader-family-mark { filter: none; background: var(--surface); border-radius: 24px; box-shadow: var(--panel-shadow); }
+:root[data-theme-ui="modern"] .reader-family-mark rect:first-child { fill: var(--surface); }
+:root[data-theme-ui="modern"] .reader-family-mark path:nth-of-type(1) { fill: var(--surface-2); }
+:root[data-theme-ui="modern"] .reader-family-mark :is(rect:nth-child(2), path) { stroke: var(--accent-text); }
+:root[data-theme-ui="modern"] .reader-family-mark circle { stroke: var(--line); }
+:root[data-theme-ui="modern"] .reader-welcome-primary h1 { color: var(--text); font-weight: 650; letter-spacing: -.035em; }
+:root[data-theme-ui="modern"] :is(.filter-panel, .results-panel, .timezone-card) { background: var(--surface); border: 1px solid var(--line); border-radius: var(--panel-radius); box-shadow: var(--panel-shadow); }
+:root[data-theme-ui="modern"] .timezone-card { margin-top: auto; }
+:root[data-theme-ui="modern"] th { background: var(--surface-solid); color: var(--muted); }
+:root[data-theme-ui="modern"] tbody tr:hover { background: var(--selected-surface); }
+:root[data-theme-ui="modern"] :is(.drawer, [role="dialog"], .environment-import-review, .environment-picker-panel, .app-select-menu, .searchable-select-menu, .date-time-popover, .column-menu, .lan-share-panel, .custom-marker-context-menu, .custom-marker-overflow-menu, .log-outline-window, .log-outline-popover, .trace-tooltip, .environment-add-source) { background: var(--floating-surface); border-color: var(--line); border-radius: var(--panel-radius); box-shadow: var(--floating-shadow); color: var(--text); }
+:root[data-theme-ui="modern"] :is(.environment-config-backdrop, .drawer-backdrop, .structured-preview-backdrop, .ai-dialog-backdrop, .ssh-host-key-backdrop, .update-dialog-backdrop, .environment-credential-backdrop, .environment-discard-backdrop, .environment-import-review-backdrop, .ai-delete-confirm-backdrop) { background: var(--backdrop); backdrop-filter: none; }
+:root[data-theme-ui="modern"] :is(.reader-welcome-side, .environment-config-workspace > aside, .environment-config-dialog > header, .environment-config-dialog > footer, .structured-preview-toolbar, .standalone-log-reader .drawer-heading, .trace-waterfall-head, .trace-tooltip header, .trace-tooltip pre) { background: transparent; }
+:root[data-theme-ui="modern"] :is(.ssh-ai-rules, .ssh-source-card, .environment-server-list article, .environment-application-list > div, .ai-stream-setting, .detail-grid, .environment-time-zone-mode) { background: var(--surface-2); border-color: var(--line); border-radius: var(--radius); box-shadow: none; }
+:root[data-theme-ui="modern"] :is(.connection-state i, .index-hint i, .ai-log-primary i) { box-shadow: none; }
+:root[data-theme-ui="modern"] .ai-log-primary i { background: var(--muted); }
+:root[data-theme-ui="modern"] .ai-log-action.is-configured .ai-log-primary i { background: var(--green); }
+:root[data-theme-ui="modern"] .lan-share-switch-track i { background: var(--muted); }
+:root[data-theme-ui="modern"] .lan-share-control.is-enabled .lan-share-switch-track i { background: var(--cyan); }
+:root[data-theme-ui="modern"] .environment-time-zone-mode > button { --hover-lift: 0 0; --press-scale: 1; border-radius: 12px; }
+:root[data-theme-ui="modern"] .environment-time-zone-mode > button i { background: var(--muted); box-shadow: none; }
+:root[data-theme-ui="modern"] .environment-time-zone-mode > button.is-on { background: var(--selected-surface); border-color: var(--cyan); }
+:root[data-theme-ui="modern"] .environment-time-zone-mode > button.is-on i { background: var(--cyan); }
+:root[data-theme-ui="modern"] .ai-stream-setting > button { --hover-lift: 0 0; --press-scale: 1; border-radius: 15px; }
+:root[data-theme-ui="modern"] .ai-stream-setting > button i { background: var(--line); }
+:root[data-theme-ui="modern"] .ai-stream-setting > button i::after { background: var(--muted); box-shadow: none; }
+:root[data-theme-ui="modern"] .ai-stream-setting > button.is-on { background: var(--selected-surface); color: var(--green); border-color: var(--green); }
+:root[data-theme-ui="modern"] .ai-stream-setting > button.is-on i::after { background: var(--green); }
+:root[data-theme-ui="modern"] button.danger { color: var(--red); border-color: var(--red); background: var(--error-surface); }
+:root[data-theme-ui="modern"] a { color: var(--accent-text); }
+:root[data-theme-ui="modern"] * { scrollbar-color: var(--scrollbar) var(--canvas); }
+
+/* A compound control has one material owner, not a raised button in a raised box. */
+:root[data-theme] .theme-picker.app-select { display: block; padding: 0; border: 0; background: transparent; box-shadow: none; outline: none; }
+:root[data-theme-ui="modern"] .theme-picker.app-select > button { background: var(--control-surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--control-shadow); }
+:root[data-theme-ui="modern"] .theme-picker.app-select > button:hover:not(:disabled),
+:root[data-theme-ui="modern"] .theme-picker.app-select.is-open > button { background: var(--control-hover); color: var(--accent-text); border-color: var(--cyan); box-shadow: var(--control-hover-shadow); }
+:root[data-theme-ui="modern"] .theme-picker.app-select > button > i { border-color: currentColor; }
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions) { overflow: hidden; gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--control-surface); box-shadow: var(--control-shadow); }
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions) button {
+  --hover-lift: 0 0; --press-scale: 1; --control-surface: transparent; --control-hover: var(--selected-surface);
+  --control-shadow: none; --control-hover-shadow: none; --control-pressed-shadow: none;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; translate: none; scale: none;
+}
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions) button:hover:not(:disabled) { background: var(--selected-surface); color: var(--accent-text); border-radius: 0; }
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions) button:active:not(:disabled) { background: var(--selected-surface); box-shadow: var(--segment-pressed-shadow, inset 0 1px 3px var(--shadow-color)); }
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions):focus-within { outline: 2px solid var(--focus-color, var(--cyan)); outline-offset: 2px; }
+:root[data-theme-ui="modern"] :is(.ai-analysis-export, .environment-composite-control, .ai-log-action, .ssh-ai-actions) button:focus-visible { outline: 2px solid var(--focus-color, var(--cyan)); outline-offset: -3px; }
+:root[data-theme-ui="modern"] :is(.environment-composite-control, .ai-log-action, .ssh-ai-actions) button:is(.environment-config-trigger, .ai-log-settings, .ssh-ai-settings) { border-left: 1px solid var(--line); }
+:root[data-theme-ui="modern"] .environment-source-badge.is-trigger { border: 0; background: transparent; box-shadow: none; }
+
+/* Export segments are square internally; only the wrapper owns the silhouette. */
+:root[data-theme-ui="modern"] .ai-analysis-formats { border-color: var(--line); }
+:root[data-theme-ui="modern"] .ai-analysis-formats button + button { border-left: 1px solid var(--line); }
+:root[data-theme-ui="modern"] .ai-analysis-formats button[aria-pressed="true"],
+:root[data-theme-ui="modern"] .ai-analysis-formats button[aria-pressed="true"]:hover:not(:disabled) { background: var(--selected-surface); color: var(--accent-text); box-shadow: inset 0 -2px var(--cyan); }
+
+/* Clipped/scrolling regions cannot accommodate floating or expanding controls.
+   Keep layout bounds fixed, retain colour feedback and draw keyboard focus inward. */
+:root[data-theme-ui="modern"] :is(.app-select-menu, .searchable-select-menu, .environment-picker-panel, .environment-config-list, .ai-profile-list, .column-options, .table-shell, .trace-waterfall, .custom-marker-track, .log-reader-body, .log-outline-list, .java-object-tree, .reader-titlebar, .log-reader-search-group) button {
+  --hover-lift: 0 0; --press-scale: 1;
+  --control-shadow: none; --control-hover-shadow: none; --control-pressed-shadow: none;
+  box-shadow: none; translate: none; scale: none;
+}
+:root[data-theme-ui="modern"] :is(.app-select-menu, .searchable-select-menu, .environment-picker-panel, .environment-config-list, .ai-profile-list, .column-options, .table-shell, .trace-waterfall, .custom-marker-track, .log-reader-body, .log-outline-list, .java-object-tree, .reader-titlebar, .log-reader-search-group) button:focus-visible { outline: 2px solid var(--focus-color, var(--cyan)); outline-offset: -3px; }
+:root[data-theme-ui="modern"] .log-reader-search-group button { border-radius: 0; }
+:root[data-theme-ui="modern"] .log-reader-search-group button:hover:not(:disabled) { border-radius: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] *, :root[data-theme] *::before, :root[data-theme] *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}

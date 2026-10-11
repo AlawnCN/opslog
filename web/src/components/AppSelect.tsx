@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import React, { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export interface AppSelectOption {
@@ -15,9 +15,12 @@ interface AppSelectProps {
   ariaLabel?: string;
   disabled?: boolean;
   className?: string;
+  menuClassName?: string;
+  leadingIcon?: ReactNode;
+  menuMinWidth?: number;
 }
 
-export const AppSelect = ({ value, options, onChange, placeholder = "请选择", ariaLabel, disabled = false, className = "" }: AppSelectProps) => {
+export const AppSelect = ({ value, options, onChange, placeholder = "请选择", ariaLabel, disabled = false, className = "", menuClassName = "", leadingIcon, menuMinWidth = 190 }: AppSelectProps) => {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>();
@@ -43,7 +46,7 @@ export const AppSelect = ({ value, options, onChange, placeholder = "请选择",
       const above = rect.top - 10;
       const openDown = below >= Math.min(desiredHeight, 150) || below >= above;
       const maxHeight = Math.max(88, Math.min(desiredHeight, openDown ? below : above));
-      const width = Math.min(Math.max(190, rect.width), Math.max(190, window.innerWidth - 16));
+      const width = Math.min(Math.max(menuMinWidth, rect.width), Math.max(0, window.innerWidth - 16));
       setMenuStyle({
         position: "fixed", left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width,
         top: openDown ? rect.bottom + 5 : Math.max(8, rect.top - maxHeight - 5), maxHeight,
@@ -60,18 +63,31 @@ export const AppSelect = ({ value, options, onChange, placeholder = "请选择",
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, options.length]);
+  }, [open, options.length, menuMinWidth]);
+
+  const menuReady = menuStyle !== undefined;
+  useEffect(() => {
+    if (open) menuRef.current?.children.item(highlighted)?.scrollIntoView({ block: "nearest" });
+  }, [open, highlighted, menuReady]);
 
   const choose = (index: number) => {
     const option = options[index];
     if (!option) return;
     onChange(option.value);
     setOpen(false);
+    buttonRef.current?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === "Escape") { setOpen(false); return; }
+    if (event.key === "Escape") {
+      if (open) { event.preventDefault(); event.stopPropagation(); setOpen(false); }
+      return;
+    }
+    if (event.key === "Tab") { setOpen(false); return; }
     if (!options.length) return;
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault(); setOpen(true); setHighlighted(event.key === "Home" ? 0 : options.length - 1); return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (open && highlighted >= 0) choose(highlighted);
@@ -89,11 +105,11 @@ export const AppSelect = ({ value, options, onChange, placeholder = "请选择",
   };
 
   return <div ref={hostRef} className={`app-select${open ? " is-open" : ""}${className ? ` ${className}` : ""}`}>
-    <button ref={buttonRef} type="button" role="combobox" aria-label={ariaLabel} aria-expanded={open} aria-controls={listId} disabled={disabled || !options.length} onClick={() => { setHighlighted(selectedIndex >= 0 ? selectedIndex : 0); setOpen((current) => !current); }} onKeyDown={onKeyDown}>
-      <span className={selected ? undefined : "is-placeholder"}>{selected?.label ?? placeholder}</span><i aria-hidden="true" />
+    <button ref={buttonRef} type="button" role="combobox" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-activedescendant={open && highlighted >= 0 ? `${listId}-${highlighted}` : undefined} disabled={disabled || !options.length} onClick={() => { setHighlighted(selectedIndex >= 0 ? selectedIndex : 0); setOpen((current) => !current); }} onKeyDown={onKeyDown}>
+      {leadingIcon}<span className={selected ? undefined : "is-placeholder"}>{selected?.label ?? placeholder}</span><i aria-hidden="true" />
     </button>
-    {open && menuStyle && createPortal(<div ref={menuRef} id={listId} className="app-select-menu" role="listbox" aria-label={ariaLabel} style={menuStyle}>
-      {options.map((option, index) => <button type="button" role="option" aria-selected={option.value === value} className={`${option.value === value ? "is-selected" : ""}${index === highlighted ? " is-highlighted" : ""}`} key={option.value} onMouseEnter={() => setHighlighted(index)} onClick={() => choose(index)}>
+    {open && menuStyle && createPortal(<div ref={menuRef} id={listId} className={`app-select-menu${menuClassName ? ` ${menuClassName}` : ""}`} role="listbox" aria-label={ariaLabel} style={menuStyle}>
+      {options.map((option, index) => <button id={`${listId}-${index}`} tabIndex={-1} type="button" role="option" aria-selected={option.value === value} className={`${option.value === value ? "is-selected" : ""}${index === highlighted ? " is-highlighted" : ""}`} key={option.value} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setHighlighted(index)} onClick={() => choose(index)}>
         <span>{option.label}</span>{option.description && <small>{option.description}</small>}
       </button>)}
     </div>, document.body)}

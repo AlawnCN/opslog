@@ -142,6 +142,14 @@ export const loadEnvironments = async (): Promise<Environment[]> => {
   return response.json();
 };
 
+export const releaseSshConnections = async (environment: string): Promise<void> => {
+  if (desktopMode) return desktopInvoke<void>("release_ssh_connections", { environment });
+  const response = await webFetch("/api/ssh/connections/release", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment })
+  });
+  if (!response.ok) return parseError(response);
+};
+
 export const loadEnvironmentConfiguration = async (): Promise<EnvironmentConfiguration[]> => {
   if (desktopMode) return desktopInvoke<EnvironmentConfiguration[]>("load_environment_configuration");
   const response = await webFetch("/api/environments/configuration");

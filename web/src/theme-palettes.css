@@ -1,0 +1,84 @@
+/* StyleKit /styles/{neumorphism,glassmorphism,stripe-style,fluent-design}.
+   Semantic log colours are contrast-adjusted separately from brand accents. */
+:root[data-theme-ui="modern"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --blue: var(--cyan); --line-bright: var(--cyan);
+  --chrome-surface: var(--surface); --chrome-shadow: none;
+  --floating-surface: var(--surface-solid); --floating-shadow: var(--panel-shadow);
+  --control-surface: var(--surface-solid); --control-hover: var(--surface-2);
+  --control-hover-shadow: var(--control-shadow); --control-pressed-shadow: none;
+  --input-surface: var(--surface-solid); --input-shadow: none; --input-focus-shadow: none;
+  --primary-surface: var(--cyan); --primary-text: #ffffff; --primary-shadow: var(--control-shadow);
+  --hover-lift: 0 -2px; --press-scale: .98;
+  --motion-duration: 200ms; --motion-easing: ease-out;
+  --editor-surface: var(--surface-solid);
+  --syntax-key: var(--accent-text); --syntax-string: var(--green); --syntax-number: var(--amber);
+}
+:root[data-theme="neumorphism"] {
+  --canvas: #e0e5ec; --surface: #e0e5ec; --surface-solid: #e0e5ec; --surface-2: #f0f0f3;
+  --text: #333333; --muted: #4b5563; --cyan: #6d5dfc; --accent-text: #5142b8;
+  --line: #b8bcc2; --selected-surface: #d6daea; --error-surface: #f0e2e5;
+  --red: #b42336; --green: #17675e; --amber: #875900; --scrollbar: #8b93a1;
+  --backdrop: rgb(75 85 99 / 24%); --shadow-color: rgb(75 85 99 / 14%);
+  --radius: 12px; --panel-radius: 16px;
+  --panel-shadow: 8px 8px 16px #b8bcc2, -8px -8px 16px #ffffff;
+  --control-shadow: 4px 4px 8px #b8bcc2, -4px -4px 8px #ffffff;
+  --control-hover-shadow: 2px 2px 4px #b8bcc2, -2px -2px 4px #ffffff;
+  --control-pressed-shadow: inset 4px 4px 8px #b8bcc2, inset -4px -4px 8px #ffffff;
+  --input-shadow: inset 6px 6px 12px #b8bcc2, inset -6px -6px 12px #ffffff;
+  --input-focus-shadow: inset 2px 2px 4px #b8bcc2, inset -2px -2px 4px #ffffff;
+  --editor-surface: #f0f0f3;
+  --hover-lift: 0 0; --press-scale: 1; --motion-duration: 300ms; --motion-easing: ease-in-out;
+}
+:root[data-theme="glassmorphism"] {
+  --canvas: #0b1322;
+  --scene: radial-gradient(640px circle at 85% 10%, rgb(124 156 196 / 28%), transparent 65%), radial-gradient(560px circle at 10% 90%, rgb(51 81 122 / 35%), transparent 65%), radial-gradient(480px circle at 50% 65%, rgb(228 184 99 / 12%), transparent 60%), #0b1322;
+  --surface: rgb(255 255 255 / 8%); --surface-2: rgb(255 255 255 / 5%); --surface-solid: #16233a;
+  --text: #ffffff; --muted: #c0cbdc; --cyan: #e4b863; --accent-text: #f3dca8;
+  --line: rgb(255 255 255 / 15%); --selected-surface: rgb(255 255 255 / 12%); --error-surface: rgb(255 107 122 / 10%);
+  --red: #ff9aa7; --green: #8bd8be; --amber: #f3dca8; --scrollbar: #7c9cc4;
+  --backdrop: rgb(6 10 19 / 70%); --shadow-color: rgb(3 7 18 / 50%);
+  --radius: 16px; --panel-radius: 24px;
+  --panel-shadow: 0 16px 40px rgb(3 7 18 / 50%), inset 0 1px 0 rgb(255 255 255 / 22%), inset 0 -1px 0 rgb(2 6 16 / 35%);
+  --control-surface: rgb(255 255 255 / 10%); --control-hover: rgb(255 255 255 / 15%);
+  --control-shadow: 0 4px 16px rgb(3 7 18 / 45%), inset 0 1px 0 rgb(255 255 255 / 25%);
+  --control-hover-shadow: 0 10px 32px rgb(3 7 18 / 55%), inset 0 1px 0 rgb(255 255 255 / 35%);
+  --input-surface: rgb(255 255 255 / 6%); --input-shadow: inset 0 1px 0 rgb(255 255 255 / 15%), inset 0 -1px 0 rgb(2 6 16 / 30%);
+  --input-focus-shadow: 0 0 0 3px rgb(228 184 99 / 15%);
+  --primary-surface: rgb(228 184 99 / 15%); --primary-text: #f3dca8;
+  --primary-shadow: 0 4px 20px rgb(228 184 99 / 15%), inset 0 1px 0 rgb(243 220 168 / 35%);
+  --press-scale: .97; --motion-duration: 500ms; --motion-easing: cubic-bezier(.16, 1, .3, 1);
+  --syntax-key: #c6b8ed; --syntax-string: #8bd8be; --syntax-number: #f3dca8;
+}
+:root[data-theme="stripe-style"] {
+  --canvas: #f6f9fc;
+  --scene: linear-gradient(to right, rgb(99 91 255 / 10%) 1px, transparent 1px), linear-gradient(to bottom, rgb(99 91 255 / 10%) 1px, transparent 1px), #f6f9fc;
+  --scene-size: 40px 40px;
+  --surface: #ffffff; --surface-solid: #ffffff; --surface-2: #f6f9fc;
+  --text: #0a2540; --muted: #4b5563; --cyan: #635bff; --accent-text: #5146c7;
+  --line: #e5e7eb; --selected-surface: #eeedff; --error-surface: #fff1f2;
+  --red: #b42336; --green: #17675e; --amber: #875900; --scrollbar: #8795a5;
+  --backdrop: rgb(10 37 64 / 24%); --shadow-color: rgb(10 37 64 / 8%);
+  --radius: 8px; --panel-radius: 12px;
+  --panel-shadow: 0 2px 4px rgb(0 0 0 / 4%), 0 8px 16px rgb(0 0 0 / 8%);
+  --control-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  --control-hover-shadow: 0 2px 4px rgb(0 0 0 / 4%), 0 8px 16px rgb(0 0 0 / 8%);
+  --primary-shadow: 0 2px 5px rgb(99 91 255 / 40%), inset 0 1px 0 rgb(255 255 255 / 20%);
+  --input-shadow: 0 1px 2px rgb(0 0 0 / 5%); --input-focus-shadow: 0 0 0 3px rgb(99 91 255 / 18%);
+  --motion-duration: 300ms;
+}
+:root[data-theme="fluent-design"] {
+  --font-ui: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --canvas: #f3f2f1; --surface: #ffffff; --surface-solid: #ffffff; --surface-2: #f3f2f1;
+  --chrome-surface: rgb(255 255 255 / 70%);
+  --text: #323130; --muted: #605e5c; --cyan: #0078d4; --accent-text: #005a9e;
+  --line: #e1e1e1; --selected-surface: #deecf9; --error-surface: #fdf0f1;
+  --red: #b10e1c; --green: #0b6a41; --amber: #805500; --scrollbar: #8a8886;
+  --backdrop: rgb(50 49 48 / 24%); --shadow-color: rgb(0 0 0 / 10%);
+  --radius: 6px; --panel-radius: 8px;
+  --panel-shadow: 0 3.2px 7.2px rgb(0 0 0 / 13%), 0 .6px 1.8px rgb(0 0 0 / 10%);
+  --control-shadow: 0 1.6px 3.6px rgb(0 0 0 / 13%), 0 .3px .9px rgb(0 0 0 / 10%);
+  --control-hover-shadow: 0 3.2px 7.2px rgb(0 0 0 / 18%), 0 .6px 1.8px rgb(0 0 0 / 14%);
+  --press-scale: .97; --motion-duration: 150ms;
+}

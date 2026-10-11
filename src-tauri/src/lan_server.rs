@@ -230,6 +230,14 @@ async fn ai_configuration() -> Response {
     }
 }
 
+async fn release_ssh_connections(Json(input): Json<serde_json::Value>) -> Response {
+    let Some(environment) = input.get("environment").and_then(|value| value.as_str()).filter(|value| !value.is_empty() && value.len() <= 100) else {
+        return api_error("环境名称无效".to_string());
+    };
+    commands::release_ssh_connections(environment.to_string());
+    Json(json!({ "ok": true })).into_response()
+}
+
 async fn analyze_log(
     State(state): State<LanApiState>,
     Json(input): Json<ai_analysis::AiAnalyzeInput>,
@@ -450,6 +458,7 @@ fn router(state: LanApiState) -> Router {
         .route("/api/ai/analyze", post(analyze_log))
         .route("/api/search", post(search))
         .route("/api/search/cancel", post(cancel_search))
+        .route("/api/ssh/connections/release", post(release_ssh_connections))
         .route("/api/export", post(export))
         .route("/api/transaction-log", post(transaction_log))
         .route(

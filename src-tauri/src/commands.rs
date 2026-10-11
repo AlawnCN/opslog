@@ -331,11 +331,19 @@ pub async fn load_environment_configuration(
 }
 
 #[tauri::command]
+pub fn release_ssh_connections(environment: String) {
+    crate::ssh_password_transport::close_connections(Some(&environment));
+    crate::ssh_control_master::close(Some(&environment));
+}
+
+#[tauri::command]
 pub async fn save_environment_config(
     app: AppHandle,
     contents: String,
 ) -> Result<DownloadResult, String> {
     let path = environment_store::save(&app, &contents).await?;
+    crate::ssh_password_transport::close_connections(None);
+    crate::ssh_control_master::close(None);
     Ok(DownloadResult {
         path: path.to_string_lossy().into_owned(),
     })

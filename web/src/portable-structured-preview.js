@@ -289,7 +289,28 @@
     }
     render();
     return {
+      foldLevel: function () {
+        var ranges = preview.folds.map(function (fold) { return { from: fold.fromLine, to: fold.toLine }; });
+        var selected = global.OpsLogPortablePreview.collapseRangesOneLevel(ranges, Array.from(collapsed).map(function (index) { return ranges[index]; }));
+        selected.forEach(function (range) { collapsed.add(ranges.indexOf(range)); });
+        render();
+      },
       foldAll: function () { preview.folds.forEach(function (_, index) { collapsed.add(index); }); render(); },
+      unfoldLevel: function () {
+        var before = Array.from(collapsed);
+        var visible = before.filter(function (index) {
+          var fold = preview.folds[index];
+          return !before.some(function (other) {
+            var parent = preview.folds[other];
+            return other !== index && parent.fromLine <= fold.fromLine && parent.toLine >= fold.toLine && (parent.fromLine < fold.fromLine || parent.toLine > fold.toLine);
+          });
+        });
+        visible.forEach(function (index) {
+          collapsed.delete(index);
+          directChildren(preview.folds, index).forEach(function (child) { collapsed.add(child); });
+        });
+        render();
+      },
       unfoldAll: function () { collapsed.clear(); render(); }
     };
   }

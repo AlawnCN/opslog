@@ -1,0 +1,68 @@
+/* Individual translate/scale leaves positioning transforms intact. */
+:root[data-theme-ui="modern"] :is(button, .theme-picker, .column-selector summary, .reader-open-file) {
+  color: var(--text); background: var(--control-surface); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--control-shadow); text-shadow: none;
+  transition-property: background-color, color, border-color, box-shadow, translate, scale;
+  transition-duration: var(--motion-duration); transition-timing-function: var(--motion-easing);
+}
+:root[data-theme-ui="modern"] :is(button, .reader-open-file):hover:not(:disabled) { color: var(--accent-text); background: var(--control-hover); border-color: var(--cyan); box-shadow: var(--control-hover-shadow); translate: var(--hover-lift); }
+:root[data-theme-ui="modern"] :is(button, .reader-open-file):active:not(:disabled) { translate: 0 0; scale: var(--press-scale); box-shadow: var(--control-pressed-shadow); }
+:root[data-theme-ui="modern"] :is(.sidebar nav button.active, .range-buttons button.active, button[aria-pressed="true"], button[aria-selected="true"], button.is-selected) { color: var(--accent-text); background: var(--selected-surface); border-color: var(--cyan); box-shadow: var(--control-pressed-shadow); }
+:root[data-theme-ui="modern"] :is(button.primary, .reader-welcome-primary .reader-open-file, .lan-share-enable) { --theme-text: var(--primary-text); --theme-muted: var(--primary-text); background: var(--primary-surface); color: var(--primary-text); border-color: var(--cyan); box-shadow: var(--primary-shadow); }
+:root[data-theme-ui="modern"] :is(button.primary, .reader-welcome-primary .reader-open-file, .lan-share-enable):hover:not(:disabled) { background: var(--primary-surface); color: var(--primary-text); box-shadow: var(--primary-shadow); filter: brightness(.96); }
+:root[data-theme-ui="modern"] :is(button.primary, .reader-welcome-primary .reader-open-file, .lan-share-enable):active:not(:disabled) { box-shadow: var(--control-pressed-shadow); }
+:root[data-theme-ui="modern"] :is(button, input, select, textarea):disabled { opacity: .5; cursor: not-allowed; box-shadow: none; translate: none; scale: none; filter: none; }
+:root[data-theme-ui="modern"] :is(button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--focus-color, var(--cyan)); outline-offset: 2px; }
+:root[data-theme-ui="modern"] :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .log-reader-search-group) {
+  background: var(--input-surface); color: var(--text); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--input-shadow); caret-color: var(--accent-text);
+  transition: border-color var(--motion-duration) var(--motion-easing), box-shadow var(--motion-duration) var(--motion-easing), background-color var(--motion-duration) var(--motion-easing);
+}
+:root[data-theme-ui="modern"] :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:root[data-theme-ui="modern"] :is(input, textarea, select):focus { border-color: var(--cyan); box-shadow: var(--input-focus-shadow); }
+:root[data-theme-ui="modern"] :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--cyan); }
+:root[data-theme-ui="modern"] .log-reader-search-group input { border-color: transparent; box-shadow: none; background: transparent; }
+:root[data-theme-ui="modern"] .theme-picker { background: var(--control-surface); }
+
+/* Tree rows and utility controls remain compact, without floating on hover. */
+:root[data-theme-ui="modern"] :is(.cm-log-fold-placeholder button, .environment-config-list-select, .environment-drag-handle, .password-input-toggle, .filter-collapse-toggle, .date-time-popover-header button, .date-time-days button, .trace-toggle, .java-object-toggle, .column-resizer, .custom-marker-section-resize, .trace-column-resizer, .log-reader-resize-handle, .trace-resize-handle, .reader-window-controls button) { --hover-lift: 0 0; --press-scale: 1; --control-shadow: none; --control-hover-shadow: none; --control-pressed-shadow: none; box-shadow: none; translate: none; scale: none; }
+:root[data-theme-ui="modern"] :is(.app-select-menu, .searchable-select-menu, .environment-picker-panel) button { --hover-lift: 0 0; --press-scale: 1; --control-shadow: none; --control-hover-shadow: none; box-shadow: none; translate: none; }
+:root[data-theme-ui="modern"] .environment-config-list-select { background: transparent; color: var(--text); }
+:root[data-theme-ui="modern"] :is(.filter-collapse-toggle:hover svg, .cm-log-service-name, .cm-log-trace-value, .cm-log-exception) { filter: none; text-shadow: none; }
+:root[data-theme-ui="modern"] .password-input-toggle { background: transparent; }
+:root[data-theme-ui="modern"] :is(.ai-log-action, .ssh-ai-actions) { background: var(--control-surface); color: var(--accent-text); border-color: var(--line); box-shadow: var(--control-shadow); border-radius: var(--radius); }
+:root[data-theme-ui="modern"] :is(.ai-log-primary, .ai-log-settings) { box-shadow: none; color: var(--accent-text); }
+
+/* Theme-aware editor syntax, selection and gutters; log font stays monospaced. */
+:root[data-theme-ui="modern"] :is(.structured-log-viewer, .structured-preview-editor, .java-object-tree, .cm-editor, .cm-scroller, .cm-gutters) { background: var(--editor-surface); color: var(--text); border-color: var(--line); }
+:root[data-theme-ui="modern"] .cm-editor .cm-gutters { color: var(--muted); }
+:root[data-theme-ui="modern"] .cm-editor .cm-foldGutter .cm-gutterElement { color: var(--accent-text); }
+:root[data-theme-ui="modern"] .cm-editor .cm-selectionBackground { background: var(--selected-surface) !important; }
+:root[data-theme-ui="modern"] .cm-editor .cm-cursor { border-left-color: var(--accent-text); }
+:root[data-theme-ui="modern"] :is(.cm-foldPlaceholder, .cm-log-fold-placeholder) { background: var(--surface-2) !important; border-color: var(--line) !important; border-radius: 4px !important; color: var(--muted); box-shadow: none; }
+:root[data-theme-ui="modern"] .cm-log-fold-placeholder button { background: transparent; color: var(--muted); }
+:root[data-theme-ui="modern"] :is(.cm-log-fold-preview, .cm-log-fold-copy) { color: var(--accent-text) !important; border-color: var(--line) !important; }
+:root[data-theme-ui="modern"] :is(.cm-log-timestamp, .cm-log-source, .cm-log-level-info, .cm-log-sql-muted, .cm-log-json-punctuation, .cm-log-xml-punctuation, .cm-log-xml-comment) { color: var(--muted); }
+:root[data-theme-ui="modern"] :is(.cm-log-json-key, .cm-log-message-key, .cm-log-xml-name, .cm-log-xml-tag, .cm-log-xml-attribute, .cm-log-sql-result-key, .cm-log-sql-result-literal, .java-object-field, .cm-log-service-entry, .cm-log-service-name, .cm-log-trace-value, .cm-log-trace-key, .cm-log-sql-keyword, .cm-log-sql-result-label) { color: var(--syntax-key); text-shadow: none; }
+:root[data-theme-ui="modern"] :is(.cm-log-json-string, .cm-log-xml-string, .cm-log-message-info, .cm-log-sql-table, .java-object-value.is-string) { color: var(--syntax-string); }
+:root[data-theme-ui="modern"] :is(.cm-log-json-number, .cm-log-json-literal, .cm-log-sql-result-number, .java-object-value.is-number, .java-object-value.is-boolean) { color: var(--syntax-number); }
+:root[data-theme-ui="modern"] :is(.cm-log-code-error, .cm-log-level-error, .cm-log-exception, .bad, .error, .environment-config-save-error, .environment-config-error) { color: var(--red); }
+:root[data-theme-ui="modern"] :is(.cm-log-code-success, .ok, .success) { color: var(--green); }
+:root[data-theme-ui="modern"] .cm-log-level-warn { color: var(--amber); }
+:root[data-theme-ui="modern"] :is(.cm-log-search-hit, .cm-log-custom-match) { background: var(--selected-surface); color: var(--text); outline: 1px solid var(--cyan); }
+:root[data-theme-ui="modern"] .cm-log-search-active { background: var(--primary-surface); color: var(--primary-text); outline: 2px solid var(--cyan); }
+
+/* Material effects are limited to large surfaces, never thousands of log rows. */
+:root[data-theme="neumorphism"] :is(.filter-panel, .results-panel) { border-color: transparent; margin: 8px; }
+:root[data-theme="neumorphism"] .sidebar nav { gap: 12px; }
+:root[data-theme="neumorphism"] .theme-picker { box-shadow: var(--input-shadow); }
+:root[data-theme="glassmorphism"] :is(.topbar, .sidebar, .reader-titlebar, .filter-panel, .results-panel) { backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); }
+:root[data-theme="glassmorphism"] :is(.filter-panel, .results-panel) { background-image: linear-gradient(to bottom, rgb(255 255 255 / 12%), transparent 50%); }
+:root[data-theme="glassmorphism"] :is(.drawer, [role="dialog"], .trace-tooltip) { background: var(--scene); }
+:root[data-theme="glassmorphism"] .app-shell::after, :root[data-theme="glassmorphism"] .reader-app::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 20000; opacity: .025; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23grain)' d='M0 0h160v160H0z'/%3E%3C/svg%3E"); }
+:root[data-theme="stripe-style"] .brand-mark { background: #635bff; color: #ffffff; box-shadow: var(--primary-shadow); }
+:root[data-theme="fluent-design"] :is(.topbar, .sidebar, .reader-titlebar) { backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+:root[data-theme="fluent-design"] button.primary:hover:not(:disabled) { background: #106ebe; filter: none; }
+:root[data-theme="fluent-design"] button.primary:active:not(:disabled) { background: #005a9e; }
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-theme="glassmorphism"] :is(.topbar, .sidebar, .reader-titlebar, .filter-panel, .results-panel) { background: #16233a; }
+  :root[data-theme="fluent-design"] :is(.topbar, .sidebar, .reader-titlebar) { background: #ffffff; }
+}

@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export const READER_SETTINGS_KEYS = [
+  "opslog.appearance.theme.v1",
   "opslog.transaction-log.custom-markers.v1",
   "opslog.transaction-log-reader.preferences.v1",
   "opslog.transaction-log.custom-marker-width-ratio.v1",
@@ -19,14 +20,27 @@ const browserStorage = (): Storage | undefined => {
   }
 };
 
+// Keep rapid preference changes ordered, including changes shared with Reader.
+let nativeWrites: Promise<void> = Promise.resolve();
+const saveNativeSetting = (key: string, value: string): Promise<void> => {
+  nativeWrites = nativeWrites.then(() =>
+    invoke<void>("save_reader_setting", { input: { key, value } })
+  ).catch(() => {
+    // A failed write must not prevent later preferences from being saved.
+  });
+  return nativeWrites;
+};
+
 export const readerSettingsStorage = {
   getItem: (key: string): string | null => browserStorage()?.getItem(key) ?? null,
   setItem: (key: string, value: string): void => {
-    browserStorage()?.setItem(key, value);
+    try {
+      browserStorage()?.setItem(key, value);
+    } catch {
+      // Native persistence remains available when browser storage is disabled.
+    }
     if (!isTauri() || !isReaderSettingKey(key)) return;
-    void invoke("save_reader_setting", { input: { key, value } }).catch(() => {
-      // Local settings remain available if the shared native store cannot be written.
-    });
+    void saveNativeSetting(key, value);
   }
 };
 
@@ -35,6 +49,7 @@ export const hydrateReaderSettings = async (): Promise<void> => {
   const storage = browserStorage();
   if (!storage) return;
   try {
+    await nativeWrites;
     const shared = await invoke<Record<string, string>>("load_reader_settings");
     await Promise.all(READER_SETTINGS_KEYS.map(async (key) => {
       const sharedValue = shared[key];
@@ -44,7 +59,7 @@ export const hydrateReaderSettings = async (): Promise<void> => {
       }
       const legacyValue = storage.getItem(key);
       if (legacyValue !== null) {
-        await invoke("save_reader_setting", { input: { key, value: legacyValue } });
+        await saveNativeSetting(key, legacyValue);
       }
     }));
   } catch {

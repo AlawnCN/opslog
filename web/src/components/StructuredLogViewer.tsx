@@ -3,6 +3,7 @@ import { EditorState, StateEffect, StateField, type Extension, type Range } from
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { directChildLogFolds, serviceFoldExpansionAnchor } from "../log-fold-hierarchy";
+import { collapseRangesOneLevel, visibleCollapsedRanges } from "../progressive-expansion";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import type { LogReaderFoldMode } from "../log-reader-preferences";
 import { javaObjectSourceStart } from "../java-object-preview";
@@ -15,6 +16,8 @@ import { createLogFoldPlaceholder, type LogFoldPlaceholderData } from "./LogFold
 export interface StructuredLogViewerHandle {
   foldAll: () => void;
   unfoldAll: () => void;
+  unfoldLevel: () => void;
+  foldLevel: () => void;
   jumpTo: (position: number) => void;
 }
 
@@ -113,17 +116,17 @@ const foldedRangeOnLine = (view: EditorView, from: number, to: number): FoldRang
 };
 
 const logTheme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "#061421", color: "#b9ccda" },
-  ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "11px", lineHeight: "1.72" },
-  ".cm-content": { padding: "12px 0", caretColor: "#2ad4e0" },
+  "&": { height: "100%", backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-text, #b9ccda)" },
+  ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "11px", lineHeight: "1.72" },
+  ".cm-content": { padding: "12px 0", caretColor: "var(--cyan)" },
   ".cm-line": { padding: "0 14px 0 8px" },
-  ".cm-gutters": { backgroundColor: "#071827", color: "#486d84", border: "0", borderRight: "1px solid #14364b" },
+  ".cm-gutters": { backgroundColor: "var(--editor-surface, #071827)", color: "var(--theme-muted, #486d84)", border: "0", borderRight: "1px solid var(--theme-line, #14364b)" },
   ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 10px", minWidth: "44px" },
-  ".cm-foldGutter .cm-gutterElement": { padding: "0 6px", color: "#6793aa" },
-  ".cm-activeLine": { backgroundColor: "rgba(26, 72, 98, .24)" },
-  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(42, 212, 224, .24) !important" },
-  ".cm-cursor": { borderLeftColor: "#2ad4e0" },
-  ".cm-foldPlaceholder": { backgroundColor: "#0d2b3d", border: "1px solid #28536a", color: "#82a8bd", padding: "0 6px" },
+  ".cm-foldGutter .cm-gutterElement": { padding: "0 6px", color: "var(--theme-muted, #6793aa)" },
+  ".cm-activeLine": { backgroundColor: "var(--theme-selected, rgba(26, 72, 98, .24))" },
+  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "var(--theme-selected, rgba(42, 212, 224, .24)) !important" },
+  ".cm-cursor": { borderLeftColor: "var(--cyan)" },
+  ".cm-foldPlaceholder": { backgroundColor: "var(--theme-surface, #0d2b3d)", border: "1px solid var(--theme-line, #28536a)", color: "var(--theme-muted, #82a8bd)", padding: "0 6px" },
   "&.cm-focused": { outline: "none" }
 }, { dark: true });
 
@@ -137,6 +140,24 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
   useImperativeHandle(forwardedRef, () => ({
     foldAll: () => { if (viewRef.current) foldAll(viewRef.current); },
     unfoldAll: () => { if (viewRef.current) unfoldAll(viewRef.current); },
+    foldLevel: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const ranges: FoldRange[] = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => { ranges.push({ from, to }); });
+      const effects = collapseRangesOneLevel(analysis.folds, ranges).map((range) => foldEffect.of(range));
+      if (effects.length) view.dispatch({ effects });
+    },
+    unfoldLevel: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const ranges: FoldRange[] = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => { ranges.push({ from, to }); });
+      const effects = visibleCollapsedRanges(ranges).flatMap((parent) => [
+        unfoldEffect.of(parent), ...directChildLogFolds(analysis.folds, parent).map((child) => foldEffect.of(child))
+      ]);
+      if (effects.length) view.dispatch({ effects });
+    },
     jumpTo: (position: number) => {
       const view = viewRef.current;
       if (!view) return;
@@ -155,7 +176,7 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
         viewRef.current?.dispatch({ effects: setOutlineTargetDecoration.of(Decoration.none) });
       }, 1800);
     }
-  }), []);
+  }), [analysis.folds]);
 
   useEffect(() => {
     if (!hostRef.current) return;

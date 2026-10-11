@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { parseJavaObjectPreview, type JavaObjectPreviewNode } from "../java-object-preview";
 import { CloseIcon } from "./Icons";
 import { useMovableDialog } from "./useMovableDialog";
+import { collapseTreeOneLevel, expandTreeOneLevel } from "../progressive-expansion";
+import { LogFoldActions } from "./LogFoldActions";
 
 interface JavaObjectPreviewDialogProps {
   source: string;
@@ -89,10 +91,7 @@ export const ObjectTreePreviewDialog = ({ closeLabel, description, eyebrow, expa
       </header>
       <div className="structured-preview-toolbar">
         <span>{description}</span>
-        <div>
-          <button type="button" onClick={() => setExpanded(new Set())}>全部折叠</button>
-          <button type="button" onClick={() => setExpanded(new Set(paths))}>全部展开</button>
-        </div>
+        <LogFoldActions onFoldLevel={() => setExpanded((current) => collapseTreeOneLevel(paths, current))} onUnfoldLevel={() => setExpanded((current) => expandTreeOneLevel(paths, current))} onFoldAll={() => setExpanded(new Set())} onUnfoldAll={() => setExpanded(new Set(paths))} />
       </div>
       <div className="java-object-tree" role="tree">
         <JavaObjectTreeNode depth={0} expanded={expanded} node={root} path="root" rootBadge={rootBadge} toggle={toggle} />

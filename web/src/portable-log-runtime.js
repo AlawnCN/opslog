@@ -165,9 +165,17 @@
     });
   }
   summary.append(element("span", "readonly", "READ ONLY · 标记已固化在快照中"));
-  var foldAllButton = button("marker", "全部折叠", "折叠全部结构");
-  var unfoldAllButton = button("marker", "全部展开", "展开全部结构");
-  summary.append(foldAllButton, unfoldAllButton);
+  summary.append(window.OpsLogPortablePreview.createFoldActions({
+    foldLevel: function () {
+      var ranges = window.OpsLogPortablePreview.collapseRangesOneLevel(analysis.folds, Array.from(collapsed).map(function (index) { return analysis.folds[index]; }));
+      ranges.forEach(function (range) { collapsed.add(analysis.folds.indexOf(range)); });
+      rebuildVisibleLines();
+      renderViewport(true);
+    },
+    unfoldLevel: unfoldLevel,
+    foldAll: function () { analysis.folds.forEach(function (_, index) { collapsed.add(index); }); rebuildVisibleLines(); renderViewport(true); },
+    unfoldAll: function () { collapsed.clear(); rebuildVisibleLines(); renderViewport(true); }
+  }));
 
   var viewer = element("section", "viewer" + (snapshot.initialWrapLines ? " wrap" : ""));
   var log = element("div", "log");
@@ -517,16 +525,22 @@
     rebuildVisibleOffsets();
     renderViewport(true);
   });
-  foldAllButton.addEventListener("click", function () {
-    analysis.folds.forEach(function (_, index) { collapsed.add(index); });
+  function unfoldLevel() {
+    var before = Array.from(collapsed);
+    var visible = before.filter(function (index) {
+      var fold = analysis.folds[index];
+      return !before.some(function (other) {
+        var parent = analysis.folds[other];
+        return other !== index && parent.from <= fold.from && parent.to >= fold.to && (parent.from < fold.from || parent.to > fold.to);
+      });
+    });
+    visible.forEach(function (index) {
+      collapsed.delete(index);
+      directChildFoldIndexes(index).forEach(function (child) { collapsed.add(child); });
+    });
     rebuildVisibleLines();
     renderViewport(true);
-  });
-  unfoldAllButton.addEventListener("click", function () {
-    collapsed.clear();
-    rebuildVisibleLines();
-    renderViewport(true);
-  });
+  }
   viewer.addEventListener("scroll", scheduleViewportRender, { passive: true });
   window.addEventListener("resize", function () {
     if (wrapInput.checked) lineHeights.fill(defaultLineHeight);

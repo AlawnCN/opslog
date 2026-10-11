@@ -187,7 +187,7 @@ async fn run_script(
         })
         .collect::<Vec<_>>();
     if matches!(server.authentication, SshAuthentication::Password) {
-        return crate::ssh_password_transport::run(server, normalized_ssh_script(script).into_owned(), args, timeout_seconds, connect_timeout).await;
+        return crate::ssh_password_transport::run(environment.name.clone(), server, normalized_ssh_script(script).into_owned(), args, timeout_seconds, connect_timeout).await;
     }
     let mut ssh_args = vec![
         "-o".to_string(), format!("ConnectTimeout={connect_timeout}"),
@@ -200,6 +200,7 @@ async fn run_script(
         ssh_args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
     }
     let destination = if matches!(server.authentication, SshAuthentication::SshConfig) || server.username.as_deref().unwrap_or("").is_empty() { host } else { format!("{}@{}", server.username.as_deref().unwrap_or_default(), host) };
+    ssh_args.extend(crate::ssh_control_master::options(&environment.name, &server, &destination, connect_timeout)?);
     ssh_args.extend([destination, "timeout".to_string(), timeout_seconds.to_string(), "sh".to_string(), "-s".to_string(), "--".to_string()]);
     ssh_args.extend(args);
     let mut command = Command::new("ssh");

@@ -6,6 +6,7 @@ import portableStructuredPreview from "./portable-structured-preview.js?raw";
 import { buildPortableLogSnapshot, encodeCompressedPortableLogSnapshot } from "./portable-log-export-data";
 import type { CustomLogMarker } from "./custom-log-markers";
 import type { TransactionLogAnalysis } from "./transaction-log-model";
+import { captureHtmlExportTheme } from "./html-export-theme";
 
 interface PortableLogDocumentInput {
   logId: string;
@@ -24,16 +25,17 @@ const escapeHtml = (value: string): string => value
   .replaceAll('"', "&quot;");
 
 export const createPortableLogDocument = async (input: PortableLogDocumentInput): Promise<string> => {
+  const theme = captureHtmlExportTheme();
   const snapshot = buildPortableLogSnapshot(input);
   const encoded = await encodeCompressedPortableLogSnapshot(snapshot);
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" ${theme.attributes}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>OpsLog · ${escapeHtml(input.logId)}</title>
-  <style>${portableStyles}</style>
+  <style>${portableStyles}\n${theme.styles}</style>
 </head>
 <body>
   <main id="app" aria-busy="true"><div class="boot"><i></i><strong>正在装载离线日志快照…</strong></div></main>

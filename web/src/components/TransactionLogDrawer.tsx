@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useDeferredValue, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { readCustomMarkerWidthRatio, storeCustomMarkerWidthRatio } from "../custom-marker-layout";
+import { LogFoldActions } from "./LogFoldActions";
 import { buildCustomLogMarkerOutline, createCustomLogMarker, MAX_CUSTOM_LOG_MARKERS, readCustomLogMarkers, storeCustomLogMarkers, type CustomLogMarker } from "../custom-log-markers";
 import { readLogReaderPreferences, storeLogReaderPreferences, type LogReaderPreferences } from "../log-reader-preferences";
 import { analyzeTransactionLog } from "../transaction-log-analysis";
@@ -307,7 +308,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
           </div>
           <CustomMarkerSectionResizeHandle ratio={customMarkerWidthRatio} onChange={setCustomMarkerWidthRatio} onCommit={storeCustomMarkerWidthRatio} />
           <CustomLogMarkerShelf ref={customMarkerShelfRef} markers={customMarkers} activeMarkerId={activeCustomMarkerId} widthRatio={customMarkerWidthRatio} onChange={replaceCustomMarkers} onOpen={openCustomMarker} />
-          <div className="log-reader-fold-actions"><button title="折叠全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("folded")}>全部折叠</button><button title="展开全部结构，并在下次打开日志时继续使用" onClick={() => applyFoldMode("expanded")}>全部展开</button></div>
+          <div className="log-reader-fold-actions"><LogFoldActions onFoldLevel={() => { updateReaderPreferences({ foldMode: "folded" }); viewerRef.current?.foldLevel(); }} onUnfoldLevel={() => { updateReaderPreferences({ foldMode: "folded" }); viewerRef.current?.unfoldLevel(); }} onFoldAll={() => applyFoldMode("folded")} onUnfoldAll={() => applyFoldMode("expanded")} /></div>
         </div>
       </div>}
       {loading && <div className="log-reader-status log-reader-loading" role="status" aria-live="polite"><div className="log-reader-loading-visual" aria-hidden="true"><i /><i /><i /><i /><b /></div><strong>正在读取日志文件…</strong><span>正在准备日志内容与阅读视图</span></div>}

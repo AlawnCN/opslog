@@ -4,10 +4,13 @@ import { Decoration, EditorView, keymap } from "@codemirror/view";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { logHighlightClassName } from "../log-highlight-presentation";
 import { directChildStructuredPreviewFolds, type StructuredLogPreview } from "../structured-log-preview";
+import { collapseRangesOneLevel, visibleCollapsedRanges, type ExpansionRange } from "../progressive-expansion";
 
 export interface StructuredLogPreviewEditorHandle {
   foldAll: () => void;
   unfoldAll: () => void;
+  unfoldLevel: () => void;
+  foldLevel: () => void;
 }
 
 interface StructuredLogPreviewEditorProps {
@@ -21,13 +24,13 @@ const unfoldedPreviewRanges = (effects: readonly StateEffect<unknown>[]): Array<
   .map((effect) => effect.value);
 
 const previewTheme = EditorView.theme({
-  "&": { height: "100%", backgroundColor: "#061421", color: "#b9ccda" },
-  ".cm-scroller": { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: "11px", lineHeight: "1.72", overflow: "auto" },
+  "&": { height: "100%", backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-text, #b9ccda)" },
+  ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "11px", lineHeight: "1.72", overflow: "auto" },
   ".cm-content": { padding: "16px 20px 36px 6px", caretColor: "transparent" },
   ".cm-line": { padding: "0 12px 0 4px" },
-  ".cm-gutters": { backgroundColor: "#061421", color: "#557f96", border: "0", paddingLeft: "10px" },
+  ".cm-gutters": { backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-muted, #557f96)", border: "0", paddingLeft: "10px" },
   ".cm-foldGutter .cm-gutterElement": { padding: "0 5px", cursor: "pointer" },
-  ".cm-foldPlaceholder": { backgroundColor: "#0d2b3d", border: "1px solid #28536a", color: "#82a8bd", padding: "0 6px" },
+  ".cm-foldPlaceholder": { backgroundColor: "var(--theme-surface, #0d2b3d)", border: "1px solid var(--theme-line, #28536a)", color: "var(--theme-muted, #82a8bd)", padding: "0 6px" },
   "&.cm-focused": { outline: "none" }
 }, { dark: true });
 
@@ -38,6 +41,14 @@ export const StructuredLogPreviewEditor = forwardRef<StructuredLogPreviewEditorH
   const viewRef = useRef<EditorView | null>(null);
 
   useImperativeHandle(forwardedRef, () => ({
+    foldLevel: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const ranges: ExpansionRange[] = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => { ranges.push({ from, to }); });
+      const effects = collapseRangesOneLevel(preview.folds, ranges).map((range) => foldEffect.of(range));
+      if (effects.length) view.dispatch({ effects });
+    },
     foldAll: () => {
       viewRef.current?.dispatch({ effects: preview.folds.map((fold) => foldEffect.of(fold)) });
     },
@@ -49,6 +60,15 @@ export const StructuredLogPreviewEditor = forwardRef<StructuredLogPreviewEditorH
         effects.push(unfoldEffect.of({ from, to }));
       });
       view.dispatch({ effects });
+    },
+    unfoldLevel: () => {
+      const view = viewRef.current;
+      if (!view) return;
+      const ranges: ExpansionRange[] = [];
+      foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => { ranges.push({ from, to }); });
+      // The existing transaction extender keeps the direct children folded.
+      const effects = visibleCollapsedRanges(ranges).map((parent) => unfoldEffect.of(parent));
+      if (effects.length) view.dispatch({ effects });
     }
   }), [preview.folds]);
 

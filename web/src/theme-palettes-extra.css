@@ -1,0 +1,158 @@
+/* StyleKit themes adapted to dense log tools. Semantic text colours meet AA. */
+:root[data-theme="soft-ui"] {
+  --canvas: #f8fafc; --surface: #ffffff; --surface-solid: #ffffff; --surface-2: #f1f5f9;
+  --text: #1f2937; --muted: #4b5563; --cyan: #6366f1; --accent-text: #4338ca;
+  --line: #e2e8f0; --selected-surface: #e0e7ff; --error-surface: #fff1f2;
+  --red: #b42336; --green: #17675e; --amber: #875900; --scrollbar: #8795a5;
+  --backdrop: rgb(31 41 55 / 24%); --shadow-color: rgb(99 102 241 / 12%);
+  --radius: 16px; --panel-radius: 24px;
+  --panel-shadow: 0 10px 24px rgb(99 102 241 / 12%);
+  --control-shadow: 0 4px 12px rgb(99 102 241 / 16%);
+  --control-hover-shadow: 0 8px 20px rgb(99 102 241 / 20%);
+  --control-pressed-shadow: inset 0 2px 5px rgb(99 102 241 / 15%);
+  --input-surface: #f1f5f9; --input-focus-shadow: 0 0 0 4px rgb(99 102 241 / 18%);
+  --primary-surface: #4f46e5; --motion-duration: 300ms; --motion-easing: ease-in-out;
+}
+:root[data-theme="natural-organic"] {
+  --canvas: #faf6f1; --surface: #faf6f1; --surface-solid: #faf6f1; --surface-2: #e9e0d4;
+  --text: #292524; --muted: #57534e; --cyan: #5c4033; --accent-text: #3f5935;
+  --line: #ded0bd; --selected-surface: #e2e8da; --error-surface: #f8e8df;
+  --red: #a3332d; --green: #3f5935; --amber: #80551e; --scrollbar: #a68a70;
+  --backdrop: rgb(92 64 51 / 24%); --shadow-color: rgb(92 64 51 / 12%);
+  --radius: 20px 16px 22px 15px; --panel-radius: 32px 24px 36px 26px;
+  --panel-shadow: 0 4px 12px rgb(92 64 51 / 8%);
+  --control-shadow: 0 2px 4px rgb(92 64 51 / 8%);
+  --input-focus-shadow: 0 0 0 3px rgb(139 157 119 / 30%);
+  --hover-lift: 0 2px; --press-scale: .98; --motion-duration: 500ms; --motion-easing: ease-in-out;
+}
+:root[data-theme="modern-gradient"] {
+  --canvas: #020617;
+  --scene: radial-gradient(ellipse at 10% 10%, rgb(139 92 246 / 25%), transparent 55%), radial-gradient(ellipse at 90% 90%, rgb(217 70 239 / 22%), transparent 60%), linear-gradient(135deg, #020617, #1e1b4b);
+  --surface: rgb(255 255 255 / 7%); --surface-solid: #14132d; --surface-2: #252044;
+  --text: #f8fafc; --muted: #c4bfd7; --cyan: #a78bfa; --accent-text: #c4b5fd;
+  --line: rgb(255 255 255 / 20%); --selected-surface: #352950; --error-surface: #3a213b;
+  --red: #fda4af; --green: #6ee7b7; --amber: #fcd34d; --scrollbar: #8b7bb3;
+  --backdrop: rgb(2 6 23 / 75%); --shadow-color: rgb(139 92 246 / 20%);
+  --radius: 16px; --panel-radius: 24px;
+  --panel-shadow: 0 12px 32px rgb(139 92 246 / 20%);
+  --control-shadow: 0 4px 16px rgb(139 92 246 / 25%);
+  --control-hover-shadow: 0 8px 28px rgb(139 92 246 / 35%);
+  --input-focus-shadow: 0 0 0 3px rgb(167 139 250 / 30%);
+  --primary-surface: linear-gradient(110deg, #8b5cf6, #d946ef, #8b5cf6); --primary-text: #020617;
+  --motion-duration: 500ms; --motion-easing: ease-out;
+}
+:root[data-theme="dark-mode"] {
+  --canvas: #0f172a; --surface: #172033; --surface-solid: #172033; --surface-2: #1e293b;
+  --text: #f1f5f9; --muted: #a8b5c8; --cyan: #3b82f6; --accent-text: #93c5fd;
+  --line: #334155; --selected-surface: #263a57; --error-surface: #3b2435;
+  --red: #fda4af; --green: #86efac; --amber: #fcd34d; --scrollbar: #64748b;
+  --backdrop: rgb(2 6 23 / 72%); --shadow-color: rgb(0 0 0 / 30%);
+  --radius: 8px; --panel-radius: 12px;
+  --panel-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  --control-shadow: inset 0 1px 0 rgb(255 255 255 / 15%);
+  --control-hover-shadow: inset 0 1px 0 rgb(255 255 255 / 20%), 0 0 10px rgb(59 130 246 / 30%);
+  --control-pressed-shadow: inset 0 2px 4px rgb(0 0 0 / 30%);
+  --primary-text: #0f172a; --hover-lift: 0 0; --motion-duration: 200ms;
+}
+:root[data-theme="claymorphism"] {
+  --canvas: #fef3c7; --scene: linear-gradient(135deg, #fef3c7, #fce7f3);
+  --surface: #fce7f3; --surface-solid: #fce7f3; --surface-2: #fef3c7;
+  --text: #831843; --muted: #704353; --cyan: #be185d; --accent-text: #9d174d;
+  --line: #f8b4d9; --selected-surface: #f8b4d9; --error-surface: #ffe4e6;
+  --red: #9f1239; --green: #166534; --amber: #854d0e; --scrollbar: #bd7899;
+  --backdrop: rgb(112 67 83 / 24%); --shadow-color: rgb(112 67 83 / 12%);
+  --radius: 24px; --panel-radius: 32px;
+  --panel-shadow: 8px 8px 16px rgb(0 0 0 / 8%), inset 4px 4px 8px rgb(255 255 255 / 60%), inset -2px -2px 4px rgb(0 0 0 / 8%);
+  --control-shadow: var(--panel-shadow);
+  --control-hover-shadow: 8px 12px 24px rgb(0 0 0 / 12%), inset 4px 4px 8px rgb(255 255 255 / 60%), inset -2px -2px 4px rgb(0 0 0 / 8%);
+  --control-pressed-shadow: 2px 2px 4px rgb(0 0 0 / 5%), inset 8px 8px 16px rgb(0 0 0 / 15%), inset -4px -4px 8px rgb(255 255 255 / 50%);
+  --input-shadow: inset 4px 4px 8px rgb(0 0 0 / 10%), inset -4px -4px 8px rgb(255 255 255 / 90%);
+  --input-focus-shadow: var(--input-shadow), 0 0 0 3px rgb(190 24 93 / 20%);
+  --primary-surface: linear-gradient(135deg, #f8b4d9, #f9a8d4); --primary-text: #831843;
+  --press-scale: 1.05 .9; --hover-lift: 0 -4px; --motion-duration: 300ms; --motion-easing: cubic-bezier(.34, 1.56, .64, 1);
+}
+:root[data-theme="notion-style"] {
+  --canvas: #f7f6f3; --surface: #ffffff; --surface-solid: #ffffff; --surface-2: #f7f6f3;
+  --text: #37352f; --muted: #65635c; --cyan: #37352f; --accent-text: #37352f;
+  --line: #e5e7eb; --selected-surface: #e3e1db; --error-surface: #fbe9e9;
+  --red: #a52a2a; --green: #0f7b6c; --amber: #806000; --scrollbar: #a8a59d;
+  --backdrop: rgb(55 53 47 / 24%); --shadow-color: rgb(55 53 47 / 8%);
+  --radius: 6px; --panel-radius: 8px;
+  --panel-shadow: 0 1px 3px rgb(55 53 47 / 8%); --control-shadow: none;
+  --control-hover: #efedea; --input-focus-shadow: 0 0 0 3px rgb(46 170 220 / 20%);
+  --segment-pressed-shadow: none; --hover-lift: 0 0; --press-scale: 1; --motion-duration: 150ms;
+}
+:root[data-theme="apple-style"] {
+  --canvas: #f5f5f7; --surface: #ffffff; --surface-solid: #ffffff; --surface-2: #f5f5f7;
+  --text: #1d1d1f; --muted: #626267; --cyan: #0071e3; --accent-text: #0066cc;
+  --line: #d2d2d7; --selected-surface: #e5f0ff; --error-surface: #fff0ed;
+  --red: #b3261e; --green: #237a38; --amber: #805500; --scrollbar: #99999f;
+  --backdrop: rgb(29 29 31 / 24%); --shadow-color: rgb(0 0 0 / 8%);
+  --radius: 12px; --panel-radius: 16px;
+  --panel-shadow: 0 4px 12px rgb(0 0 0 / 8%); --control-shadow: 0 2px 8px rgb(0 0 0 / 4%);
+  --control-hover-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+  --input-surface: #f5f5f7; --input-focus-shadow: 0 0 0 4px rgb(0 113 227 / 20%);
+  --hover-lift: 0 0; --motion-duration: 500ms; --motion-easing: cubic-bezier(.25, .1, .25, 1);
+}
+
+:root[data-theme="shoujo-manga"] {
+  --canvas: #fff5f7; --surface: #fff5f7; --surface-solid: #fff5f7; --surface-2: #ffffff;
+  --scene: radial-gradient(circle, rgb(255 183 197 / 18%) .6px, transparent .6px), #fff5f7;
+  --scene-size: 10px 10px;
+  --text: #4a5568; --muted: #596174; --cyan: #ffb7c5; --accent-text: #9c345b; --focus-color: #9c345b;
+  --line: #ffb7c5; --selected-surface: #fecdd3; --error-surface: #ffe8ed;
+  --red: #a32943; --green: #276b54; --amber: #80571c; --scrollbar: #c47b93;
+  --backdrop: rgb(74 85 104 / 24%); --shadow-color: rgb(255 183 197 / 30%);
+  --radius: 999px; --panel-radius: 24px;
+  --panel-shadow: 0 4px 20px rgb(255 183 197 / 25%);
+  --control-shadow: 0 4px 15px rgb(255 183 197 / 38%);
+  --control-hover: #fecdd3; --control-hover-shadow: 0 8px 30px rgb(255 183 197 / 40%);
+  --control-pressed-shadow: inset 0 2px 6px rgb(255 183 197 / 40%);
+  --input-focus-shadow: 0 0 0 3px rgb(196 181 253 / 50%), 0 0 12px rgb(255 183 197 / 25%);
+  --primary-surface: #ffb7c5; --primary-text: #4a5568;
+  --syntax-key: #79529e; --syntax-string: #276b54; --syntax-number: #80571c;
+  --hover-lift: 0 0; --press-scale: .95; --motion-duration: 300ms; --motion-easing: ease-in-out;
+}
+
+:root[data-theme="cyber-anime"] {
+  --canvas: #0f0f1a; --surface: #0f0f1a; --surface-solid: #0f0f1a; --surface-2: #191529;
+  --scene: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='96' viewBox='0 0 56 96'%3E%3Cpath d='M28 0L56 16V48L28 64L0 48V16ZM0 48L28 64V96M56 48L28 64M0 16L0 0M56 16V0' fill='none' stroke='%2306d6a0' stroke-opacity='.08'/%3E%3C/svg%3E"), #0f0f1a;
+  --scene-size: 56px 96px;
+  --text: #e0e0ff; --muted: #b0afce; --cyan: #7c3aed; --accent-text: #06d6a0; --focus-color: #06d6a0;
+  --line: #514078; --selected-surface: #29203e; --error-surface: #301224;
+  --red: #ff5c9f; --green: #06d6a0; --amber: #38bdf8; --scrollbar: #7c3aed;
+  --backdrop: rgb(15 15 26 / 80%); --shadow-color: rgb(124 58 237 / 30%);
+  --radius: 0px; --panel-radius: 0px;
+  --panel-shadow: 0 0 10px rgb(124 58 237 / 20%), 0 0 25px rgb(124 58 237 / 12%);
+  --control-shadow: 0 0 8px rgb(124 58 237 / 25%), 0 0 15px rgb(124 58 237 / 15%);
+  --control-hover-shadow: 0 0 15px rgb(124 58 237 / 40%), 0 0 30px rgb(6 214 160 / 20%);
+  --control-pressed-shadow: inset 0 0 8px rgb(6 214 160 / 25%);
+  --input-focus-shadow: 0 0 8px rgb(6 214 160 / 25%), 0 0 15px rgb(6 214 160 / 15%);
+  --primary-surface: #7c3aed; --primary-text: #ffffff;
+  --syntax-key: #b6a0ff; --syntax-string: #06d6a0; --syntax-number: #38bdf8;
+  --hud-panel-background: linear-gradient(#06d6a0, #06d6a0) left top / 20px 1px no-repeat, linear-gradient(#06d6a0, #06d6a0) left top / 1px 20px no-repeat, linear-gradient(#06d6a0, #06d6a0) right bottom / 20px 1px no-repeat, linear-gradient(#06d6a0, #06d6a0) right bottom / 1px 20px no-repeat, repeating-linear-gradient(90deg, transparent 0 7px, rgb(124 58 237 / 4%) 7px 8px), #0f0f1a;
+  --hover-lift: 0 -1px; --press-scale: .98; --motion-duration: 200ms; --motion-easing: ease-out;
+}
+
+/* Brand character is applied to chrome, not to the readability of log rows. */
+:root[data-theme="cyber-anime"] :is(.filter-panel, .results-panel, .drawer-heading, .reader-welcome-primary) { background: var(--hud-panel-background); }
+:root[data-theme="cyber-anime"] :is(.filter-panel h2, .drawer-heading h2, .reader-welcome-primary h1) { letter-spacing: .08em; text-transform: uppercase; }
+:root[data-theme="cyber-anime"] :is(.filter-heading, .results-heading) { background: linear-gradient(120deg, rgb(124 58 237 / 15%), transparent); }
+:root[data-theme="cyber-anime"] :is(.filter-panel input, .results-meta, .reader-stats) { font-family: var(--font-mono); }
+:root[data-theme="cyber-anime"] .brand-mark { border-color: var(--accent-text); }
+:root[data-theme="shoujo-manga"] :is(.filter-panel, .results-panel) { border-width: 2px; }
+:root[data-theme="shoujo-manga"] :is(.filter-panel h2, .drawer-heading h2, .reader-welcome-side h2, #ai-analysis-title)::after { content: " ❀"; color: #9c345b; font-weight: 400; pointer-events: none; }
+:root[data-theme="shoujo-manga"] :is(.filter-heading, .results-heading) { background: linear-gradient(110deg, rgb(255 183 197 / 20%), rgb(196 181 253 / 12%), transparent); }
+:root[data-theme="shoujo-manga"] :is(button, input, textarea, select, summary):focus-visible { outline-color: var(--accent-text); }
+:root[data-theme="natural-organic"] :is(h1, h2, h3, .reader-welcome-primary h1) { font-family: Georgia, "Songti SC", "SimSun", serif; }
+:root[data-theme="natural-organic"] :is(button, input, textarea, .theme-picker) { transition-property: background-color, color, border-color, border-radius, box-shadow, translate, scale; }
+:root[data-theme="natural-organic"] button:hover:not(:disabled) { border-radius: 16px 22px 15px 20px; }
+:root[data-theme="modern-gradient"] :is(.topbar, .sidebar, .filter-panel, .results-panel) { backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+:root[data-theme="modern-gradient"] button.primary { background-size: 200% auto; transition-property: background-position, color, border-color, box-shadow, translate, scale; }
+:root[data-theme="modern-gradient"] button.primary:hover:not(:disabled) { background-position: 100% center; filter: none; }
+:root[data-theme="dark-mode"] button:hover:not(:disabled) { border-color: #64748b; }
+:root[data-theme="notion-style"] :is(button, .theme-picker) { transition-property: background-color, color; }
+:root[data-theme="notion-style"] button:active:not(:disabled) { --theme-text: var(--text); --theme-muted: var(--text); background: #e3e1db; color: var(--text); }
+@supports not (backdrop-filter: blur(1px)) {
+  :root[data-theme="modern-gradient"] :is(.topbar, .sidebar, .filter-panel, .results-panel) { background: var(--surface-solid); }
+}

@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 
 pub(crate) const SETTINGS_DIRECTORY: &str = "OpsLog/shared-reader-settings";
-const ALLOWED_SETTINGS: [(&str, &str); 5] = [
+const ALLOWED_SETTINGS: [(&str, &str); 6] = [
+    ("opslog.appearance.theme.v1", "appearance-theme.txt"),
     (
         "opslog.transaction-log.custom-markers.v1",
         "custom-markers.json",
@@ -100,6 +101,10 @@ mod tests {
 
     #[test]
     fn only_known_reader_settings_are_persisted() {
+        assert_eq!(
+            filename_for("opslog.appearance.theme.v1").unwrap(),
+            "appearance-theme.txt"
+        );
         assert_eq!(
             filename_for("opslog.transaction-log.custom-markers.v1").unwrap(),
             "custom-markers.json"

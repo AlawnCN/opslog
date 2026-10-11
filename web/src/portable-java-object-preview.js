@@ -181,7 +181,38 @@
     }
     render();
     return {
+      foldLevel: function () {
+        var visible = paths.filter(function (path) {
+          if (!expanded.has(path)) return false;
+          var ancestors = path.split(".");
+          ancestors.pop();
+          while (ancestors.length) {
+            if (!expanded.has(ancestors.join("."))) return false;
+            ancestors.pop();
+          }
+          return true;
+        });
+        var frontier = visible.filter(function (path) { return !visible.some(function (child) { return child.indexOf(path + ".") === 0; }); });
+        frontier.forEach(function (path) { expanded.delete(path); });
+        render();
+      },
       foldAll: function () { expanded.clear(); render(); },
+      unfoldLevel: function () {
+        var frontier = paths.filter(function (path) {
+          if (expanded.has(path)) return false;
+          var ancestors = path.split(".");
+          ancestors.pop();
+          while (ancestors.length) {
+            if (!expanded.has(ancestors.join("."))) return false;
+            ancestors.pop();
+          }
+          return true;
+        });
+        expanded = new Set(Array.from(expanded).filter(function (path) {
+          return !frontier.some(function (parent) { return path.indexOf(parent + ".") === 0; });
+        }).concat(frontier));
+        render();
+      },
       unfoldAll: function () { expanded = new Set(paths); render(); }
     };
   }

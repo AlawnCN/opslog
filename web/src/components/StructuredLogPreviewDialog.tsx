@@ -3,6 +3,7 @@ import { formatStructuredLogPreview, type InspectableLogStructureKind } from "..
 import { CloseIcon } from "./Icons";
 import { StructuredLogPreviewEditor, type StructuredLogPreviewEditorHandle } from "./StructuredLogPreviewEditor";
 import { useMovableDialog } from "./useMovableDialog";
+import { LogFoldActions } from "./LogFoldActions";
 
 interface StructuredLogPreviewDialogProps {
   kind: InspectableLogStructureKind;
@@ -26,10 +27,7 @@ export const StructuredLogPreviewDialog = ({ kind, source, onClose }: Structured
       {preview.error && <div className="structured-preview-error" role="status">{preview.error}</div>}
       <div className="structured-preview-toolbar">
         <span>点击行首箭头折叠层级</span>
-        <div>
-          <button type="button" onClick={() => editorRef.current?.foldAll()}>全部折叠</button>
-          <button type="button" onClick={() => editorRef.current?.unfoldAll()}>全部展开</button>
-        </div>
+        <LogFoldActions onFoldLevel={() => editorRef.current?.foldLevel()} onUnfoldLevel={() => editorRef.current?.unfoldLevel()} onFoldAll={() => editorRef.current?.foldAll()} onUnfoldAll={() => editorRef.current?.unfoldAll()} />
       </div>
       <StructuredLogPreviewEditor ref={editorRef} preview={preview} />
     </section>

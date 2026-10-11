@@ -5,6 +5,7 @@ import type { LanShareController } from "../use-lan-share";
 import { PulseIcon, SettingsIcon } from "./Icons";
 import { LanShareControl } from "./LanShareControl";
 import { EnvironmentPicker } from "./EnvironmentPicker";
+import { ThemePicker } from "./ThemePicker";
 
 interface HeaderProps {
   environments: Environment[];
@@ -40,6 +41,7 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
       </div>
       <div className="topbar-context">
+        <ThemePicker />
         <div className="environment-control">
           <span>运行环境</span>
           <div className="environment-composite-control">
@@ -53,8 +55,8 @@ export const Header = ({ environments, selected, onSelect, loading, desktopMode,
         </div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.11<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.1.11</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.12<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.12</div>}
       </div>
     </header>
   );

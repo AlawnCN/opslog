@@ -18,6 +18,7 @@ mod reader_window;
 mod reader_settings;
 mod ssh_log_source;
 mod ssh_password_transport;
+mod ssh_control_master;
 mod update_mirrors;
 mod update_release;
 
@@ -51,6 +52,7 @@ pub fn run() {
             commands::load_environments,
             commands::load_environment_configuration,
             commands::save_environment_config,
+            commands::release_ssh_connections,
             commands::search_logs,
             commands::sample_ssh_logs,
             commands::search_logs_cancellable,
@@ -71,8 +73,14 @@ pub fn run() {
             lan_server::get_lan_share_status,
             lan_server::set_lan_share_enabled,
         ])
-        .run(tauri::generate_context!())
-        .expect("OpsLog application failed");
+        .build(tauri::generate_context!())
+        .expect("OpsLog application failed")
+        .run(|_app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                ssh_password_transport::close_connections(None);
+                ssh_control_master::close(None);
+            }
+        });
 }
 
 #[cfg(feature = "reader-app")]

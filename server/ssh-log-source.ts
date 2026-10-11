@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { sshLogSourceSchema } from "../shared/ssh-log-rules.js";
 import type { EnvironmentConfig, QueryResult, SearchInput, SshApplicationConfig, SshServerConfig } from "./domain.js";
 import { runPasswordSshScript } from "./ssh-password-transport.js";
+import { sshControlMasterOptions } from "./ssh-control-master.js";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_PARALLEL_SERVERS = 4;
@@ -99,7 +100,7 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
   const connectTimeout = environment.sshConnectTimeoutSeconds ?? 10;
   if (server.authentication === "password") {
     const encodedArgs = args.map((value) => value ? Buffer.from(value, "utf8").toString("hex") : "-");
-    return runPasswordSshScript(server, script, encodedArgs, connectTimeout, timeoutSeconds, signal);
+    return runPasswordSshScript(server, script, encodedArgs, connectTimeout, timeoutSeconds, signal, environment.name);
   }
   return new Promise((resolve, reject) => {
     const encodedArgs = args.map((value) => value ? Buffer.from(value, "utf8").toString("hex") : "-");
@@ -108,6 +109,7 @@ const runSshScript = (environment: EnvironmentConfig, server: SshServerConfig, s
     if (server.authentication === "private-key" && server.privateKeyPath) sshArgs.push("-i", server.privateKeyPath, "-o", "BatchMode=yes");
     else if (server.authentication === "ssh-config") sshArgs.push("-o", "BatchMode=yes");
     const destination = server.authentication === "ssh-config" || !server.username ? host : `${server.username}@${host}`;
+    sshArgs.push(...sshControlMasterOptions(environment.name, [server, connectTimeout], destination));
     sshArgs.push(destination, "timeout", String(timeoutSeconds), "sh", "-s", "--", ...encodedArgs);
     const child = spawn("ssh", sshArgs, { stdio: ["pipe", "pipe", "pipe"] });
     const abort = () => child.kill("SIGKILL");

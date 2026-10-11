@@ -9,6 +9,8 @@ import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-a
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
 import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs } from "./ssh-log-source.js";
+import { closePasswordSshConnections } from "./ssh-password-transport.js";
+import { closeSshControlMasters } from "./ssh-control-master.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
@@ -141,6 +143,13 @@ const trcText = (rows: Record<string, unknown>[]): string => rows.map((row) => {
 
 export const apiRouter = Router();
 
+apiRouter.post("/ssh/connections/release", asyncRoute(async (request, response) => {
+  const { environment } = z.object({ environment: z.string().min(1).max(100) }).parse(request.body);
+  closePasswordSshConnections(environment);
+  closeSshControlMasters(environment);
+  response.json({ ok: true });
+}));
+
 apiRouter.get("/health", (_request, response) => {
   response.json({ status: "ok", version: "2.0.0" });
 });
@@ -227,6 +236,8 @@ apiRouter.post("/ai/analyze", (request, response, next) => {
 apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
   const { contents } = environmentImportSchema.parse(request.body);
   const path = await saveEnvironmentConfig(contents);
+  closePasswordSshConnections();
+  closeSshControlMasters();
   response.json({ path });
 }));
 
