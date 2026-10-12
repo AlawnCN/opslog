@@ -1,11 +1,12 @@
 {
   "name": "opslog-web",
-  "version": "3.1.13",
+  "version": "3.1.14",
   "private": true,
   "type": "module",
   "scripts": {
     "test:search-warnings": "node --import tsx --test tests/search-warnings.test.ts",
-    "posttest": "node --import tsx --test tests/search-warnings.test.ts tests/ssh-password-transport.test.ts tests/ssh-control-master.test.ts tests/theme.test.ts",
+    "posttest": "node --import tsx --test tests/search-warnings.test.ts tests/ssh-password-transport.test.ts tests/ssh-control-master.test.ts tests/theme.test.ts tests/environment-startup.test.ts tests/ssh-server-probe.test.ts tests/ssh-cursor-pagination.test.mjs tests/ssh-query-sessions.test.ts",
+    "test:ssh-cursor": "node --import tsx --test tests/ssh-cursor-pagination.test.mjs tests/ssh-query-sessions.test.ts",
     "test:ssh-native": "node --import tsx --test tests/ssh-native-pool.test.ts",
     "dev": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"npm run web:dev\"",
     "dev:lan": "concurrently -k -n api,web -c cyan,blue \"tsx watch server/index.ts\" \"vite --host 0.0.0.0\"",

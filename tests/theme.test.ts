@@ -134,6 +134,35 @@ test("configuration cards and list rows use role-specific theme shapes", () => {
   assert.match(stylesheet("theme-components.css"), /textarea \{ --field-radius: var\(--card-radius\)/);
 });
 
+test("inner backgrounds follow rounded and asymmetric panel corners without clipping popovers", () => {
+  const styles = postcss.parse(stylesheet("themes.css"));
+  const rules = styles.nodes.filter((node) => node.type === "rule");
+  for (const [selector, corners] of [
+    [".filter-panel > .filter-heading", ["border-top-left-radius", "border-top-right-radius"]],
+    [".results-panel > .results-heading", ["border-top-left-radius", "border-top-right-radius"]],
+    [".filter-panel > .filter-actions", ["border-bottom-left-radius", "border-bottom-right-radius"]],
+    [".results-panel > .table-shell", ["border-bottom-left-radius", "border-bottom-right-radius"]],
+    [".ssh-source-card > summary", ["border-top-left-radius", "border-top-right-radius"]],
+    [".ssh-source-card:not([open]) > summary", ["border-bottom-left-radius", "border-bottom-right-radius"]]
+  ] as const) {
+    const rule = rules.find((node) => node.type === "rule" && node.selector.includes(selector));
+    assert.ok(rule && rule.type === "rule", selector);
+    const declarations = new Map<string, string>();
+    rule.walkDecls((declaration) => { declarations.set(declaration.prop, declaration.value); });
+    for (const corner of corners) assert.equal(declarations.get(corner), "inherit", `${selector}: ${corner}`);
+    assert.equal(declarations.has("overflow"), false, "rounding must not introduce popup clipping");
+  }
+  for (const selector of [".filter-panel", ".results-panel"]) {
+    styles.walkRules((rule) => {
+      if (rule.selector.includes(selector)) {
+        rule.walkDecls("overflow", (declaration) => assert.notEqual(declaration.value, "hidden"));
+        rule.walkDecls("clip-path", () => assert.fail("panels with popovers must not be clipped"));
+      }
+    });
+  }
+  assert.match(stylesheet("themes.css"), /\.detail-grid > div \{[^}]*border-radius: var\(--card-radius\)/);
+});
+
 test("clipped theme controls keep motion inside their material and focus boundaries", () => {
   const styles = postcss.parse(stylesheet("themes.css"));
   const rules = styles.nodes.filter((node) => node.type === "rule");

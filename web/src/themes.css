@@ -48,6 +48,19 @@
 :root[data-theme-ui="modern"] .reader-welcome-primary h1 { color: var(--text); font-weight: 650; letter-spacing: -.035em; }
 :root[data-theme-ui="modern"] :is(.filter-panel, .results-panel, .timezone-card) { background: var(--surface); border: 1px solid var(--line); border-radius: var(--panel-radius); box-shadow: var(--panel-shadow); }
 :root[data-theme-ui="modern"] .timezone-card { margin-top: auto; }
+/* Paint inner backgrounds along the parent's silhouette without clipping menus,
+   focus rings or shadows. Inherit each corner to support asymmetric themes. */
+:root[data-theme-ui="modern"] :is(.filter-panel > .filter-heading, .results-panel > .results-heading, .ssh-source-card > summary) {
+  border-top-left-radius: inherit; border-top-right-radius: inherit;
+  background-clip: padding-box;
+}
+:root[data-theme-ui="modern"] :is(.filter-panel > .filter-actions, .results-panel > .table-shell, .ssh-source-card > .ssh-source-footer) {
+  border-bottom-left-radius: inherit; border-bottom-right-radius: inherit;
+  background-clip: padding-box;
+}
+:root[data-theme-ui="modern"] .ssh-source-card:not([open]) > summary { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
+:root[data-theme-ui="modern"] .detail-grid { background: transparent; }
+:root[data-theme-ui="modern"] .detail-grid > div { background: var(--surface-2); border-color: var(--line); border-radius: var(--card-radius); }
 :root[data-theme-ui="modern"] th { background: var(--surface-solid); color: var(--muted); }
 :root[data-theme-ui="modern"] tbody tr:hover { background: var(--selected-surface); }
 :root[data-theme-ui="modern"] :is(.drawer, [role="dialog"], .environment-import-review, .environment-picker-panel, .app-select-menu, .searchable-select-menu, .date-time-popover, .column-menu, .lan-share-panel, .custom-marker-context-menu, .custom-marker-overflow-menu, .log-outline-window, .log-outline-popover, .trace-tooltip, .environment-add-source) { background: var(--floating-surface); border-color: var(--line); border-radius: var(--panel-radius); box-shadow: var(--floating-shadow); color: var(--text); }

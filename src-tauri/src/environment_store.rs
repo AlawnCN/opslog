@@ -222,7 +222,7 @@ pub fn to_public(
         .unwrap_or_else(|| {
             (
                 configured_time_zone.clone().unwrap_or_else(|| "Africa/Nairobi".to_string()),
-                "+03:00".to_string(),
+                environment.ssh_log_time_offset.clone().unwrap_or_else(|| "+03:00".to_string()),
                 if configured_time_zone.is_some() { "configured" } else { "default" }.to_string(),
             )
         });

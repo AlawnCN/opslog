@@ -147,6 +147,6 @@ export const toPublicEnvironment = (
   insecureTls: environment.allowInsecureTls ?? false,
   sshApplications: environment.sshMonitoredApplications?.map(({ name }) => name) ?? environment.sshApplications ?? [],
   timeZone: timeProfile?.timeZone ?? environment.timeZone ?? "Africa/Nairobi",
-  timeZoneOffset: timeProfile?.timeZoneOffset ?? "+03:00",
+  timeZoneOffset: timeProfile?.timeZoneOffset ?? environment.sshLogTimeOffset ?? "+03:00",
   timeZoneSource: timeProfile?.timeZoneSource ?? (environment.timeZone ? "configured" : "default")
 });

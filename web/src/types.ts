@@ -89,6 +89,7 @@ export interface SearchResponse {
 }
 
 export interface SearchRequest extends Omit<SearchFilters, "startLocal" | "endLocal" | "minDurationMs"> {
+  sessionId?: string;
   environment: string;
   kind: LogKind;
   startTime: string;

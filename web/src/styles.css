@@ -721,3 +721,10 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
   flex: 0 0 var(--action-icon-size);
 }
 .query-action-icon { display: inline-flex; align-items: center; justify-content: center; }
+.ssh-server-probe { margin-bottom: 12px; }
+.ssh-server-probe-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ssh-server-probe-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 12px; color: var(--theme-text, #bcd0dc); background: var(--theme-surface, #071521); border: 1px solid var(--theme-line, #203e52); border-radius: var(--theme-control-radius, 4px); cursor: pointer; }
+.ssh-server-probe-actions button:disabled { opacity: .55; cursor: wait; }
+.ssh-server-probe-actions svg { width: 16px; height: 16px; }
+.ssh-server-probe-success { color: var(--theme-success, #35dba8); overflow-wrap: anywhere; }
+.ssh-server-probe .environment-config-error { overflow-wrap: anywhere; }

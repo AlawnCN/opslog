@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironmentConfiguration, loadEnvironments, loadWebRuntimeInfo, searchLogs, releaseSshConnections } from "./api";
+import { desktopMode, errorMessage, exportLogs, importEnvironmentConfig, loadEnvironmentConfiguration, loadEnvironments, loadWebRuntimeInfo, searchLogs, releaseSshConnections, resolveEnvironmentTime } from "./api";
 import { initialFilters, initialPageSize, PAGE_SIZE_KEY, PAGE_SIZES } from "./app-defaults";
 import { DataTable } from "./components/DataTable";
 import { AppSelect } from "./components/AppSelect";
@@ -10,7 +10,7 @@ import { Navigation } from "./components/Navigation";
 import { TraceDrawer } from "./components/TraceDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
-import { OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
+import { createSshQuerySessionId, OpsLogSessionCache, searchCacheKey } from "./opslog-session-cache";
 import { DEFAULT_TIME_ZONE, rollingTimeZoneRange, toUtcIso, zonedLocal } from "./time";
 import type { Environment, EnvironmentConfiguration, LogKind, SearchFilters, SearchRequest, SearchResponse } from "./types";
 import { useAppUpdater } from "./use-app-updater";
@@ -28,6 +28,9 @@ const TransactionLogDrawer = lazy(() => import("./components/TransactionLogDrawe
 export default function App() {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [environmentName, setEnvironmentName] = useState("");
+  const [environmentsLoading, setEnvironmentsLoading] = useState(true);
+  const [environmentRevision, setEnvironmentRevision] = useState(0);
+  const [resolvedEnvironment, setResolvedEnvironment] = useState<{ name: string; revision: number }>();
   const connectionEnvironment = useRef("");
   useEffect(() => {
     const previous = connectionEnvironment.current;
@@ -58,6 +61,7 @@ export default function App() {
   const [environmentConfigError, setEnvironmentConfigError] = useState<string>();
   const controller = useRef<AbortController | undefined>(undefined);
   const searchRunId = useRef(0);
+  const sshQuerySession = useRef<{ key: string; id: string } | undefined>(undefined);
   const sessionCache = useRef(new OpsLogSessionCache());
   const filterPanelRef = useRef<FilterPanelHandle>(null);
   const transactionLogDrawerRef = useRef<TransactionLogDrawerHandle>(null);
@@ -66,6 +70,9 @@ export default function App() {
   useEffect(() => () => { controller.current?.abort(); }, []);
 
   const environment = environments.find((item) => item.name === environmentName);
+  const timeProfileLoading = environment?.sourceType === "ssh"
+    && (resolvedEnvironment?.name !== environmentName || resolvedEnvironment.revision !== environmentRevision);
+  const environmentReady = !environmentsLoading && !!environment && !timeProfileLoading;
   const environmentTimeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
   const notifyCurrentVersion = useCallback(() => {
     setNotice({ tone: "info", text: "当前已是最新版本。" });
@@ -81,16 +88,34 @@ export default function App() {
   const lanShare = useLanShare(desktopMode);
 
   const reloadEnvironments = async () => {
+    setEnvironmentsLoading(true);
     try {
       const items = await loadEnvironments();
       const selected = items.some((item) => item.name === environmentName) ? environmentName : (items[0]?.name ?? "");
       setEnvironments(items);
+      setEnvironmentRevision((revision) => revision + 1);
       setEnvironmentName(selected);
       setFilters((current) => ({ ...current, index: items.find((item) => item.name === selected)?.applogIndex ?? "" }));
     } catch (error) {
       setNotice({ tone: "error", text: errorMessage(error) });
+    } finally {
+      setEnvironmentsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (environmentsLoading || !environmentName || environment?.sourceType !== "ssh") return;
+    let active = true;
+    void resolveEnvironmentTime(environmentName).then((resolved) => {
+      if (!active) return;
+      setEnvironments((items) => items.map((item) => item.name === resolved.name ? resolved : item));
+      setResolvedEnvironment({ name: environmentName, revision: environmentRevision });
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setNotice({ tone: "error", text: `环境时区加载失败：${errorMessage(error)}；请重新选择环境重试` });
+    });
+    return () => { active = false; };
+  }, [environmentName, environmentRevision, environmentsLoading]);
 
   useEffect(() => {
     void reloadEnvironments();
@@ -220,6 +245,7 @@ export default function App() {
   }, [appUpdater, environmentConfigOpen, environmentConfigSaving, logResources]);
 
   const runSearch = async (targetPage = 1, targetPageSize = pageSize, forceRefresh = false, refreshSelectedRange = false) => {
+    if (!environmentReady) return;
     let activeRequest = request;
     if (activeRequest && refreshSelectedRange && selectedRangeDays !== null) {
       const range = rollingTimeZoneRange(selectedRangeDays, environmentTimeZone);
@@ -230,7 +256,13 @@ export default function App() {
     const runId = ++searchRunId.current;
     setSearching(true);
     controller.current?.abort();
-    const nextRequest = { ...activeRequest, page: targetPage, pageSize: targetPageSize };
+    const sessionKey = JSON.stringify({ ...activeRequest, page: 0, pageSize: targetPageSize });
+    if (environment?.sourceType === "ssh" && (targetPage === 1 || sshQuerySession.current?.key !== sessionKey)) {
+      sshQuerySession.current = { key: sessionKey, id: createSshQuerySessionId() };
+      sessionCache.current.clearSearch();
+    }
+    const nextRequest = { ...activeRequest, page: targetPage, pageSize: targetPageSize,
+      ...(environment?.sourceType === "ssh" ? { sessionId: sshQuerySession.current!.id } : {}) };
     const cacheKey = searchCacheKey(nextRequest);
     if (forceRefresh) sessionCache.current.clearSearch();
     const cached = forceRefresh ? undefined : sessionCache.current.getSearch(cacheKey);
@@ -348,10 +380,10 @@ export default function App() {
     finally { setLoading(false); }
   };
   return <div className="app-shell">
-    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
+    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} environmentStatus={environmentsLoading ? "正在加载环境" : timeProfileLoading ? "正在确认日志时区" : !environment ? "尚未选择环境" : undefined} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} environment={environment} />
     <main>
-      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
+      <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading || !environmentReady} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
       <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} timeZone={environmentTimeZone} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <AppSelect value={String(pageSize)} disabled={loading} ariaLabel="每页记录数" options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} 条` }))} onChange={(value) => changePageSize(Number(value))} /></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}

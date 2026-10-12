@@ -300,6 +300,7 @@ mod tests {
 
     fn input() -> SearchInput {
         SearchInput {
+            session_id: None,
             environment: "test".into(),
             kind: LogKind::Transaction,
             start_time: "2026-09-01T00:00:00.000Z".into(),

@@ -218,6 +218,7 @@ pub struct PublicEnvironment {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchInput {
+    pub session_id: Option<String>,
     pub environment: String,
     pub kind: LogKind,
     pub start_time: String,

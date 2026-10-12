@@ -1,9 +1,13 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { sshLogSourceSchema } from "../shared/ssh-log-rules.js";
 import type { EnvironmentConfig, QueryResult, SearchInput, SshApplicationConfig, SshServerConfig } from "./domain.js";
 import { runPasswordSshScript } from "./ssh-password-transport.js";
 import { sshControlMasterOptions } from "./ssh-control-master.js";
+import { closePasswordSshConnections } from "./ssh-password-transport.js";
+import { closeSshControlMasters } from "./ssh-control-master.js";
+import { appendSnapshotOutputs, snapshotHasPage, snapshotSession, sshServerKey } from "./ssh-query-sessions.js";
 
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_PARALLEL_SERVERS = 4;
@@ -24,6 +28,24 @@ const TRANSACTION_LIST_SCRIPT = readFileSync(new URL("./ssh-scripts/transaction_
 const TRANSACTION_SUMMARY_SCRIPT = readFileSync(new URL("./ssh-scripts/transaction_summary.sh", import.meta.url), "utf8");
 
 const TIME_PROFILE_SCRIPT = readFileSync(new URL("./ssh-scripts/time_profile.sh", import.meta.url), "utf8");
+const PROBE_SCRIPT = readFileSync(new URL("./ssh-scripts/probe.sh", import.meta.url), "utf8");
+
+export const probeSshServer = async (environment: EnvironmentConfig, signal?: AbortSignal) => {
+  const scope = `probe-${randomUUID()}`;
+  const started = Date.now();
+  const server = configuredServers(environment)[0];
+  if (!server) throw new Error("请配置 SSH 服务器");
+  try {
+    const raw = await runSshScript({ ...environment, name: scope }, server, PROBE_SCRIPT, [],
+      (environment.sshConnectTimeoutSeconds ?? 10) + 10, signal);
+    const [marker, username, hostname, timeZone, offset] = raw.trim().split(/\r?\n/);
+    if (marker !== "OPSLOG_SSH_PROBE_V1" || !username || !hostname || !offset) throw new Error("SSH 已连接，但探测命令返回格式异常");
+    return { username, hostname, timeZone, offset, durationMs: Date.now() - started };
+  } finally {
+    closePasswordSshConnections(scope);
+    closeSshControlMasters(scope);
+  }
+};
 
 const TRANSACTION_CONTENT_SCRIPT = readFileSync(new URL("./ssh-scripts/transaction_content.sh", import.meta.url), "utf8");
 
@@ -166,7 +188,11 @@ const runAcrossServers = async (
       signal?.throwIfAborted();
       const index = next++;
       const server = servers[index]!;
-      try { outcomes[index] = { server, raw: await runSshScript(environment, server, script, args, timeoutSeconds, signal) }; }
+      const serverArgs = [...args];
+      if (script.includes("# OPSLOG_CURSOR_PROTOCOL") && serverArgs.length === 8) {
+        serverArgs[7] = JSON.stringify({ ...JSON.parse(serverArgs[7]!), _scanServer: sshServerKey(server) });
+      }
+      try { outcomes[index] = { server, raw: await runSshScript(environment, server, script, serverArgs, timeoutSeconds, signal) }; }
       catch (error) { outcomes[index] = { server, error: error instanceof Error ? error.message : String(error) }; }
     }
   }));
@@ -388,8 +414,19 @@ const configuredOutput = async (environment: EnvironmentConfig, input: SearchInp
   const application = selectedApplication(environment, input);
   const rules = (application.logSources ?? []).map((rule) => sshLogSourceSchema.parse(rule));
   const { offset } = await resolveSshTimeProfile(environment, signal);
-  return runAcrossServers(environment, CONFIGURED_SCRIPT, [applicationRoot(application), daysInRange(input.startTime, input.endTime, offset).join(","),
-    localTimestampBoundary(input.startTime, offset), localTimestampBoundary(input.endTime, offset), String(limit), kind, JSON.stringify(rules), JSON.stringify(input)], 120, undefined, true, signal);
+  const session = limit < 20_000 ? snapshotSession(environment, input) : undefined;
+  if (session && (input.page <= session.page || snapshotHasPage(session, input))) {
+    session.page = Math.max(session.page, input.page);
+    return { outputs: [...session.outputs.values()], warnings: [] };
+  }
+  const expectedPage = session?.page ?? 0;
+  const filters = session ? { ...input, _snapshotPaging: true, _scanCursors: session.cursors } : input;
+  const group = await runAcrossServers(environment, CONFIGURED_SCRIPT, [applicationRoot(application), daysInRange(input.startTime, input.endTime, offset).join(","),
+    localTimestampBoundary(input.startTime, offset), localTimestampBoundary(input.endTime, offset), String(session ? input.pageSize + 1 : limit), kind, JSON.stringify(rules), JSON.stringify(filters)], 120, undefined, true, signal);
+  if (!session) return group;
+  if (group.warnings.length) throw new Error(`查询快照未完成：${group.warnings.join("；")}`);
+  appendSnapshotOutputs(session, group.outputs, input.page, expectedPage);
+  return { outputs: [...session.outputs.values()], warnings: [] };
 };
 
 const searchConfiguredLogs = async (environment: EnvironmentConfig, input: SearchInput, exportAll: boolean, signal?: AbortSignal): Promise<QueryResult> => {

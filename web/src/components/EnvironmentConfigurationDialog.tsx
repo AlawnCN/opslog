@@ -17,6 +17,7 @@ import { EnvironmentSourceBadge } from "./EnvironmentSourceBadge";
 import { SearchableSelect } from "./SearchableSelect";
 import { PasswordInput } from "./PasswordInput";
 import { SshAiConfigurationAnalysis } from "./SshAiConfigurationAnalysis";
+import { SshServerProbe } from "./SshServerProbe";
 
 interface EnvironmentConfigurationDialogProps {
   environments: EnvironmentConfiguration[];
@@ -39,12 +40,13 @@ const TIME_ZONE_OPTIONS = (() => {
   return Array.from(new Set(["UTC", ...values])).map((timeZone) => ({ value: timeZone, label: timeZone.replaceAll("_", " ") }));
 })();
 
-const SshServerList = ({ value, onChange }: { value: SshServerConfiguration[]; onChange: (value: SshServerConfiguration[]) => void }) => {
+const SshServerList = ({ value, timeout, onChange }: { value: SshServerConfiguration[]; timeout?: number; onChange: (value: SshServerConfiguration[]) => void }) => {
   const update = (index: number, changes: Partial<SshServerConfiguration>) => onChange(value.map((server, current) => current === index ? { ...server, ...changes } : server));
   return <div className="environment-repeatable is-wide">
     <div className="environment-repeatable-heading"><div><strong>服务器组</strong><small>并行检索组内服务器并合并结果</small></div><button type="button" onClick={() => onChange([...value, { name: nextSshServerName(value), host: "", username: "", authentication: "ssh-config", password: "", privateKeyPath: "" }])}>＋ 添加服务器</button></div>
     <div className="environment-server-list">{value.map((server, index) => <article key={index}>
       <div className="environment-server-card-title"><strong>{server.name || `服务器 ${index + 1}`}</strong><button type="button" aria-label={`移除服务器 ${server.name || index + 1}`} disabled={value.length <= 1} onClick={() => onChange(value.filter((_, current) => current !== index))}><TrashIcon /></button></div>
+      <SshServerProbe server={server} timeout={timeout} onTrust={(trusted) => update(index, trusted)} />
       <div className="environment-server-fields">
         <label><span>服务器名称</span><input value={server.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="例如 m5-uat-01" /></label>
         <label><span>主机 / SSH Config 别名</span><input value={server.host} onChange={(event) => update(index, { host: event.target.value, hostKeyFingerprint: undefined })} placeholder="m5.uat 或 10.0.0.8" /><small>修改主机或端口会清除旧指纹，下次连接需重新核对。</small></label>
@@ -411,7 +413,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
                 <label><span>连接超时（秒）</span><input type="number" min="3" max="60" value={current.sshConnectTimeoutSeconds ?? 10} onChange={(event) => update({ sshConnectTimeoutSeconds: Number(event.target.value) })} /></label>
                 <label><span>原始日志 UTC 偏移（回退值）</span><input value={current.sshLogTimeOffset ?? "+03:00"} onChange={(event) => update({ sshLogTimeOffset: event.target.value })} placeholder="+03:00" /><small>服务器探测关闭或失败时，用此偏移解释日志时间。与显示时区不同请确认是否有意设置；含夏令时的历史日志不能只依赖当前偏移。</small>{current.sshLogTimeOffset !== sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") && <span className="environment-time-zone-warning">与所选时区当前偏移不一致。<button type="button" onClick={() => update({ sshLogTimeOffset: sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") })}>按时区同步偏移</button></span>}</label>
                 <div className="environment-time-zone-mode is-wide"><span><strong>服务器时区自动探测</strong><small>探测失败时使用配置时区与 UTC 偏移。</small></span><button type="button" className={current.sshAutoDetectTimeZone !== false ? "is-on" : undefined} aria-pressed={current.sshAutoDetectTimeZone !== false} onClick={() => update({ sshAutoDetectTimeZone: current.sshAutoDetectTimeZone === false })}><i /></button></div>
-                <SshServerList value={current.sshServers ?? []} onChange={(sshServers) => update({ sshServers })} />
+                <SshServerList value={current.sshServers ?? []} timeout={current.sshConnectTimeoutSeconds} onChange={(sshServers) => update({ sshServers })} />
                 <SshApplicationList value={current.sshMonitoredApplications ?? []} onChange={(sshMonitoredApplications) => update({ sshMonitoredApplications })} />
                 <SshAiConfigurationAnalysis environment={current} onPendingChange={handleAiPendingChange} onApply={(sshMonitoredApplications) => update({ sshMonitoredApplications })} onTrustServer={(sshServers) => update({ sshServers })} />
                 <div className="environment-config-ssh-note is-wide"><strong>检索范围</strong><span>按日志源配置匹配应用根目录内的文件，每台服务器独立执行文件选择策略，再合并服务器组结果；未自定义时使用内置兼容模板。密码模式由应用内置 SSH 客户端连接，首次连接需核对服务器指纹。</span></div>

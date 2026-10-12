@@ -17,6 +17,7 @@ mod reader_files;
 mod reader_window;
 mod reader_settings;
 mod ssh_log_source;
+mod ssh_query_sessions;
 mod ssh_password_transport;
 mod ssh_control_master;
 mod update_mirrors;
@@ -50,11 +51,13 @@ pub fn run() {
             ai_analysis::discover_ai_models,
             ai_analysis::analyze_log_with_ai,
             commands::load_environments,
+            commands::resolve_environment_time,
             commands::load_environment_configuration,
             commands::save_environment_config,
             commands::release_ssh_connections,
             commands::search_logs,
             commands::sample_ssh_logs,
+            commands::probe_ssh_server,
             commands::search_logs_cancellable,
             commands::cancel_search,
             commands::export_logs,

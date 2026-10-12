@@ -8,7 +8,7 @@ import { buildSearchQuery, buildSearchQueryWithOmittedFields, buildTraceQuery, b
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
-import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs } from "./ssh-log-source.js";
+import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs, probeSshServer } from "./ssh-log-source.js";
 import { closePasswordSshConnections } from "./ssh-password-transport.js";
 import { closeSshControlMasters } from "./ssh-control-master.js";
 
@@ -71,6 +71,7 @@ const searchElkLogs = async (environment: EnvironmentConfig, input: SearchInput,
   return { columns: availableColumns(input, omitted), rows: [] };
 };
 const searchSchema = z.object({
+  sessionId: z.string().uuid().optional(),
   environment: z.string().trim().min(1).max(100),
   kind: z.enum(["transaction", "application", "ecp", "generic"]),
   startTime: dateTime,
@@ -160,15 +161,17 @@ apiRouter.get("/runtime", (_request, response) => {
 
 apiRouter.get("/environments", asyncRoute(async (_request, response) => {
   const environments = await loadEnvironments();
-  response.json(await Promise.all(environments.map(async (environment) => {
-    if (environment.sourceType !== "ssh") return toPublicEnvironment(environment);
-    const profile = await resolveSshTimeProfile(environment);
-    return toPublicEnvironment(environment, {
-      timeZone: profile.timeZone,
-      timeZoneOffset: profile.offset,
-      timeZoneSource: profile.timeZoneSource
-    });
-  })));
+  response.json(environments.map((environment) => toPublicEnvironment(environment)));
+}));
+
+apiRouter.post("/environments/time-profile", asyncRoute(async (request, response) => {
+  const { name } = z.object({ name: z.string().trim().min(1).max(100) }).parse(request.body);
+  const environment = await findEnvironment(name);
+  if (environment.sourceType !== "ssh") { response.json(toPublicEnvironment(environment)); return; }
+  const profile = await resolveSshTimeProfile(environment);
+  response.json(toPublicEnvironment(environment, {
+    timeZone: profile.timeZone, timeZoneOffset: profile.offset, timeZoneSource: profile.timeZoneSource
+  }));
 }));
 
 apiRouter.get("/environments/configuration", asyncRoute(async (_request, response) => {
@@ -242,6 +245,18 @@ apiRouter.post("/environments/import", asyncRoute(async (request, response) => {
 }));
 
 const activeSearches = new Map<string, AbortController>();
+
+apiRouter.post("/ssh/probe", asyncRoute(async (request, response) => {
+  const environment = parseEnvironmentConfig(JSON.stringify([{
+    name: "probe", sourceType: "ssh", sshConnectTimeoutSeconds: request.body.connectTimeoutSeconds ?? 10,
+    sshServers: [request.body.server], sshMonitoredApplications: [{ name: "probe", directory: "/" }]
+  }]))[0]!;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  response.once("close", abort);
+  try { response.json(await probeSshServer(environment, controller.signal)); }
+  finally { response.off("close", abort); }
+}));
 
 apiRouter.post("/ssh/sample", asyncRoute(async (request, response) => {
   const environment = parseEnvironmentConfig(JSON.stringify([request.body.environment]))[0]!;

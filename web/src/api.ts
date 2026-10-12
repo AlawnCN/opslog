@@ -150,6 +150,15 @@ export const releaseSshConnections = async (environment: string): Promise<void> 
   if (!response.ok) return parseError(response);
 };
 
+export const resolveEnvironmentTime = async (name: string): Promise<Environment> => {
+  if (desktopMode) return desktopInvoke<Environment>("resolve_environment_time", { name });
+  const response = await webFetch("/api/environments/time-profile", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name })
+  });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
 export const loadEnvironmentConfiguration = async (): Promise<EnvironmentConfiguration[]> => {
   if (desktopMode) return desktopInvoke<EnvironmentConfiguration[]>("load_environment_configuration");
   const response = await webFetch("/api/environments/configuration");
@@ -347,6 +356,14 @@ const cancellableDesktopInvoke = async <Result>(command: string, args: Record<st
 export const sampleSshLogs = async (environment: EnvironmentConfiguration, signal?: AbortSignal): Promise<SshLogSample[]> => {
   if (desktopMode) return cancellableDesktopInvoke<SshLogSample[]>("sample_ssh_logs", { environment }, signal);
   const response = await webFetch("/api/ssh/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment }), signal });
+  if (!response.ok) return parseError(response);
+  return response.json();
+};
+
+export interface SshProbeResult { username: string; hostname: string; timeZone: string; offset: string; durationMs: number }
+export const probeSshServer = async (server: import("./types").SshServerConfiguration, connectTimeoutSeconds = 10, signal?: AbortSignal): Promise<SshProbeResult> => {
+  if (desktopMode) return cancellableDesktopInvoke<SshProbeResult>("probe_ssh_server", { server, connectTimeoutSeconds }, signal);
+  const response = await webFetch("/api/ssh/probe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ server, connectTimeoutSeconds }), signal });
   if (!response.ok) return parseError(response);
   return response.json();
 };

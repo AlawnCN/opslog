@@ -5,17 +5,23 @@ limit=$(decode_arg "$5"); kind=$(decode_arg "$6"); rules=$(decode_arg "$7"); fil
 perl -MEncode -MCwd=realpath -e '
 use strict; use warnings; use utf8;
 # OPSLOG_JSON_CODEC
+# OPSLOG_CURSOR_PROTOCOL
 my ($root,$days,$start,$end,$limit,$kind,$rules,$filters)=@ARGV;
 my $sources=decode_json($rules); my $query=decode_json($filters); my $budget=8*1024*1024;
+my $paging=$query->{_snapshotPaging};
+my $saved=$query->{_scanCursors}{$query->{_scanServer}//""};
+my $snapshot=$saved//{files=>{}, manifests=>{}};
+$budget=64*1024*1024 if $paging;
 my (%transactions,@rows,%visited,$truncated,%directories,$primary_transactions); my $entries=0; my $year=substr($start,0,4); my $end_year=substr($end,0,4);
 my $realroot=realpath($root)//die "Invalid application directory";
 $root=$realroot;
+my %compiled_regex;
 die "Invalid source count" unless ref($sources) eq "ARRAY" && @$sources<=12;
 for my $source (@$sources) {
   die "Invalid file selection" unless ($source->{fileSelection}//"all")=~/^(all|latest)$/;
   $source->{successPattern}//="00000\$"; $source->{stripAsyncSuffix}//=1;
   die "Invalid fields" unless ref($source->{fields}) eq "HASH" && $source->{fields}{timestamp};
-  for my $mapping(values %{$source->{fields}}) {if (defined $mapping->{regex}) {die "Unsafe regex" if length($mapping->{regex})>500 || $mapping->{regex}=~/\(\?\??\s*\{/; eval {qr/$mapping->{regex}/}; die "Invalid regex" if $@;}}
+  for my $mapping(values %{$source->{fields}}) {if (defined $mapping->{regex}) {die "Unsafe regex" if length($mapping->{regex})>500 || $mapping->{regex}=~/\(\?\??\s*\{/; $compiled_regex{$mapping->{regex}}=eval {qr/$mapping->{regex}/}; die "Invalid regex" if $@;}}
   die "Unsafe result regex" if length($source->{successPattern}//"")>200 || ($source->{successPattern}//"")=~/\(\?\??\s*\{/;
 }
 sub normalize_stamp {
@@ -25,7 +31,7 @@ sub normalize_stamp {
 }
 sub extract {
   my ($record,$parts,$mapping)=@_; return "" unless $mapping;
-  if (defined $mapping->{regex}) { my $re=eval {qr/$mapping->{regex}/}; return "" unless $re; return $1//"" if $record=~$re; return ""; }
+  if (defined $mapping->{regex}) { my $re=$compiled_regex{$mapping->{regex}}; return "" unless $re; return $1//"" if $record=~$re; return ""; }
   return $parts->[$mapping->{index}]//"";
 }
 sub parts {
@@ -47,6 +53,15 @@ sub parts {
 }
 sub record_row {
   my ($record,$source,$path)=@_; $record=decode("UTF-8",$record,Encode::FB_DEFAULT);
+  # Regex timestamps do not need field splitting. Reject out-of-range records
+  # before the expensive JSON-aware delimiter scan, even for unordered files.
+  # Index-based timestamps retain the original splitting path and semantics.
+  my $early_stamp;
+  if (defined $source->{fields}{timestamp}{regex}) {
+    $early_stamp=normalize_stamp(extract($record,[],$source->{fields}{timestamp}),$source);
+    return unless $early_stamp=~/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.]\d{3}$/;
+    return if $early_stamp lt $start || $early_stamp ge $end;
+  }
   my @parts=parts($record,$source->{delimiter}); my %values;
   for my $key (keys %{$source->{fields}}) {$values{$key}=extract($record,\@parts,$source->{fields}{$key}); $values{$key}=~s/^\s+|\s+$//g;}
   my $stamp=normalize_stamp($values{timestamp}//"",$source);
@@ -56,6 +71,7 @@ sub record_row {
   my $id=$values{logId}//""; $id=~s/-\d+$// if $source->{stripAsyncSuffix}; $values{logId}=$id;
   $truncated=1 if $kind eq "detail" && length($record)>65536;
   my $row={values=>\%values,file=>$path,raw=>substr($record,0,65536),successPattern=>$source->{successPattern},role=>$source->{role}};
+  return if $paging && !matches_query($row);
   if ($kind eq "detail") {return unless $id eq ($query->{txnId}//""); push @rows,$row; return;}
   if ($kind eq "transaction") {
     return unless length $id;
@@ -67,10 +83,19 @@ sub record_row {
     else {my $maximum=($values{duration}//0)>($old->{values}{duration}//0)?$values{duration}:$old->{values}{duration}; my $newer=$stamp gt $old->{values}{timestamp}; for my $key(keys %values) { $old->{values}{$key}=$values{$key} if ($newer || !length($old->{values}{$key}//"")) && length($values{$key}//""); } $old->{values}{duration}=$maximum if defined $maximum;}
   } else {push @rows,$row;}
 }
+sub matches_query {
+  my ($row)=@_;
+  my %map=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",node=>"node",messageCode=>"messageCode",messageInfo=>"messageInfo",level=>"level",traceId=>"traceId");
+  for my $filter(keys %map) {my $needle=$query->{$filter}//""; return 0 if length($needle) && index(lc($row->{values}{$map{$filter}}//""),lc($needle))<0;}
+  for my $filter ("keyword","file") {my $needle=$query->{$filter}//""; my $text=$filter eq "keyword"?$row->{raw}:$row->{file}; return 0 if length($needle) && index(lc($text),lc($needle))<0;}
+  return 0 if ($query->{minDurationMs}//0)>($row->{values}{duration}//0);
+  if (($query->{status}//"ALL") ne "ALL") {my $code=$row->{values}{messageCode}//""; my $re=qr/$row->{successPattern}/; my $success=$code=~$re; return 0 unless length($code) && (($query->{status} eq "SUCCESS")?$success:!$success);}
+  return 1;
+}
 sub record_stamp {
   my ($record,$source)=@_;
   $record=decode("UTF-8",$record,Encode::FB_DEFAULT);
-  my @parts=parts($record,$source->{delimiter});
+  my @parts=defined($source->{fields}{timestamp}{regex})?():parts($record,$source->{delimiter});
   my $stamp=extract($record,\@parts,$source->{fields}{timestamp});
   $stamp=normalize_stamp($stamp,$source);
   return $stamp if $stamp=~/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[.]\d{3}$/;
@@ -89,12 +114,15 @@ sub end_position {
   return $left;
 }
 SOURCE: for my $source (sort {($a->{fallbackOnly}//0)<=>($b->{fallbackOnly}//0)} @$sources) {
+  next if $paging && $source->{fallbackOnly};
   next if $kind eq "transaction" && $source->{fallbackOnly} && $primary_transactions;
   next if $kind eq "transaction" && $source->{role}!~/^transaction/;
   next if $kind eq "detail" && $source->{role}!~/^(detail|transactionEvent)$/;
   next if $kind eq "application" && $source->{role} ne "application";
   next if $kind eq "ecp" && $source->{role} ne "ecp";
   my @files;
+  if ($paging && $saved) {@files=@{$snapshot->{manifests}{$source->{name}}//[]};}
+  else {
   for my $pattern (@{$source->{paths}}) {
     if (($source->{pathMode}//"glob") eq "regex") {
       die "Unsafe file regex" if !length($pattern) || length($pattern)>240 || $pattern=~/[\x00-\x1f]/ || $pattern=~m{^\^?/} || $pattern=~m{(?:^\^?|/)\.\.(?:/|$)} || $pattern=~/\(\?\??\s*\{/;
@@ -134,30 +162,81 @@ SOURCE: for my $source (sort {($a->{fallbackOnly}//0)<=>($b->{fallbackOnly}//0)}
       for my $day(split /,/,$days) {my $p=$pattern; $p=~s/\{day\}/$day/g; push @files,glob("$root/$p");}
     }
   }
+  }
+  if ($paging && !$saved) {
+    my %seen; @files=grep {!$seen{$_}++ && -f $_ && !-l $_} sort {(stat($b))[9]<=>(stat($a))[9] || $a cmp $b} @files;
+    @files=($files[0]) if @files && ($source->{fileSelection}//"all") eq "latest";
+    $snapshot->{manifests}{$source->{name}}=[@files];
+  }
   my $files=0;
   for my $path(sort {(stat($b))[9]<=>(stat($a))[9] || $a cmp $b} @files) {
+    die "SSH 查询快照文件已被删除或替换，请重新查询首页" if $paging && (!-f $path || -l $path);
     next if $visited{$source->{name}."\0".$path}++ || !-f $path || -l $path;
     my $real=realpath($path)//next; next unless index($real,"$realroot/")==0;
     last if ($source->{fileSelection}//"all") eq "latest" && $files;
     if (++$files>64 || !$budget) {$truncated=1; last SOURCE;}
-    open my $file,"<:raw",$path or next;
+    open my $file,"<:raw",$path or do {die "无法读取查询快照文件，请检查权限后重新查询首页" if $paging; next;};
     my $position=-s $file; my $pending=""; my $delimiter=$source->{recordEnd} eq "newline"?"\n":encode("UTF-8",$source->{recordEnd});
-    if ($source->{ordered} && $source->{recordEnd} eq "newline") {
+    my $file_key=$source->{name}."\0".$path;
+    my $state=$snapshot->{files}{$file_key};
+    if ($paging) {
+      my @stat=stat($file);
+      if ($state) {
+        die "SSH 查询快照文件已轮转或截断，请重新查询首页" if $state->{device}!=$stat[0] || $state->{inode}!=$stat[1] || $stat[7]<$state->{size};
+        seek($file,$state->{markAt},0); read($file,my $mark,64);
+        die "SSH 查询快照文件已改写，请重新查询首页" if unpack("H*",substr($mark,0,$state->{markLength})) ne $state->{mark};
+        $position=$state->{position};
+      } else {
+        my $tail_size=$position<65536?$position:65536; seek($file,$position-$tail_size,0); read($file,my $tail,$tail_size);
+        my $newline=rindex($tail,"\n"); die "汇总日志记录过长，无法建立查询快照" if $position && $newline<0;
+        $position=$position-$tail_size+$newline+1 if $position;
+        my $at=$position>64?$position-64:0; seek($file,$at,0); read($file,my $mark,$position-$at);
+        $state={device=>$stat[0],inode=>$stat[1],size=>$position,position=>$position,markAt=>$at,markLength=>length($mark),mark=>unpack("H*",$mark)};
+        $snapshot->{files}{$file_key}=$state;
+      }
+    }
+    if (!$paging && $source->{ordered} && $source->{recordEnd} eq "newline") {
       my $located=end_position($file,$position,$source); $position=$located if defined $located;
     }
-    my $finished=0;
+    my $finished=0; my $matched=0; my $lower_margin=0; my $page_margin=0; my $boundary_stamp; my $stop_stamp;
     while ($position>0 && $budget>0) {
       my $length=$position<65536?$position:65536; $length=$budget if $length>$budget;
       $position-=$length; seek($file,$position,0); read($file,my $chunk,$length); $budget-=$length;
       my @records=split(/\Q$delimiter\E/,$chunk.$pending,-1); $pending=$position?shift(@records):"";
-      for my $record(reverse @records) {
+      my $at=$position+($position?length($pending)+length($delimiter):0); my @located;
+      for my $record (@records) {push @located,[$record,$at]; $at+=length($record)+length($delimiter);}
+      for my $located(reverse @located) {
+        my ($record,$record_at)=@$located;
         next unless length $record;
-        if ($source->{ordered}) {my $stamp=record_stamp($record,$source); if (defined($stamp) && $stamp lt $start) {$finished=1;last;}}
+        my $stamp=($paging || $source->{ordered})?record_stamp($record,$source):undef;
+        if ($paging) {
+          # Finish the entire timestamp group at the lookback boundary. Otherwise
+          # later batches could reorder equal-time rows already in the buffer.
+          if (defined($stop_stamp) && defined($stamp) && $stamp lt $stop_stamp) {
+            $state->{position}=$record_at+length($record)+length($delimiter); $finished=1;last;
+          }
+          $state->{position}=$record_at;
+          if (defined($stamp) && $stamp ge $start) {$lower_margin=0;}
+          elsif ($lower_margin || (defined($stamp) && $stamp lt $start)) {$lower_margin++;}
+          if ($lower_margin>64) {$finished=1;$state->{position}=0;last;}
+        } elsif ($source->{ordered} && defined($stamp) && $stamp lt $start) {$finished=1;last;}
+        my $before=scalar @rows;
         record_row($record,$source,substr($path,length($root)+1));
+        if ($paging) {
+          $matched+=scalar(@rows)-$before;
+          $boundary_stamp=$stamp if $matched>=$limit && !defined($boundary_stamp);
+          $page_margin++ if defined $boundary_stamp;
+          $stop_stamp=$stamp if $page_margin>64 && defined($stamp) && $stamp lt $boundary_stamp && !defined($stop_stamp);
+        }
       }
       last if $finished;
     }
-    $truncated=1 if $position>0 && !$finished;
+    if ($paging) {
+      $state->{matched}=($state->{matched}//0)+$matched;
+      $state->{position}=0 if !$position && !$finished;
+    }
+    die "查询补读达到安全上限，请缩小时间范围或增加筛选条件后重新查询" if $paging && $position>0 && !$finished;
+    $truncated=1 if !$paging && $position>0 && !$finished;
     close $file;
   }
 }
@@ -173,7 +252,7 @@ my %map=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",n
   $ok;
 } @rows;
 @rows=sort {$b->{values}{timestamp} cmp $a->{values}{timestamp} || $a->{file} cmp $b->{file} || $a->{raw} cmp $b->{raw}} @rows;
-if (@rows>$limit) {splice @rows,$limit; $truncated=1 if $kind eq "detail";}
+if (!$paging && @rows>$limit) {splice @rows,$limit; $truncated=1 if $kind eq "detail";}
 my $output_budget=16*1024*1024;
 for my $row(@rows) {
   # Transaction tables consume mapped fields only. Do not transmit duplicate
@@ -188,4 +267,6 @@ for my $row(@rows) {
   $output_budget-=length($encoded); print "\@OPSLOG_ROW\t",$encoded,"\n";
 }
 print encode("UTF-8","\@OPSLOG_SCAN_LIMIT\t声明式规则采集或输出已达到安全上限，结果可能不完整\n") if $truncated;
+die "查询快照达到输出安全上限，请重新查询并增加筛选条件" if $paging && $truncated;
+print "\@OPSLOG_CURSOR\t",encode_json($snapshot),"\n" if $paging;
 ' "$root" "$days" "$start" "$end" "$limit" "$kind" "$rules" "$filters"

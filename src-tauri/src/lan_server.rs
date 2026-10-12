@@ -220,6 +220,16 @@ async fn environments(State(state): State<LanApiState>) -> Response {
     }
 }
 
+#[derive(Deserialize)]
+struct EnvironmentTimeInput { name: String }
+
+async fn environment_time(State(state): State<LanApiState>, Json(input): Json<EnvironmentTimeInput>) -> Response {
+    match commands::resolve_environment_time(state.app, input.name).await {
+        Ok(environment) => Json(environment).into_response(),
+        Err(error) => api_error(error),
+    }
+}
+
 async fn ai_configuration() -> Response {
     match ai_analysis::load_ai_configuration().await {
         Ok(mut configuration) => {
@@ -454,6 +464,7 @@ fn router(state: LanApiState) -> Router {
     Router::new()
         .route("/api/runtime", get(runtime_info))
         .route("/api/environments", get(environments))
+        .route("/api/environments/time-profile", post(environment_time))
         .route("/api/ai/configuration", get(ai_configuration))
         .route("/api/ai/analyze", post(analyze_log))
         .route("/api/search", post(search))

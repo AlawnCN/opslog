@@ -176,6 +176,44 @@ test("structured log search seeks by record delimiters and preserves multiline U
   assert.doesNotMatch(raw, /中文日志-110\n/);
 }));
 
+test("early regex timestamp filtering matches index extraction on unordered summaries", { skip: process.platform === "win32" }, async () => fixture(async (root) => {
+  const old = `2026-07-22 10:00:00,000|OLD|${JSON.stringify({ text: "历史|上下文", payload: "x".repeat(5000) })}`;
+  const active = (id, stamp) => `${stamp}|${id}|${JSON.stringify({ text: "中文|内容 -> 保留" })}`;
+  await writeFile(join(root, "log", "summary.lst"), [
+    active("INSIDE-A", "2026-10-12 12:00:00,000"), old,
+    active("INSIDE-B", "2026-10-12 11:00:00,000"), "malformed record",
+    active("END-EXCLUDED", "2026-10-13 00:00:00,000"),
+    active("START-INCLUDED", "2026-10-12 00:00:00,000")
+  ].join("\n") + "\n");
+  const source = { name: "summary", role: "transaction", paths: ["log/*.lst"], delimiter: "|", recordEnd: "newline", timestampStyle: "full", ordered: false, stripAsyncSuffix: false,
+    fields: { timestamp: { index: 0 }, logId: { index: 1 }, business: { index: 2 } } };
+  const args = [root, "12", "2026-10-12 00:00:00.000", "2026-10-13 00:00:00.000", "501", "transaction", "", "{}"];
+  const rows = async (rule) => {
+    args[6] = JSON.stringify([rule]);
+    return (await run("configured_search", args, root)).split("\n").filter(line => line.startsWith("@OPSLOG_ROW\t")).map(line => JSON.parse(line.slice(12)));
+  };
+  const baseline = await rows(source);
+  const optimized = await rows({ ...source, fields: { ...source.fields, timestamp: { regex: "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[.,]\\d{3})" } } });
+  assert.deepEqual(optimized, baseline);
+  assert.deepEqual(optimized.map(row => row.values.logId), ["INSIDE-A", "INSIDE-B", "START-INCLUDED"]);
+}));
+
+test("ordered regex and index timestamp paths preserve identical bounded results", { skip: process.platform === "win32" }, async () => fixture(async (root) => {
+  const lines = Array.from({ length: 1000 }, (_, i) => `2026-10-12 12:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000|TX-${i}|${"x".repeat(200)}`);
+  await writeFile(join(root, "log", "events.lst"), lines.join("\n") + "\n");
+  const source = { name: "summary", role: "transaction", paths: ["log/*.lst"], delimiter: "|", recordEnd: "newline", timestampStyle: "full", ordered: true, stripAsyncSuffix: false,
+    fields: { timestamp: { index: 0 }, logId: { index: 1 } } };
+  const args = [root, "12", "2026-10-12 12:03:00.000", "2026-10-12 12:04:00.000", "501", "transaction", "", "{}"];
+  const rows = async (rule) => {
+    args[6] = JSON.stringify([rule]);
+    return (await run("configured_search", args, root)).split("\n").filter(line => line.startsWith("@OPSLOG_ROW\t")).map(line => JSON.parse(line.slice(12)));
+  };
+  const baseline = await rows(source);
+  const optimized = await rows({ ...source, fields: { ...source.fields, timestamp: { regex: "^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}[.,]\\d{3})" } } });
+  assert.equal(optimized.length, 60);
+  assert.deepEqual(optimized, baseline);
+}));
+
 test("configured detail retains more than 100 records and reports explicit truncation", { skip: process.platform === "win32" }, async () => fixture(async (root) => {
   const rules = [{ name: "events", role: "transactionEvent", pathMode: "regex", paths: ["^log/events\\.log$"], delimiter: "|", recordEnd: "newline", timestampStyle: "full", ordered: true, fields: { timestamp: { index: 0 }, logId: { index: 1 } } }];
   await writeFile(join(root, "log", "events.log"), Array.from({ length: 201 }, (_, i) => `2026-10-04 12:00:00.${String(i).padStart(3, "0")}|TX1|event-${i}\n`).join(""));

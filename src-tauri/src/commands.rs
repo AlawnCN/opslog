@@ -3,7 +3,6 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
-use futures_util::{stream, StreamExt};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use tauri::AppHandle;
@@ -23,6 +22,11 @@ use crate::query_builders::{
 use crate::ssh_log_source;
 
 const MAX_RANGE_DAYS: i64 = 31;
+
+#[tauri::command]
+pub async fn probe_ssh_server(server: crate::domain::SshServerConfig, connect_timeout_seconds: Option<u64>, request_id: Option<String>) -> Result<Value, String> {
+    cancellable_task(request_id, ssh_log_source::probe_server(server, connect_timeout_seconds)).await
+}
 
 #[tauri::command]
 pub async fn sample_ssh_logs(environment: EnvironmentConfig, request_id: Option<String>) -> Result<Value, String> {
@@ -267,6 +271,9 @@ fn validate_optional_text(value: &Option<String>) -> Result<(), String> {
 }
 
 pub(crate) fn validate_search(input: &SearchInput) -> Result<(), String> {
+    if input.session_id.as_ref().is_some_and(|id| id.len()!=36 || !id.chars().all(|c|c.is_ascii_hexdigit() || c=='-')) {
+        return Err("查询会话标识不合法".into());
+    }
     if input.environment.trim().is_empty() || input.environment.chars().count() > 100 {
         return Err("请选择有效环境".to_string());
     }
@@ -312,15 +319,17 @@ fn validate_download(input: &DownloadInput) -> Result<(), String> {
 #[tauri::command]
 pub async fn load_environments(app: AppHandle) -> Result<Vec<PublicEnvironment>, String> {
     let environments = environment_store::load(&app).await?;
-    let public_environments = stream::iter(environments.into_iter().map(|environment| async move {
-        let time_profile = if environment.source_type == EnvironmentSource::Ssh {
-            Some(ssh_log_source::resolve_time_profile(&environment).await)
-        } else {
-            None
-        };
-        environment_store::to_public(environment, time_profile)
-    })).buffered(4).collect::<Vec<_>>().await;
-    Ok(public_environments)
+    // Listing local configuration must never wait for remote hosts.
+    Ok(environments.into_iter().map(|environment| environment_store::to_public(environment, None)).collect())
+}
+
+#[tauri::command]
+pub async fn resolve_environment_time(app: AppHandle, name: String) -> Result<PublicEnvironment, String> {
+    let environment = environment_store::find(&app, &name).await?;
+    let profile = if environment.source_type == EnvironmentSource::Ssh {
+        Some(ssh_log_source::resolve_time_profile(&environment).await)
+    } else { None };
+    Ok(environment_store::to_public(environment, profile))
 }
 
 #[tauri::command]

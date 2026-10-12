@@ -21,6 +21,39 @@ const CONFIGURED_SCRIPT: &str = include_str!("../../server/ssh-scripts/configure
 const JSON_CODEC: &str = include_str!("../../server/ssh-scripts/json_codec.pl");
 const TRANSACTION_LIST_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_list.sh");
 const TIME_PROFILE_SCRIPT: &str = include_str!("../../server/ssh-scripts/time_profile.sh");
+const PROBE_SCRIPT: &str = include_str!("../../server/ssh-scripts/probe.sh");
+
+pub async fn probe_server(mut server: SshServerConfig, connect_timeout_seconds: Option<u64>) -> Result<Value, String> {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let scope = format!("probe-{}", SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    struct ProbeScope(String);
+    impl Drop for ProbeScope {
+        fn drop(&mut self) {
+            crate::ssh_password_transport::close_connections(Some(&self.0));
+            crate::ssh_control_master::close(Some(&self.0));
+        }
+    }
+    let _scope = ProbeScope(scope.clone());
+    if server.host.trim().is_empty() { return Err("请填写 SSH 主机或别名".into()); }
+    if matches!(server.authentication, SshAuthentication::SshConfig) { server.port = None; }
+    else {
+        if server.port == Some(0) { return Err("SSH 端口必须在 1～65535 之间".into()); }
+        if server.username.as_deref().unwrap_or("").trim().is_empty() { return Err("请填写 SSH 用户名".into()); }
+        if matches!(server.authentication, SshAuthentication::Password) && server.password.as_deref().unwrap_or("").is_empty() { return Err("请填写 SSH 密码".into()); }
+        if matches!(server.authentication, SshAuthentication::PrivateKey) && server.private_key_path.as_deref().unwrap_or("").trim().is_empty() { return Err("请填写 SSH 私钥路径".into()); }
+    }
+    let timeout = connect_timeout_seconds.unwrap_or(10).clamp(3, 60);
+    let environment: EnvironmentConfig = serde_json::from_value(serde_json::json!({
+        "name": scope, "sourceType": "ssh", "sshConnectTimeoutSeconds": timeout
+    })).map_err(|error| error.to_string())?;
+    let started = Instant::now();
+    let raw = run_script(&environment, &server, PROBE_SCRIPT, &[], timeout + 10).await?;
+    let lines: Vec<_> = raw.trim().lines().map(str::trim).collect();
+    if lines.len() != 5 || lines[0] != "OPSLOG_SSH_PROBE_V1" || lines[1].is_empty() || lines[2].is_empty() {
+        return Err("SSH 已连接，但探测命令返回格式异常".into());
+    }
+    Ok(serde_json::json!({ "username": lines[1], "hostname": lines[2], "timeZone": lines[3], "offset": lines[4], "durationMs": started.elapsed().as_millis() }))
+}
 const TRANSACTION_CONTENT_SCRIPT: &str = include_str!("../../server/ssh-scripts/transaction_content.sh");
 const LOG_SEARCH_SCRIPT: &str = include_str!("../../server/ssh-scripts/log_search.sh");
 
@@ -248,7 +281,14 @@ async fn run_across_servers(
     let servers = configured_servers(environment);
     if servers.is_empty() { return Err("当前环境未配置 SSH 服务器".to_string()); }
     let mut settled = stream::iter(servers.into_iter().enumerate().map(|(index, server)| async move {
-        let result = run_script(environment, &server, script, args, timeout_seconds).await;
+        let mut server_args = args.to_vec();
+        if script.contains("# OPSLOG_CURSOR_PROTOCOL") && server_args.len() == 8 {
+            if let Ok(mut filters) = serde_json::from_str::<Value>(&server_args[7]) {
+                filters["_scanServer"] = Value::String(crate::ssh_query_sessions::server_key(&server));
+                server_args[7] = filters.to_string();
+            }
+        }
+        let result = run_script(environment, &server, script, &server_args, timeout_seconds).await;
         (index, server, result)
     }))
     .buffer_unordered(MAX_PARALLEL_SERVERS)
@@ -679,9 +719,23 @@ fn configured_records(raw: &str) -> Result<Vec<Value>, String> {
 
 async fn search_configured(environment: &EnvironmentConfig, application: &SshApplicationConfig, input: &SearchInput, export_all: bool) -> Result<QueryResult, String> {
     let limit = if export_all {20_000} else {input.page.saturating_mul(input.page_size).saturating_add(1).min(10_001)};
-    let filters = serde_json::to_value(input).map_err(|_| "查询参数无效")?;
+    let mut filters = serde_json::to_value(input).map_err(|_| "查询参数无效")?;
+    let session = if export_all {None} else {crate::ssh_query_sessions::load(environment, application, input)?};
+    if let Some(ref session) = session {
+        filters["_snapshotPaging"] = Value::Bool(true);
+        filters["_scanCursors"] = session.cursors.clone();
+    }
     let kind = match input.kind {LogKind::Transaction=>"transaction",LogKind::Application=>"application",LogKind::Ecp=>"ecp",LogKind::Generic=>"generic"};
-    let (group, offset) = configured_output(environment, application, &input.start_time, &input.end_time, kind, limit, filters).await?;
+    let (group, offset) = if let Some(cached) = session.as_ref().filter(|cached|input.page<=cached.page) {
+        (SshServerGroupResult {outputs:cached.outputs.clone(),warnings:vec![]},resolved_log_offset(environment).await?)
+    } else {
+        let (mut group, offset) = configured_output(environment, application, &input.start_time, &input.end_time, kind, if session.is_some() {input.page_size+1} else {limit}, filters).await?;
+        if let Some(session) = session {
+            if !group.warnings.is_empty() {return Err(format!("查询快照未完成：{}",group.warnings.join("；")))}
+            group.outputs = crate::ssh_query_sessions::append(session, group.outputs, input)?.outputs;
+        }
+        (group, offset)
+    };
     let mut rows = Vec::new(); let mut warnings = group.warnings;
     for (server, raw) in group.outputs {
         let host = if server.name.is_empty() {&server.host} else {&server.name};

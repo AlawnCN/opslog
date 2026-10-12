@@ -64,6 +64,7 @@ export interface SearchInput {
   endTime: string;
   page: number;
   pageSize: number;
+  sessionId?: string;
   index?: string;
   txnId?: string;
   traceId?: string;
