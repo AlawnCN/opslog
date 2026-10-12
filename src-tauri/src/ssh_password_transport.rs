@@ -114,16 +114,27 @@ fn execute(session: &Session, script: String, args: Vec<String>, timeout_seconds
 }
 
 fn socket_alive(socket: &TcpStream) -> bool {
+    // libssh2 requires a nonblocking OS socket even when Session uses its
+    // blocking API: it drains pending packets until EAGAIN before writing.
+    // TcpStream clones share this mode. Never restore it to blocking here.
     if socket.set_nonblocking(true).is_err() { return false; }
-    let alive = match socket.peek(&mut [0_u8; 1]) {
+    match socket.peek(&mut [0_u8; 1]) {
         Ok(0) => false,
         Ok(_) => true,
         Err(error) => error.kind() == std::io::ErrorKind::WouldBlock,
-    };
-    socket.set_nonblocking(false).is_ok() && alive
+    }
 }
 
 pub async fn run(scope: String, server: SshServerConfig, script: String, args: Vec<String>, timeout_seconds: u64, connect_timeout: u64) -> Result<String, String> {
+    let budget = Duration::from_secs(timeout_seconds.saturating_add(connect_timeout).saturating_add(10));
+    // The libssh2 timeout alone cannot bound every OS call. Dropping run_inner
+    // on deadline drops CancelSocket, shuts down the socket and evicts the
+    // in-flight connection instead of returning it to the pool.
+    tokio::time::timeout(budget, run_inner(scope, server, script, args, timeout_seconds, connect_timeout))
+        .await.map_err(|_| "SSH 查询超时，请检查网络与远端负载".to_string())?
+}
+
+async fn run_inner(scope: String, server: SshServerConfig, script: String, args: Vec<String>, timeout_seconds: u64, connect_timeout: u64) -> Result<String, String> {
     let slot = connection_slot(&scope, &server, connect_timeout)?;
     let mut cached = slot.lock().await;
     let connection = cached.take().filter(|(_, socket, used)| used.elapsed() < IDLE_TIMEOUT && socket_alive(socket));
@@ -145,7 +156,7 @@ pub async fn run(scope: String, server: SshServerConfig, script: String, args: V
     ).await.map_err(|_| "SSH 连接超时".to_string())?
         .map_err(|error| format!("SSH 连接失败：{error}"))?;
     let socket = socket.into_std().map_err(|error| format!("SSH 连接失败：{error}"))?;
-    socket.set_nonblocking(false).map_err(|error| format!("SSH 连接失败：{error}"))?;
+    socket.set_nonblocking(true).map_err(|error| format!("SSH 连接失败：{error}"))?;
     let mut cancel = CancelSocket(Some(socket.try_clone().map_err(|error| format!("SSH 连接失败：{error}"))?));
     let (session, socket, result) = tokio::task::spawn_blocking(move || {
         let session = authenticate(&server, socket.try_clone().map_err(|error| error.to_string())?, timeout_seconds, connect_timeout)?;
@@ -160,44 +171,5 @@ pub async fn run(scope: String, server: SshServerConfig, script: String, args: V
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::SshAuthentication;
-
-    // Executed by tests/ssh-native-pool.test.ts against a local SSH server which
-    // counts TCP connections and authentication attempts, not just mocked calls.
-    #[test]
-    #[ignore = "requires the local SSH fixture"]
-    fn native_pool_reuses_and_releases_authenticated_sessions() {
-        let server = SshServerConfig {
-            name: "fixture".into(), host: "127.0.0.1".into(),
-            port: Some(std::env::var("OPSLOG_SSH_POOL_TEST_PORT").unwrap().parse().unwrap()),
-            username: Some("reader".into()), password: Some("secret".into()),
-            authentication: SshAuthentication::Password, private_key_path: None,
-            host_key_fingerprint: Some(std::env::var("OPSLOG_SSH_POOL_TEST_PIN").unwrap()),
-        };
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        runtime.block_on(async {
-            for script in ["first", "second", "third"] {
-                let result = run("native-fixture".into(), server.clone(), script.into(), vec![], 5, 5).await.unwrap();
-                assert_eq!(result, format!("received:{script}"));
-            }
-            close_connections(Some("unrelated"));
-            assert_eq!(run("native-fixture".into(), server.clone(), "fourth".into(), vec![], 5, 5).await.unwrap(), "received:fourth");
-            let (left, right) = tokio::join!(
-                run("native-fixture".into(), server.clone(), "parallel-left".into(), vec![], 5, 5),
-                run("native-fixture".into(), server.clone(), "parallel-right".into(), vec![], 5, 5)
-            );
-            assert_eq!(left.unwrap(), "received:parallel-left");
-            assert_eq!(right.unwrap(), "received:parallel-right");
-            close_connections(Some("native-fixture"));
-            assert_eq!(run("native-fixture".into(), server.clone(), "after-release".into(), vec![], 5, 5).await.unwrap(), "received:after-release");
-            let mut wrong = server.clone();
-            wrong.host_key_fingerprint = Some("SHA256:wrong".into());
-            assert!(run("native-fixture".into(), wrong, "must-not-run".into(), vec![], 5, 5).await.unwrap_err().contains("主机指纹已改变"));
-            assert!(tokio::time::timeout(Duration::from_millis(100), run("native-fixture".into(), server.clone(), "slow".into(), vec![], 5, 5)).await.is_err());
-            assert_eq!(run("native-fixture".into(), server, "after-cancel".into(), vec![], 5, 5).await.unwrap(), "received:after-cancel");
-            close_connections(None);
-        });
-    }
-}
+#[path = "ssh_password_transport_tests.rs"]
+mod tests;

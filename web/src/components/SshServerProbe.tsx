@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { errorMessage, probeSshServer, type SshProbeResult } from "../api";
 import { parseSshHostKeyChallenge, trustSshHostKey, type SshHostKeyChallenge } from "../ssh-host-key";
 import type { SshServerConfiguration } from "../types";
-import { PulseIcon } from "./Icons";
+import { ServerProbeIcon } from "./Icons";
 import { SshHostKeyDialog } from "./SshHostKeyDialog";
 
-interface Props { server: SshServerConfiguration; timeout?: number; onTrust: (server: SshServerConfiguration) => void }
+interface Props { server: SshServerConfiguration; name: string; actions: ReactNode; timeout?: number; onTrust: (server: SshServerConfiguration) => void }
 
-export const SshServerProbe = ({ server, timeout = 10, onTrust }: Props) => {
+export const SshServerProbe = ({ server, name, actions, timeout = 10, onTrust }: Props) => {
   const identity = JSON.stringify([server, timeout]);
   const controller = useRef<AbortController | undefined>(undefined);
   const retryIdentity = useRef<string | undefined>(undefined);
@@ -54,15 +54,16 @@ export const SshServerProbe = ({ server, timeout = 10, onTrust }: Props) => {
   };
   const current = feedback?.identity === identity ? feedback : undefined;
   return <div className="ssh-server-probe">
-    <div className="ssh-server-probe-actions">
-      <button type="button" disabled={busy || !!challenge} aria-busy={busy} onClick={() => void run()} title="使用当前草稿建立新连接，验证认证及只读命令；不保存配置、不读取业务日志">
-        {busy ? <span className="button-spinner" aria-hidden="true" /> : <PulseIcon />}{busy ? "探测中…" : "探测连接"}
-      </button>
-      {busy && <button type="button" onClick={() => { controller.current?.abort(); setBusy(false); }}>取消探测</button>}
-      <small>使用当前未保存配置 · {server.authentication === "ssh-config" ? "SSH Config 取自运行端" : "不读取业务日志"}</small>
-    </div>
-    {current?.result && <p role="status" className="ssh-server-probe-success">连接、认证及命令执行正常 · {current.result.durationMs} ms · {current.result.username}@{current.result.hostname} · {current.result.timeZone}（UTC {current.result.offset}）</p>}
-    {current?.error && <p role="alert" className="environment-config-error">探测失败：{current.error}</p>}
-    {challenge && <SshHostKeyDialog challenge={challenge} busy={false} detail="确认后写入当前服务器草稿并自动重新探测；需要保存配置后才会持久保留指纹。" onConfirm={confirm} onCancel={() => { setChallenge(undefined); setFeedback({ identity, error: "已取消指纹确认，未继续连接" }); }} />}
+    <div className="environment-server-card-title"><div className="ssh-server-heading"><strong>{name}</strong>
+      <span className={`ssh-server-probe-status${current?.result ? " is-connected" : current?.error ? " is-failed" : ""}`} role="status">
+        {busy ? "探测中…" : challenge ? "待确认指纹" : current?.result ? <span title={`${current.result.username}@${current.result.hostname} · ${current.result.timeZone} · UTC ${current.result.offset}`}>已连接 · {current.result.durationMs} ms</span> : current?.error ? "连接失败" : null}
+      </span>
+    </div><div className="ssh-server-probe-actions" role="group" aria-label={`${name} 操作`}>
+      <button className="ssh-server-test-button" type="button" disabled={!!challenge} aria-busy={busy} aria-label={busy ? "取消探测" : "探测服务器状态"} onClick={() => { if (busy) { controller.current?.abort(); setBusy(false); } else void run(); }} title={busy ? "取消探测" : "探测服务器状态"}>
+        {busy ? <span className="button-spinner" aria-hidden="true" /> : <ServerProbeIcon />}
+      </button>{actions}
+    </div></div>
+    {current?.error && <p role="alert" className="environment-config-error">连接失败：{current.error}</p>}
+    {challenge && <SshHostKeyDialog challenge={challenge} busy={false} detail="确认后重试；保存配置以保留指纹。" onConfirm={confirm} onCancel={() => { setChallenge(undefined); setFeedback({ identity, error: "已取消指纹确认" }); }} />}
   </div>;
 };

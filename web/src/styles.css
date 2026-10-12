@@ -722,9 +722,16 @@ td.success { color: var(--green); } td.error { color: var(--red); } td.neutral {
 }
 .query-action-icon { display: inline-flex; align-items: center; justify-content: center; }
 .ssh-server-probe { margin-bottom: 12px; }
-.ssh-server-probe-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.ssh-server-probe-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 6px 12px; color: var(--theme-text, #bcd0dc); background: var(--theme-surface, #071521); border: 1px solid var(--theme-line, #203e52); border-radius: var(--theme-control-radius, 4px); cursor: pointer; }
-.ssh-server-probe-actions button:disabled { opacity: .55; cursor: wait; }
-.ssh-server-probe-actions svg { width: 16px; height: 16px; }
-.ssh-server-probe-success { color: var(--theme-success, #35dba8); overflow-wrap: anywhere; }
+.ssh-server-probe .environment-server-card-title { gap: 12px; flex-wrap: wrap; margin-bottom: 0; }
+.ssh-server-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; min-width: 0; flex: 1; }
+.ssh-server-probe .environment-server-card-title strong { min-width: 0; overflow-wrap: anywhere; }
+.ssh-server-probe-actions { display: flex; flex-shrink: 0; align-items: center; gap: 12px; margin-left: auto; }
+.environment-server-card-title .ssh-server-test-button { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; padding: 0; color: var(--theme-text, #bcd0dc); background: transparent; border-color: var(--theme-line, #203e52); border-radius: var(--theme-control-radius, 4px); }
+.environment-server-card-title .ssh-server-test-button svg { width: 18px; height: 18px; }
+.ssh-server-probe-status { color: var(--theme-muted, #7d9bab); font-size: var(--font-control); }
+.ssh-server-probe-status.is-connected { color: var(--theme-success, #35dba8); }
+.ssh-server-probe-status.is-failed { color: var(--theme-error, #ad6c77); }
 .ssh-server-probe .environment-config-error { overflow-wrap: anywhere; }
+[data-added-item] { scroll-margin-block: 12px; outline: 2px solid var(--cyan, #20cddd); outline-offset: -2px; animation: configuration-item-reveal 1.8s ease-out; }
+@keyframes configuration-item-reveal { from { outline-color: var(--cyan, #20cddd); } to { outline-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { [data-added-item] { animation: none; } }

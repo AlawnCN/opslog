@@ -97,6 +97,7 @@
 
 :root[data-theme="shoujo-manga"] {
   --canvas: #fff5f7; --surface: #fff5f7; --surface-solid: #fff5f7; --surface-2: #ffffff;
+  --configuration-card-surface: color-mix(in srgb, var(--surface) 88%, var(--selected-surface));
   --scene: radial-gradient(circle, rgb(255 183 197 / 18%) .6px, transparent .6px), #fff5f7;
   --scene-size: 10px 10px;
   --text: #4a5568; --muted: #596174; --cyan: #ffb7c5; --accent-text: #9c345b; --focus-color: #9c345b;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createCustomLogMarkerRule, MAX_CUSTOM_LOG_MARKERS, reorderCustomLogMarkerRules, type CustomLogMarkerRule } from "../custom-log-markers";
+import { useAddedConfigurationItem } from "./useAddedConfigurationItem";
 
 interface CustomLogMarkerRuleEditorProps {
   rules: CustomLogMarkerRule[];
@@ -16,6 +17,7 @@ interface RuleDrag {
 }
 
 export const CustomLogMarkerRuleEditor = ({ rules, onChange }: CustomLogMarkerRuleEditorProps) => {
+  const { containerRef, revealAdded } = useAddedConfigurationItem();
   const rulesRef = useRef(rules);
   const onChangeRef = useRef(onChange);
   const dragRef = useRef<RuleDrag | undefined>(undefined);
@@ -73,7 +75,7 @@ export const CustomLogMarkerRuleEditor = ({ rules, onChange }: CustomLogMarkerRu
     onChange(rules.filter((rule) => rule.id !== id));
   };
 
-  return <div className="custom-marker-rules">
+  return <div className="custom-marker-rules" ref={containerRef}>
     {rules.map((rule, index) => <div
       className={`custom-marker-rule${drag?.id === rule.id && drag.active ? " is-dragging" : ""}${drag?.targetId === rule.id ? ` is-drop-${drag.after ? "after" : "before"}` : ""}`}
       data-custom-rule-id={rule.id}
@@ -92,7 +94,7 @@ export const CustomLogMarkerRuleEditor = ({ rules, onChange }: CustomLogMarkerRu
       type="button"
       className="custom-marker-rule-add"
       disabled={rules.length >= MAX_CUSTOM_LOG_MARKERS}
-      onClick={() => onChange([...rules, createCustomLogMarkerRule(rules.length)])}
+      onClick={() => { const rule = createCustomLogMarkerRule(rules.length); revealAdded(`[data-custom-rule-id="${rule.id}"]`); onChange([...rules, rule]); }}
     ><i aria-hidden="true">＋</i>增加子项</button>
     {drag?.active && <div className="custom-marker-rule-drag-ghost" style={{ top: drag.y }}>{rules.find(({ id }) => id === drag.id)?.label || "未命名条件"}</div>}
   </div>;

@@ -224,6 +224,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
   const addCustomMarker = () => {
     if (!markerQuery || markerQueryError || customMarkers.length >= MAX_CUSTOM_LOG_MARKERS) return;
     const marker = createCustomLogMarker(markerQuery, regexSearch);
+    customMarkerShelfRef.current?.revealMarker(customMarkers.length);
     replaceCustomMarkers([...customMarkers, marker]);
   };
 

@@ -39,9 +39,9 @@ test("native Rust password transport reuses TCP authentication and reconnects af
     child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
     const code = await new Promise<number | null>((resolve, reject) => { child.once("close", resolve); child.once("error", reject); });
     assert.equal(code, 0, output);
-    assert.equal(connections, 4, "one reused session, release reconnect, rejected pin, cancellation reconnect");
-    assert.equal(authentications, 3, "commands reuse authentication; a bad pin is rejected before auth");
-    assert.equal(commands, 9);
+    assert.equal(connections, 5, "one reused session, release reconnect, rejected pin, cancellation reconnect, timeout reconnect");
+    assert.equal(authentications, 4, "commands reuse authentication; a bad pin is rejected before auth");
+    assert.equal(commands, 12);
   } finally {
     await new Promise<void>((resolve) => server.close(resolve));
   }

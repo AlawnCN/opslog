@@ -17,6 +17,7 @@ import {
 import { CustomLogMarkerContextMenu } from "./CustomLogMarkerContextMenu";
 import { CustomLogMarkerEditor } from "./CustomLogMarkerEditor";
 import { MoreIcon } from "./Icons";
+import { useAddedConfigurationItem } from "./useAddedConfigurationItem";
 
 interface CustomLogMarkerShelfProps {
   markers: CustomLogMarker[];
@@ -28,6 +29,7 @@ interface CustomLogMarkerShelfProps {
 
 export interface CustomLogMarkerShelfHandle {
   closeTopLayer: () => boolean;
+  revealMarker: (index: number) => void;
 }
 
 interface MarkerDrag {
@@ -61,6 +63,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
   markers, activeMarkerId, widthRatio, onChange, onOpen
 }, ref) => {
   const hostRef = useRef<HTMLDivElement>(null);
+  const { containerRef, revealAdded } = useAddedConfigurationItem();
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const dragRef = useRef<MarkerDrag | undefined>(undefined);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -93,8 +96,12 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
         return true;
       }
       return false;
+    },
+    revealMarker: (index: number) => {
+      if (index >= capacity) setOverflowOpen(true);
+      revealAdded(`[data-custom-marker-index="${index}"]`);
     }
-  }), [editing, menu, overflowOpen]);
+  }), [capacity, editing, menu, overflowOpen, revealAdded]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -243,10 +250,11 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
     }
   };
 
-  const markerButton = (marker: CustomLogMarker, inOverflow = false) => <button
+  const markerButton = (marker: CustomLogMarker, index: number, inOverflow = false) => <button
     type="button"
     className={`custom-marker-tag${activeMarkerId === marker.id ? " is-active" : ""}${drag?.id === marker.id ? " is-dragging" : ""}${drag?.targetId === marker.id ? ` is-drop-${drag.action}` : ""}`}
     data-custom-marker-id={marker.id}
+    data-custom-marker-index={index}
     key={marker.id}
     title={`${marker.rules.length} 个查询子项 · 双击改名 · 右键操作`}
     onPointerDown={(event) => beginDrag(event, marker)}
@@ -272,13 +280,13 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
     setEditing(undefined);
   };
 
-  return <div className="custom-marker-shelf" ref={hostRef} style={{ flexBasis: `${widthRatio * 100}%` }} onContextMenu={openContextMenu}>
+  return <div className="custom-marker-shelf" ref={(node) => { hostRef.current = node; containerRef.current = node; }} style={{ flexBasis: `${widthRatio * 100}%` }} onContextMenu={openContextMenu}>
     <input ref={importInputRef} className="custom-marker-file-input" type="file" accept="application/json,.json" onChange={(event) => void importMarkers(event)} />
     <div className="custom-marker-track" aria-label="自定义日志标记">
-      {visible.map((marker) => markerButton(marker))}
+      {visible.map((marker, index) => markerButton(marker, index))}
       {!markers.length && <span className="custom-marker-empty">右键新建标记</span>}
     </div>
-    {overflow.length > 0 && <div className="custom-marker-overflow"><button type="button" className={overflowOpen ? "is-active" : undefined} aria-label={`查看其余 ${overflow.length} 个自定义标记`} onClick={() => setOverflowOpen((open) => !open)}><MoreIcon /><b>+{overflow.length}</b></button>{overflowOpen && <div className="custom-marker-overflow-menu">{overflow.map((marker) => markerButton(marker, true))}</div>}</div>}
+    {overflow.length > 0 && <div className="custom-marker-overflow"><button type="button" className={overflowOpen ? "is-active" : undefined} aria-label={`查看其余 ${overflow.length} 个自定义标记`} onClick={() => setOverflowOpen((open) => !open)}><MoreIcon /><b>+{overflow.length}</b></button>{overflowOpen && <div className="custom-marker-overflow-menu">{overflow.map((marker, index) => markerButton(marker, capacity + index, true))}</div>}</div>}
     {drag && suppressClickRef.current && <div className={`custom-marker-drag-ghost${drag.action === "delete" ? " is-delete" : ""}`} style={{ left: drag.x, top: drag.y }}>{drag.action === "delete" ? "松开删除" : markers.find(({ id }) => id === drag.id)?.label}</div>}
     {menu && <CustomLogMarkerContextMenu
       x={menu.x} y={menu.y} markerLabel={menuMarker?.label} cloneDisabled={markers.length >= MAX_CUSTOM_LOG_MARKERS} exportAllDisabled={!markers.length}
@@ -287,7 +295,7 @@ export const CustomLogMarkerShelf = forwardRef<CustomLogMarkerShelfHandle, Custo
       onExportAll={() => void exportMarkers(markers)}
       onExportMarker={() => { if (menuMarker) void exportMarkers([menuMarker], menuMarker.label); }}
       onEdit={() => menuMarker && openEditor(menuMarker)}
-      onClone={() => { if (menuMarker) onChange(cloneCustomLogMarker(markers, menuMarker.id)); setMenu(undefined); }}
+      onClone={() => { if (menuMarker) { const next = cloneCustomLogMarker(markers, menuMarker.id); const added = next.find(({ id }) => !markers.some((marker) => marker.id === id)); if (added) { const index = next.findIndex(({ id }) => id === added.id); if (index >= capacity) setOverflowOpen(true); revealAdded(`[data-custom-marker-index="${index}"]`); } onChange(next); } setMenu(undefined); }}
       onDelete={() => { if (menuMarker) onChange(markers.filter(({ id }) => id !== menuMarker.id)); setMenu(undefined); }}
     />}
     {editing && <CustomLogMarkerEditor

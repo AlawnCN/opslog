@@ -134,6 +134,23 @@ test("configuration cards and list rows use role-specific theme shapes", () => {
   assert.match(stylesheet("theme-components.css"), /textarea \{ --field-radius: var\(--card-radius\)/);
 });
 
+test("Shoujo configuration cards use a subtle pink material without changing other themes", () => {
+  const palette = postcss.parse(stylesheet("theme-palettes-extra.css"));
+  let found = false;
+  palette.walkDecls("--configuration-card-surface", declaration => {
+    assert.equal((declaration.parent as import("postcss").Rule).selector, ':root[data-theme="shoujo-manga"]');
+    assert.equal(declaration.value, "color-mix(in srgb, var(--surface) 88%, var(--selected-surface))");
+    found = true;
+  });
+  assert.ok(found);
+  const styles = postcss.parse(stylesheet("themes.css"));
+  const cards: string[] = [];
+  styles.walkDecls("background", declaration => {
+    if (declaration.value === "var(--configuration-card-surface, var(--surface-2))") cards.push((declaration.parent as import("postcss").Rule).selector);
+  });
+  for (const selector of [".environment-server-list article", ".environment-application-list > div", ".ssh-ai-rules", ".ssh-source-card", ".environment-time-zone-mode"]) assert.ok(cards.some(rule => rule.includes(selector)), selector);
+});
+
 test("inner backgrounds follow rounded and asymmetric panel corners without clipping popovers", () => {
   const styles = postcss.parse(stylesheet("themes.css"));
   const rules = styles.nodes.filter((node) => node.type === "rule");

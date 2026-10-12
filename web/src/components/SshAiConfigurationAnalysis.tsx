@@ -130,20 +130,20 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply, onTrustServer
     } catch (cause) { setPendingHostKey(undefined); setError(errorMessage(cause)); setPhase("error"); setStatus(""); }
   };
   return <section className="ssh-ai-rules is-wide">
-    <div className="environment-repeatable-heading"><div><strong>日志解析参数</strong><small>支持手动配置；AI 辅助生成参数，应用目录由用户维护。</small></div><div className="ssh-ai-actions" role="group" aria-label="AI 分析与设置">
+    <div className="environment-repeatable-heading"><div><strong>日志解析参数</strong><small>手动配置或由 AI 生成。</small></div><div className="ssh-ai-actions" role="group" aria-label="AI 分析与设置">
       <button type="button" disabled={busy || !!proposal} title={proposal ? "请先应用参数或放弃当前结果" : undefined} aria-busy={busy} onClick={() => void begin()}>{busy?<span className="button-spinner" aria-hidden="true"/>:<AiSparkIcon />}{busy?(phase==="analyzing"?"分析中…":phase==="sampling"?"采样中…":"准备中…"):"AI 分析"}</button>
       <button type="button" className="ssh-ai-settings" disabled={busy} aria-label="AI 设置" title="AI 设置" onClick={() => void loadAiConfiguration().then((value) => { setConfiguration(value); setAnalyzeAfterSave(false); setConfigOpen(true); }).catch((cause) => setError(errorMessage(cause)))}><SettingsIcon /></button>
     </div></div>
     <div ref={feedback} tabIndex={-1} className={`ssh-ai-feedback is-${phase}`}>
       {status && <p role="status" aria-live="polite" aria-atomic="true">{status}</p>}
       {error && <p className="environment-config-error" role="alert">{error}</p>}
-      {busy && <button type="button" onClick={() => {controller.current?.abort(); setBusy(false); setPhase("cancelled"); setError(undefined);setStatus("已取消 · 当前参数未变更。");}}>取消{phase==="analyzing"?"分析":"采样"}</button>}
-      {proposal && <div className="ssh-ai-proposal-banner"><strong>AI 参数预览</strong><span>尚未替换当前配置，可修改后应用。</span><button type="button" disabled={busy} onClick={apply}>应用参数</button><button type="button" disabled={busy} onClick={()=>{setProposal(undefined);setSamples(undefined);setRawResponse("");setPhase("idle");setStatus("已放弃分析结果，当前参数未变更。");setError(undefined);}}>放弃</button></div>}
+      {busy && <button type="button" onClick={() => {controller.current?.abort(); setBusy(false); setPhase("cancelled"); setError(undefined);setStatus("已取消，参数未变更。");}}>取消{phase==="analyzing"?"分析":"采样"}</button>}
+      {proposal && <div className="ssh-ai-proposal-banner"><strong>AI 参数预览</strong><span>未应用，可编辑。</span><button type="button" disabled={busy} onClick={apply}>应用参数</button><button type="button" disabled={busy} onClick={()=>{setProposal(undefined);setSamples(undefined);setRawResponse("");setPhase("idle");setStatus("已放弃，参数未变更。");setError(undefined);}}>放弃</button></div>}
     </div>
-    <p>点击“AI 分析”将自动限量采样并发送至已配置的 AI 服务。自动脱敏不保证移除全部敏感信息。</p>
+    <p>采样日志将发送至 AI 服务，可能含敏感信息。</p>
     {samples && !busy && <details><summary>查看本次采样内容</summary><pre>{JSON.stringify(samples,null,2)}</pre></details>}
     <SshLogRulesEditor applications={proposal ?? environment.sshMonitoredApplications ?? []} disabled={busy} onChange={(applications)=>{
-      if(proposal) setProposal(applications); else {onApply(applications);setSamples(undefined);setRawResponse("");setPhase("idle");setStatus("参数已修改，请保存环境配置。");}
+      if(proposal) setProposal(applications); else {onApply(applications);setSamples(undefined);setRawResponse("");setPhase("idle");setStatus("参数已修改，尚未保存。");}
       setError(undefined);
     }}/>
     {rawResponse && error && <details><summary>AI 返回原文（诊断信息）</summary><pre>{rawResponse}</pre></details>}
@@ -151,6 +151,6 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply, onTrustServer
       onActivate={(id)=>void activateAiConfiguration(id).then(setConfiguration).catch((cause)=>setError(errorMessage(cause)))}
       onDelete={async(id)=>{setConfiguration(await deleteAiConfiguration(id));}}
       onImport={async(profiles,activeId)=>{for(const input of profiles)setConfiguration(await saveAiConfiguration({...input,setActive:input.id===activeId}));}} />, document.body)}
-    {pendingHostKey && <SshHostKeyDialog challenge={pendingHostKey} busy={false} detail="确认后先更新当前环境草稿，并自动继续 AI 分析；请在完成后保存配置。" onCancel={() => { setPendingHostKey(undefined); setPhase("cancelled"); setStatus("已取消主机指纹确认；当前参数未变更。"); }} onConfirm={confirmHostKey} />}
+    {pendingHostKey && <SshHostKeyDialog challenge={pendingHostKey} busy={false} detail="确认后继续分析；保存配置以保留指纹。" onCancel={() => { setPendingHostKey(undefined); setPhase("cancelled"); setStatus("已取消主机指纹确认；当前参数未变更。"); }} onConfirm={confirmHostKey} />}
   </section>;
 };
