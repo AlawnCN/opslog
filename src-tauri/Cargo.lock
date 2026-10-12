@@ -2529,7 +2529,7 @@ dependencies = [
 
 [[package]]
 name = "opslog"
-version = "3.1.12"
+version = "3.1.13"
 dependencies = [
  "axum",
  "base64 0.22.1",

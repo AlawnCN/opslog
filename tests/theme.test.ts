@@ -111,6 +111,29 @@ test("compound theme controls have a single material owner and flat inner segmen
   assert.equal(values.get("--hover-lift"), "0 0");
 });
 
+test("configuration cards and list rows use role-specific theme shapes", () => {
+  const styles = postcss.parse(stylesheet("themes.css"));
+  const radiusFor = (selector: string) => {
+    let radius = "";
+    styles.walkRules((rule) => {
+      if (rule.selector.includes(selector)) rule.walkDecls("border-radius", (declaration) => { radius = declaration.value; });
+    });
+    return radius;
+  };
+  for (const selector of [".environment-server-list article", ".environment-application-list > div", ".ssh-ai-rules", ".ssh-source-card"]) assert.equal(radiusFor(selector), "var(--card-radius)");
+  assert.equal(radiusFor(".environment-config-list-item, .ai-profile-list button"), "var(--item-radius)");
+  assert.equal(radiusFor(".environment-config-list-select, .environment-drag-handle"), "0");
+  const palette = postcss.parse(stylesheet("theme-palettes-extra.css"));
+  palette.walkRules(':root[data-theme="shoujo-manga"]', (rule) => {
+    const values = new Map<string, string>();
+    rule.walkDecls((declaration) => { values.set(declaration.prop, declaration.value); });
+    assert.equal(values.get("--radius"), "999px", "standalone buttons remain pills");
+    assert.equal(values.get("--panel-radius"), "24px", "content panels remain cards");
+    assert.equal(values.get("--item-radius"), "12px", "compact list rows have smaller corners");
+  });
+  assert.match(stylesheet("theme-components.css"), /textarea \{ --field-radius: var\(--card-radius\)/);
+});
+
 test("clipped theme controls keep motion inside their material and focus boundaries", () => {
   const styles = postcss.parse(stylesheet("themes.css"));
   const rules = styles.nodes.filter((node) => node.type === "rule");

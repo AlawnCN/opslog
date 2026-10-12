@@ -11,6 +11,7 @@
   --input-surface: var(--surface-solid); --input-shadow: none; --input-focus-shadow: none;
   --primary-surface: var(--cyan); --primary-text: #ffffff; --primary-shadow: var(--control-shadow);
   --hover-lift: 0 -2px; --press-scale: .98;
+  --card-radius: var(--panel-radius); --item-radius: var(--radius);
   --motion-duration: 200ms; --motion-easing: ease-out;
   --editor-surface: var(--surface-solid);
   --syntax-key: var(--accent-text); --syntax-string: var(--green); --syntax-number: var(--amber);

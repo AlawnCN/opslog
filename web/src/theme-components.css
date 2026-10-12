@@ -13,10 +13,11 @@
 :root[data-theme-ui="modern"] :is(button, input, select, textarea):disabled { opacity: .5; cursor: not-allowed; box-shadow: none; translate: none; scale: none; filter: none; }
 :root[data-theme-ui="modern"] :is(button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--focus-color, var(--cyan)); outline-offset: 2px; }
 :root[data-theme-ui="modern"] :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, .log-reader-search-group) {
-  background: var(--input-surface); color: var(--text); border-color: var(--line); border-radius: var(--radius); box-shadow: var(--input-shadow); caret-color: var(--accent-text);
+  background: var(--input-surface); color: var(--text); border-color: var(--line); border-radius: var(--field-radius, var(--radius)); box-shadow: var(--input-shadow); caret-color: var(--accent-text);
   transition: border-color var(--motion-duration) var(--motion-easing), box-shadow var(--motion-duration) var(--motion-easing), background-color var(--motion-duration) var(--motion-easing);
 }
 :root[data-theme-ui="modern"] :is(input, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:root[data-theme-ui="modern"] textarea { --field-radius: var(--card-radius); }
 :root[data-theme-ui="modern"] :is(input, textarea, select):focus { border-color: var(--cyan); box-shadow: var(--input-focus-shadow); }
 :root[data-theme-ui="modern"] :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--cyan); }
 :root[data-theme-ui="modern"] .log-reader-search-group input { border-color: transparent; box-shadow: none; background: transparent; }

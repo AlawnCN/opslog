@@ -104,6 +104,7 @@
   --red: #a32943; --green: #276b54; --amber: #80571c; --scrollbar: #c47b93;
   --backdrop: rgb(74 85 104 / 24%); --shadow-color: rgb(255 183 197 / 30%);
   --radius: 999px; --panel-radius: 24px;
+  --item-radius: 12px;
   --panel-shadow: 0 4px 20px rgb(255 183 197 / 25%);
   --control-shadow: 0 4px 15px rgb(255 183 197 / 38%);
   --control-hover: #fecdd3; --control-hover-shadow: 0 8px 30px rgb(255 183 197 / 40%);
