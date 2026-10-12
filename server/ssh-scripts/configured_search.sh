@@ -16,6 +16,11 @@ my (%transactions,@rows,%visited,$truncated,%directories,$primary_transactions);
 my $realroot=realpath($root)//die "Invalid application directory";
 $root=$realroot;
 my %compiled_regex;
+# Every textual field is extracted as a contiguous substring of the decoded
+# record (trimming and async-ID suffix removal only shorten it). These literal
+# checks are necessary, not sufficient: field-aware checks still run afterwards.
+my %query_fields=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",node=>"node",messageCode=>"messageCode",messageInfo=>"messageInfo",level=>"level",traceId=>"traceId");
+my @text_needles=map {lc($query->{$_})} grep {length($query->{$_}//"")} (keys %query_fields,"keyword");
 die "Invalid source count" unless ref($sources) eq "ARRAY" && @$sources<=12;
 for my $source (@$sources) {
   die "Invalid file selection" unless ($source->{fileSelection}//"all")=~/^(all|latest)$/;
@@ -53,6 +58,12 @@ sub parts {
 }
 sub record_row {
   my ($record,$source,$path)=@_; $record=decode("UTF-8",$record,Encode::FB_DEFAULT);
+  # Only snapshot summaries are filtered per record. Legacy transactionEvent
+  # aggregation may combine fields from different records and must not prefilter.
+  if ($paging && @text_needles) {
+    my $text=lc($record);
+    for my $needle (@text_needles) {return if index($text,$needle)<0;}
+  }
   # Regex timestamps do not need field splitting. Reject out-of-range records
   # before the expensive JSON-aware delimiter scan, even for unordered files.
   # Index-based timestamps retain the original splitting path and semantics.
@@ -85,8 +96,7 @@ sub record_row {
 }
 sub matches_query {
   my ($row)=@_;
-  my %map=(txnId=>"logId",txnNo=>"txnNo",business=>"business",service=>"service",node=>"node",messageCode=>"messageCode",messageInfo=>"messageInfo",level=>"level",traceId=>"traceId");
-  for my $filter(keys %map) {my $needle=$query->{$filter}//""; return 0 if length($needle) && index(lc($row->{values}{$map{$filter}}//""),lc($needle))<0;}
+  for my $filter(keys %query_fields) {my $needle=$query->{$filter}//""; return 0 if length($needle) && index(lc($row->{values}{$query_fields{$filter}}//""),lc($needle))<0;}
   for my $filter ("keyword","file") {my $needle=$query->{$filter}//""; my $text=$filter eq "keyword"?$row->{raw}:$row->{file}; return 0 if length($needle) && index(lc($text),lc($needle))<0;}
   return 0 if ($query->{minDurationMs}//0)>($row->{values}{duration}//0);
   if (($query->{status}//"ALL") ne "ALL") {my $code=$row->{values}{messageCode}//""; my $re=qr/$row->{successPattern}/; my $success=$code=~$re; return 0 unless length($code) && (($query->{status} eq "SUCCESS")?$success:!$success);}
