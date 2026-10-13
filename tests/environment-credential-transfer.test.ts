@@ -31,6 +31,20 @@ const environments: EnvironmentConfiguration[] = [{
   sshMonitoredApplications: [{ name: "cte", directory: "/var/log/cte" }]
 }];
 
+test("旧 ELK 配置补齐 APM 默认索引，自定义值可保存导出再导入", () => {
+  const [draft] = parseEnvironmentConfigurationFile(JSON.stringify([environments[0]]));
+  assert.equal(draft!.apmIndex, "traces-apm*");
+  draft!.apmIndex = " custom-apm-* ";
+  const [saved] = prepareEnvironmentConfigurationsForSave([draft!]);
+  assert.equal(saved!.apmIndex, "custom-apm-*");
+  const [restored] = parseEnvironmentConfigurationFile(serializeEnvironmentConfigurations([saved!]));
+  assert.equal(restored!.apmIndex, "custom-apm-*");
+  assert.equal(restored!.txntrcIndex, environments[0]!.txntrcIndex);
+  assert.equal(restored!.applogIndex, environments[0]!.applogIndex);
+  assert.equal(validateEnvironmentConfigurations([{ ...draft!, apmIndex: " " }]), "uat-elk：APM 调用链索引不能为空");
+  assert.equal(validateEnvironmentConfigurations([{ ...environments[1]!, apmIndex: "" }]), undefined);
+});
+
 test("保存保留所有 SSH 应用的解析参数和分析说明，不受其他环境修改影响", () => {
   const drafts = structuredClone(environments);
   const sources = defaultSshLogSources();

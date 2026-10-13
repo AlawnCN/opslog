@@ -133,7 +133,8 @@ macOS 与 Windows 桌面端支持自动更新。优先检查 Gitea，同时核�
 
 兼容字段：`name`、`kibanaUrl`、`username`、`password`、`txnlstIndex`、`txntrcIndex`、`applogIndex`。
 
-- `apmIndex`：APM 索引，默认 `traces-apm*`。
+- ELK 索引映射共四项：`txnlstIndex` 用于交易汇总，`txntrcIndex` 用于 ECP 服务日志和交易明细，`applogIndex` 用于应用服务日志，`apmIndex` 用于 APM 调用链。
+- `apmIndex` 可在环境配置中编辑，旧配置缺省时使用 `traces-apm*`。
 - `allowInsecureTls`：允许遗留环境使用无法验证的证书，默认 `false`。
 
 也可将 `opslog-envs.json` 放在可执行文件旁，或通过 `OPSLOG_CONFIG_PATH` 指定路径。

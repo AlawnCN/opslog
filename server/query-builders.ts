@@ -36,7 +36,8 @@ const fullTraceId = (value: string): boolean => /^[a-f\d]{16,64}$/i.test(value);
 
 const resolveIndex = (input: SearchInput, environment: EnvironmentConfig): string => {
   if (input.kind === "transaction") return index(environment.txnlstIndex);
-  if (input.kind === "application" || input.kind === "ecp") return index(environment.applogIndex);
+  if (input.kind === "application") return index(environment.applogIndex);
+  if (input.kind === "ecp") return index(environment.txntrcIndex);
   if (!input.index) throw new Error("通用日志必须选择索引");
 
   const allowed = new Set([

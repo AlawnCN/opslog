@@ -115,7 +115,7 @@ export const FilterPanel = forwardRef<FilterPanelHandle, FilterPanelProps>(({ ki
         </div>
       </div>
       <div className="filter-actions">
-        <div className="index-hint"><i /> {environment?.sourceType === "ssh" ? "SSH SOURCE" : "INDEX"} <code>{environment?.sourceType === "ssh" ? `${environment.name} / ${filters.application || environment.sshApplications[0] || "—"}` : kind === "transaction" ? environment?.txnlstIndex : kind === "generic" ? filters.index : environment?.applogIndex}</code></div>
+        <div className="index-hint"><i /> {environment?.sourceType === "ssh" ? "SSH SOURCE" : "INDEX"} <code>{environment?.sourceType === "ssh" ? `${environment.name} / ${filters.application || environment.sshApplications[0] || "—"}` : kind === "transaction" ? environment?.txnlstIndex : kind === "ecp" ? environment?.txntrcIndex : kind === "generic" ? filters.index : environment?.applogIndex}</code></div>
         <button type="button" className={`filter-collapse-toggle${collapsed ? " is-collapsed" : ""}`} aria-expanded={!collapsed} aria-label={collapsed ? "展开筛选条件" : "收起筛选条件"} title={collapsed ? "展开筛选条件" : "收起筛选条件"} onClick={toggleCollapsed}>
           <svg viewBox="0 0 24 14" aria-hidden="true">
             <path d="m4 10 8-7 8 7" />

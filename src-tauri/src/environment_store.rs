@@ -86,6 +86,11 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
             return Err(format!("环境 {} 的 {field} 不能为空", environment.name));
         }
         if environment.source_type == EnvironmentSource::Elk
+            && environment.apm_index.as_ref().is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(format!("环境 {} 的 APM 调用链索引不能为空", environment.name));
+        }
+        if environment.source_type == EnvironmentSource::Elk
             && !(environment.kibana_url.starts_with("https://")
                 || environment.kibana_url.starts_with("http://"))
         {
@@ -247,6 +252,20 @@ pub fn to_public(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keeps_legacy_apm_default_and_validates_explicit_empty_index() {
+        let mut environment: EnvironmentConfig = serde_json::from_str(r#"{
+            "name":"test","kibanaUrl":"https://example.test","username":"reader","password":"fixture",
+            "txnlstIndex":"txn-*","txntrcIndex":"trc-*","applogIndex":"app-*"
+        }"#).unwrap();
+        assert!(validate(&[environment.clone()]).is_ok());
+        assert_eq!(to_public(environment.clone(), None).apm_index, "traces-apm*");
+        environment.apm_index = Some("custom-apm-*".into());
+        assert_eq!(to_public(environment.clone(), None).apm_index, "custom-apm-*");
+        environment.apm_index = Some(" ".into());
+        assert!(validate(&[environment]).unwrap_err().contains("APM 调用链索引不能为空"));
+    }
 
     #[test]
     fn normalizes_known_legacy_ip_urls_to_certificate_hostnames() {

@@ -38,6 +38,10 @@ test("Web 导入配置沿用环境校验和地址迁移规则", () => {
   }]));
 
   assert.equal(environments[0].kibanaUrl, "https://nexus.faulukenya.com/kibana");
+  assert.equal(environments[0].apmIndex, "traces-apm*");
+  const configured = { ...environments[0], apmIndex: "custom-apm-*" };
+  assert.equal(parseEnvironmentConfig(JSON.stringify([configured]))[0].apmIndex, "custom-apm-*");
+  assert.throws(() => parseEnvironmentConfig(JSON.stringify([{ ...configured, apmIndex: " " }])));
   assert.throws(() => parseEnvironmentConfig("[]"), /环境配置内容不完整/);
   assert.throws(() => parseEnvironmentConfig("not-json"), /环境配置 JSON 不合法/);
 });

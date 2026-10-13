@@ -51,6 +51,17 @@ test("应用日志关键词在规范字段中组合查询", () => {
   assert.match(query, /ecp\.log\.application LIKE "\*payments\*"/);
 });
 
+test("ECP 检索和交易明细共用 TRC 索引，应用和 APM 索引互不影响", () => {
+  const configured = { ...environment, apmIndex: "custom-apm-*" };
+  const ecp = buildSearchQuery({ ...base, kind: "ecp", file: "payments", keyword: "timeout" }, configured);
+  assert.match(ecp, /^FROM logs-ecp\.txn\.trc\*/);
+  assert.match(ecp, /ecp\.log\.file LIKE "\*payments\*"/);
+  assert.match(buildTrcQuery(configured, "log-1", base.startTime, base.endTime), /^FROM logs-ecp\.txn\.trc\*/);
+  assert.match(buildSearchQuery({ ...base, kind: "application" }, configured), /^FROM logs-ecp\.log\.\*/);
+  assert.match(buildTraceQuery(configured, "trace-1", base.startTime, base.endTime), /^FROM custom-apm-\*/);
+  assert.match(buildSearchQuery({ ...base, kind: "generic", index: configured.apmIndex }, configured), /^FROM custom-apm-\*/);
+});
+
 test("通用查询不允许配置外索引", () => {
   assert.throws(
     () => buildSearchQuery({ ...base, kind: "generic", index: "secrets-*" }, environment),

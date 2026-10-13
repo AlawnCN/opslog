@@ -31,7 +31,7 @@ const environmentSchema = z.object({
   txnlstIndex: z.string().default(""),
   txntrcIndex: z.string().default(""),
   applogIndex: z.string().default(""),
-  apmIndex: z.string().trim().optional(),
+  apmIndex: z.string().trim().default("traces-apm*"),
   allowInsecureTls: z.boolean().optional(),
   timeZone: z.string().trim().optional(),
   sshHost: z.string().trim().optional(),
@@ -44,6 +44,7 @@ const environmentSchema = z.object({
   sshMonitoredApplications: z.array(sshApplicationSchema).optional()
 }).superRefine((environment, context) => {
   if (environment.sourceType === "elk") {
+    if (!environment.apmIndex) context.addIssue({ code: "custom", path: ["apmIndex"], message: "APM 调用链索引不能为空" });
     for (const [value, field] of [[environment.kibanaUrl, "kibanaUrl"], [environment.username, "username"], [environment.password, "password"], [environment.txnlstIndex, "txnlstIndex"], [environment.txntrcIndex, "txntrcIndex"], [environment.applogIndex, "applogIndex"]] as const) {
       if (!value.trim()) context.addIssue({ code: "custom", path: [field], message: `${field} 不能为空` });
     }

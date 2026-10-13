@@ -36,7 +36,7 @@ const normalizeSshServer = (server: SshServerConfiguration): SshServerConfigurat
 
 export const createEnvironmentConfiguration = (sequence: number): EnvironmentConfiguration => ({
   name: `environment-${sequence}`, sourceType: "elk", kibanaUrl: "", username: "", password: "",
-  txnlstIndex: "logs-ecp.txn.lst.dr*", txntrcIndex: "logs-ecp.txn.trc.dr*", applogIndex: "logs-ecp.app.dr*",
+  txnlstIndex: "logs-ecp.txn.lst.dr*", txntrcIndex: "logs-ecp.txn.trc.dr*", applogIndex: "logs-ecp.app.dr*", apmIndex: "traces-apm*",
   timeZone: DEFAULT_TIME_ZONE, sshConnectTimeoutSeconds: 10, sshLogTimeOffset: DEFAULT_SSH_OFFSET,
   sshAutoDetectTimeZone: true, sshServers: [defaultSshServer()], sshMonitoredApplications: [defaultSshApplication()]
 });
@@ -66,7 +66,7 @@ const parseSshApplications = (item: Record<string, unknown>): SshApplicationConf
 };
 
 export const normalizeEnvironmentConfiguration = (item: EnvironmentConfiguration): EnvironmentConfiguration => ({
-  ...item, timeZone: item.timeZone || DEFAULT_TIME_ZONE,
+  ...item, timeZone: item.timeZone || DEFAULT_TIME_ZONE, apmIndex: item.apmIndex ?? "traces-apm*",
   sshConnectTimeoutSeconds: item.sshConnectTimeoutSeconds ?? 10, sshLogTimeOffset: item.sshLogTimeOffset || DEFAULT_SSH_OFFSET,
   sshAutoDetectTimeZone: item.sshAutoDetectTimeZone ?? true,
   sshServers: item.sshServers?.length ? item.sshServers.map(normalizeSshServer) : parseSshServers(item as unknown as Record<string, unknown>),
@@ -122,6 +122,7 @@ export const prepareEnvironmentConfigurationsForSave = (items: EnvironmentConfig
   const item = normalizeEnvironmentConfiguration(rawItem);
   return {
     ...item, name: item.name.trim(), kibanaUrl: item.kibanaUrl.trim(), timeZone: item.timeZone?.trim(),
+    txnlstIndex: item.txnlstIndex.trim(), txntrcIndex: item.txntrcIndex.trim(), applogIndex: item.applogIndex.trim(), apmIndex: item.apmIndex?.trim(),
     sshHost: undefined, sshBaseDirectory: undefined, sshApplications: undefined,
     sshServers: item.sourceType === "ssh" ? item.sshServers?.map((server) => ({ ...server, name: server.name.trim(), host: server.host.trim(), username: server.username?.trim(), privateKeyPath: server.privateKeyPath?.trim() })) : [],
     sshMonitoredApplications: item.sourceType === "ssh" ? item.sshMonitoredApplications?.map((application) => ({
@@ -169,7 +170,7 @@ export const validateEnvironmentConfigurations = (items: EnvironmentConfiguratio
         applicationNames.add(application.name.toLocaleLowerCase());
       }
     } else {
-      const fields: Array<[string, string]> = [[item.kibanaUrl, "Kibana 服务地址"], [item.username, "用户名"], [item.password, "密码"], [item.txnlstIndex, "交易日志索引"], [item.txntrcIndex, "调用链日志索引"], [item.applogIndex, "应用日志索引"]];
+      const fields: Array<[string, string]> = [[item.kibanaUrl, "Kibana 服务地址"], [item.username, "用户名"], [item.password, "密码"], [item.txnlstIndex, "交易汇总索引"], [item.txntrcIndex, "ECP 服务日志索引"], [item.applogIndex, "应用服务日志索引"], [item.apmIndex ?? "traces-apm*", "APM 调用链索引"]];
       const empty = fields.find(([value]) => !value.trim());
       if (empty) return `${item.name}：${empty[1]}不能为空`;
       try { const url = new URL(item.kibanaUrl); if (!['http:', 'https:'].includes(url.protocol)) return `${item.name}：Kibana 服务地址仅支持 HTTP 或 HTTPS`; } catch { return `${item.name}：Kibana 服务地址格式无效`; }

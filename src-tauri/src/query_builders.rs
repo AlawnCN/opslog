@@ -71,7 +71,8 @@ fn resolve_index<'a>(
 ) -> Result<&'a str, String> {
     match input.kind {
         LogKind::Transaction => index(&environment.txnlst_index),
-        LogKind::Application | LogKind::Ecp => index(&environment.applog_index),
+        LogKind::Application => index(&environment.applog_index),
+        LogKind::Ecp => index(&environment.txntrc_index),
         LogKind::Generic => {
             let selected = input
                 .index
@@ -362,6 +363,25 @@ mod tests {
             build_search_query(&input, &environment(), false).unwrap_err(),
             "该索引未在当前环境中配置"
         );
+    }
+
+    #[test]
+    fn separates_ecp_application_and_apm_indexes() {
+        let mut environment = environment();
+        environment.apm_index = Some("custom-apm-*".into());
+        let mut input = input();
+        input.kind = LogKind::Ecp;
+        input.file = Some("payments".into());
+        let ecp = build_search_query(&input, &environment, false).unwrap();
+        assert!(ecp.starts_with("FROM logs-ecp.txn.trc*"));
+        assert!(ecp.contains("ecp.log.file LIKE \"*payments*\""));
+        assert!(build_trc_query(&environment, "log-1", &input.start_time, &input.end_time).unwrap().starts_with("FROM logs-ecp.txn.trc*"));
+        input.kind = LogKind::Application;
+        assert!(build_search_query(&input, &environment, false).unwrap().starts_with("FROM logs-ecp.log.*"));
+        assert!(build_trace_query(&environment, "trace-1", &input.start_time, &input.end_time).unwrap().starts_with("FROM custom-apm-*"));
+        input.kind = LogKind::Generic;
+        input.index = environment.apm_index.clone();
+        assert!(build_search_query(&input, &environment, false).unwrap().starts_with("FROM custom-apm-*"));
     }
 
     #[test]
