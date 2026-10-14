@@ -1,5 +1,5 @@
 export type LogKind = "transaction" | "application" | "ecp" | "generic";
-export type EnvironmentSource = "elk" | "ssh";
+export type EnvironmentSource = "elk" | "ssh" | "local";
 export type SshAuthentication = "ssh-config" | "password" | "private-key";
 
 export interface SshServerConfig {

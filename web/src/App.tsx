@@ -175,8 +175,8 @@ export default function App() {
         ...current,
         ...range,
         ...(kind === "generic" ? { index: environment.applogIndex } : {}),
-        application: environment.sourceType === "ssh" ? environment.sshApplications[0] ?? "" : "",
-        ...(environment.sourceType === "ssh" ? { traceId: "" } : {})
+        application: environment.sourceType !== "elk" ? environment.sshApplications[0] ?? "" : "",
+        ...(environment.sourceType !== "elk" ? { traceId: "" } : {})
       };
     });
   }, [kind, environmentName, environmentTimeZone]);
@@ -257,12 +257,12 @@ export default function App() {
     setSearching(true);
     controller.current?.abort();
     const sessionKey = JSON.stringify({ ...activeRequest, page: 0, pageSize: targetPageSize });
-    if (environment?.sourceType === "ssh" && (targetPage === 1 || sshQuerySession.current?.key !== sessionKey)) {
+    if (environment && environment.sourceType !== "elk" && (targetPage === 1 || sshQuerySession.current?.key !== sessionKey)) {
       sshQuerySession.current = { key: sessionKey, id: createSshQuerySessionId() };
       sessionCache.current.clearSearch();
     }
     const nextRequest = { ...activeRequest, page: targetPage, pageSize: targetPageSize,
-      ...(environment?.sourceType === "ssh" ? { sessionId: sshQuerySession.current!.id } : {}) };
+      ...(environment && environment.sourceType !== "elk" ? { sessionId: sshQuerySession.current!.id } : {}) };
     const cacheKey = searchCacheKey(nextRequest);
     if (forceRefresh) sessionCache.current.clearSearch();
     const cached = forceRefresh ? undefined : sessionCache.current.getSearch(cacheKey);
@@ -385,11 +385,11 @@ export default function App() {
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading || !environmentReady} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}
-      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType !== "ssh"} timeZone={environmentTimeZone} />
+      <DataTable kind={kind} result={result} loading={loading} queryPerformance={searchPerformance} onTransactionLog={logResources.downloadLog} onReadTransactionLog={logResources.openLog} onTrace={logResources.openTrace} traceEnabled={environment?.sourceType === "elk"} timeZone={environmentTimeZone} />
       {result && <div className="pagination"><span>第 <strong>{page}</strong> 页 · 每页 <AppSelect value={String(pageSize)} disabled={loading} ariaLabel="每页记录数" options={PAGE_SIZES.map((size) => ({ value: String(size), label: `${size} 条` }))} onChange={(value) => changePageSize(Number(value))} /></span><div><button disabled={loading || page <= 1} onClick={() => runSearch(page - 1)}>上一页</button><button disabled={loading || !result.hasMore} onClick={() => runSearch(page + 1)}>下一页</button></div></div>}
     </main>
     <TraceDrawer traceId={logResources.trace?.id} rows={logResources.trace?.rows ?? []} loading={logResources.trace?.loading ?? false} remoteDurationMs={logResources.trace?.remoteDurationMs} cached={logResources.trace?.cached} onClose={logResources.closeTrace} timeZone={environmentTimeZone} />
-    {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} onClose={logResources.closeLog} /></Suspense>}
+    {logResources.transactionLog && <Suspense fallback={null}><TransactionLogDrawer ref={transactionLogDrawerRef} logId={logResources.transactionLog.id} content={logResources.transactionLog.content} loading={logResources.transactionLog.loading} remoteDurationMs={logResources.transactionLog.remoteDurationMs} cached={logResources.transactionLog.cached} localSource={environment?.sourceType === "local"} onClose={logResources.closeLog} /></Suspense>}
     {environmentConfigOpen && <EnvironmentConfigurationDialog environments={environmentConfiguration} activeEnvironmentName={environmentName} loading={environmentConfigLoading} saving={environmentConfigSaving} error={environmentConfigError} onClose={() => setEnvironmentConfigOpen(false)} onSave={(items) => void saveEnvironmentConfiguration(items)} />}
     {pendingHostKey && <SshHostKeyDialog challenge={pendingHostKey} busy={hostKeyBusy} onCancel={() => setPendingHostKey(undefined)} onConfirm={() => void approveHostKey()} />}
     <UpdateDialog state={appUpdater.state} onInstall={() => void appUpdater.installUpdate()} onDismiss={appUpdater.dismissUpdater} />

@@ -10,7 +10,7 @@ const items: Array<{ kind: LogKind; code: string; title: string; detail: string 
 
 export const Navigation = ({ active, onChange, environment }: { active: LogKind; onChange: (kind: LogKind) => void; environment?: Environment }) => {
   const timeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
-  const offsetLabel = environment?.sourceType === "ssh" && environment.timeZoneOffset
+  const offsetLabel = environment && environment.sourceType !== "elk" && environment.timeZoneOffset
     ? `UTC ${environment.timeZoneOffset}`
     : timeZoneOffsetLabel(timeZone);
   return (
@@ -20,7 +20,7 @@ export const Navigation = ({ active, onChange, environment }: { active: LogKind;
       {items.map((item) => (
         <button key={item.kind} className={active === item.kind ? "active" : ""} onClick={() => onChange(item.kind)}>
           <span className="nav-code">{item.code}</span>
-          <span><strong>{item.title}</strong><small>{item.detail}</small></span>
+          <span><strong>{item.title}</strong><small>{item.kind === "generic" && environment && environment.sourceType !== "elk" ? "已配置日志源自由检索" : item.detail}</small></span>
         </button>
       ))}
     </nav>

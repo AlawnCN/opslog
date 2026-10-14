@@ -14,6 +14,8 @@ const LABELS: Record<string, string> = {
   "ecp.txn.no": "流水号",
   "ecp.txn.business": "业务 Key",
   "ecp.txn.node": "执行节点",
+  "ecp.txn.server": "来源",
+  "ecp.txn.tenant": "租户",
   "ecp.txn.src.node.id": "来源节点",
   "ecp.txn.service": "交易码",
   "ecp.txn.duration": "耗时",
@@ -128,7 +130,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
         <div className="results-heading-copy">
           <span className="eyebrow">SEARCH RESULTS</span>
           <div className="results-heading-main">
-            <strong>{loading ? "正在从日志集群读取…" : `本页 ${rows.length} 条记录`}</strong>
+            <strong>{loading ? "正在读取日志…" : `本页 ${rows.length} 条记录`}</strong>
             {!loading && classifySearchWarnings(result?.warnings).coverage.length > 0 && <span className="query-metric" title="本次查询达到安全扫描范围，较早的记录可能未覆盖；原始日志未被修改。">范围受限</span>}
             {!loading && queryPerformance && <span className={`query-metric${queryPerformance.cached ? " is-cached" : ""}`} title={queryPerformance.cached ? "本次结果来自当前会话缓存" : "包含 Kibana 查询和 VPN 传输时间"}>{queryPerformance.cached ? "已缓存" : `查询 ${(queryPerformance.durationMs / 1000).toFixed(2)} 秒`}</span>}
           </div>

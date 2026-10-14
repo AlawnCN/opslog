@@ -33,7 +33,7 @@ interface EnvironmentConfigurationDialogProps {
 const clone = (items: EnvironmentConfiguration[]): EnvironmentConfiguration[] => items.map((item) => normalizeEnvironmentConfiguration(item));
 const connectionSummary = (item: EnvironmentConfiguration): string => item.sourceType === "ssh"
   ? `${item.sshServers?.length ?? 0} 台服务器 · ${item.sshMonitoredApplications?.length ?? 0} 个应用`
-  : item.kibanaUrl || "未配置服务地址";
+  : item.sourceType === "local" ? `本地 · ${item.sshMonitoredApplications?.length ?? 0} 个应用` : item.kibanaUrl || "未配置服务地址";
 
 const TIME_ZONE_OPTIONS = (() => {
   const supportedValuesOf = (Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }).supportedValuesOf;
@@ -62,14 +62,14 @@ const SshServerList = ({ value, timeout, onChange }: { value: SshServerConfigura
   </div>;
 };
 
-const SshApplicationList = ({ value, onChange }: { value: SshApplicationConfiguration[]; onChange: (value: SshApplicationConfiguration[]) => void }) => {
+const SshApplicationList = ({ value, onChange, local = false }: { local?: boolean; value: SshApplicationConfiguration[]; onChange: (value: SshApplicationConfiguration[]) => void }) => {
   const { containerRef, revealAdded } = useAddedConfigurationItem();
   const update = (index: number, changes: Partial<SshApplicationConfiguration>) => onChange(value.map((application, current) => current === index ? { ...application, ...changes } : application));
   return <div ref={containerRef} className="environment-repeatable is-wide">
-    <div className="environment-repeatable-heading"><div><strong>应用目录映射</strong></div><button type="button" onClick={() => { revealAdded(`[data-application-index="${value.length}"]`); onChange([...value, { name: "", directory: "/home/coradm/" }]); }}>＋ 添加映射</button></div>
+    <div className="environment-repeatable-heading"><div><strong>应用目录映射</strong></div><button type="button" onClick={() => { revealAdded(`[data-application-index="${value.length}"]`); onChange([...value, { name: "", directory: local ? "" : "/home/coradm/" }]); }}>＋ 添加映射</button></div>
     <div className="environment-application-list">{value.map((application, index) => <div data-application-index={index} key={index}>
       <label><span>应用简称</span><input value={application.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="cte" /></label>
-      <label><span>应用根目录</span><input value={application.directory} onChange={(event) => update(index, { directory: event.target.value })} placeholder="/home/coradm/cte" /></label>
+      <label><span>应用根目录</span><input value={application.directory} onChange={(event) => update(index, { directory: event.target.value })} placeholder={local ? "本地绝对路径，例如 C:\\logs\\cte 或 /Users/…/cte" : "/home/coradm/cte"} /></label>
       <button type="button" aria-label={`移除应用 ${application.name || index + 1}`} disabled={value.length <= 1} onClick={() => onChange(value.filter((_, current) => current !== index))}><TrashIcon /></button>
     </div>)}</div>
   </div>;
@@ -133,7 +133,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
     if (guardAi()) return;
     revealEnvironment("label:first-child");
     const nextIndex = drafts.length;
-    setDrafts((items) => [...items, { ...createEnvironmentConfiguration(items.length + 1), sourceType }]);
+    setDrafts((items) => [...items, { ...createEnvironmentConfiguration(items.length + 1), sourceType, ...(sourceType === "local" ? { sshServers: [], sshMonitoredApplications: [{ name: "cte", directory: "" }], timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, sshLogTimeOffset: sshOffsetForTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone) } : {}) }]);
     setSelected(nextIndex); setAddSourceOpen(false); setConfirmRemove(false); setNotice(`${sourceType.toUpperCase()} 环境已创建，保存后生效。`);
     requestAnimationFrame(() => { listRef.current?.querySelector<HTMLElement>(`[data-environment-index="${nextIndex}"]`)?.scrollIntoView({ block: "nearest" }); });
   };
@@ -392,7 +392,7 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
             <button type="button" className="environment-config-list-select" onClick={() => { if (exportMode) { toggleTransferSelection(index); return; } if (index !== selected && guardAi()) return; setSelected(index); setLocalError(undefined); setAddSourceOpen(false); setConfirmRemove(false); }}><EnvironmentSourceBadge source={item.sourceType} compact /><span className="environment-config-list-copy"><strong>{item.name || "未命名环境"}{item.name === activeEnvironmentName ? " · 当前运行" : ""}</strong><small>{item.sourceType.toUpperCase()} · {connectionSummary(item)}</small></span></button>
             {exportMode && <button type="button" className={`environment-transfer-check${transferSelection.has(index) ? " is-selected" : ""}`} aria-label={`${transferSelection.has(index) ? "取消选择" : "选择"}${item.name || "未命名环境"}用于导出`} aria-pressed={transferSelection.has(index)} onClick={() => toggleTransferSelection(index)}>{transferSelection.has(index) ? "✓" : ""}</button>}
           </div>)}</div>
-          <div className="environment-create-actions"><div className="environment-add-control"><button className="environment-add-button" type="button" disabled={exportMode} aria-expanded={addSourceOpen} onClick={() => setAddSourceOpen((open) => !open)}>＋ 添加环境</button>{addSourceOpen && <div className="environment-add-source"><strong>选择日志源类型</strong><small>创建后不可修改</small><button type="button" onClick={() => addEnvironment("elk")}><EnvironmentSourceBadge source="elk" /><span className="environment-add-source-copy"><b>ELK</b><em>Elasticsearch 索引检索</em></span></button><button type="button" onClick={() => addEnvironment("ssh")}><EnvironmentSourceBadge source="ssh" /><span className="environment-add-source-copy"><b>SSH</b><em>远程主机日志采集</em></span></button></div>}</div><button className="environment-clone-button" type="button" disabled={!current || exportMode} onClick={cloneEnvironment}>克隆当前</button></div>
+          <div className="environment-create-actions"><div className="environment-add-control"><button className="environment-add-button" type="button" disabled={exportMode} aria-expanded={addSourceOpen} onClick={() => setAddSourceOpen((open) => !open)}>＋ 添加环境</button>{addSourceOpen && <div className="environment-add-source"><strong>选择日志源类型</strong><small>创建后不可修改</small><button type="button" onClick={() => addEnvironment("elk")}><EnvironmentSourceBadge source="elk" /><span className="environment-add-source-copy"><b>ELK</b><em>Elasticsearch 索引检索</em></span></button><button type="button" onClick={() => addEnvironment("ssh")}><EnvironmentSourceBadge source="ssh" /><span className="environment-add-source-copy"><b>SSH</b><em>远程主机日志采集</em></span></button><button type="button" onClick={() => addEnvironment("local")}><EnvironmentSourceBadge source="local" /><span className="environment-add-source-copy"><b>Local</b><em>本地文件检索</em></span></button></div>}</div><button className="environment-clone-button" type="button" disabled={!current || exportMode} onClick={cloneEnvironment}>克隆当前</button></div>
           <div className={`environment-config-transfer${exportMode ? " is-selecting" : ""}`}>{exportMode ? <>
             <div className="environment-transfer-summary"><strong>选择导出范围</strong><span>已选 {transferSelection.size}/{drafts.length}</span></div>
             <p className="environment-transfer-guidance">{transferSelection.size ? `将导出已勾选的 ${transferSelection.size} 个环境。` : "请勾选左侧环境列表中的项目，或点击下方「全选」。"}</p>
@@ -407,8 +407,8 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
         <section className="environment-config-body">{loading && <div className="environment-config-loading">正在读取当前配置…</div>}
           {!loading && current && <Fragment key={`${selected}-${current.sourceType}`}><div className="environment-config-section-title"><strong>{current.name || "未命名环境"}</strong><EnvironmentSourceBadge source={current.sourceType} /></div>
             <div ref={addedEnvironmentRef} className="environment-config-fields">
-              <label><span>环境名称</span><input value={current.name} onChange={(event) => update({ name: event.target.value })} placeholder="例如 faulu-m5-dr" /></label>
-              <label><span>日志时区</span><SearchableSelect value={current.timeZone ?? "Africa/Nairobi"} options={TIME_ZONE_OPTIONS} ariaLabel="日志时区" searchPlaceholder="搜索城市或时区" onChange={(timeZone) => update({ timeZone, ...(current.sourceType === "ssh" ? { sshLogTimeOffset: sshOffsetForTimeZone(timeZone) } : {}) })} /><small>用于查询与显示时间。</small></label>
+              <label className={current.sourceType === "local" ? "is-wide" : undefined}><span>环境名称</span><input value={current.name} onChange={(event) => update({ name: event.target.value })} placeholder="例如 faulu-m5-dr" /></label>
+              <label><span>日志时区</span><SearchableSelect value={current.timeZone ?? "Africa/Nairobi"} options={TIME_ZONE_OPTIONS} ariaLabel="日志时区" searchPlaceholder="搜索城市或时区" onChange={(timeZone) => update({ timeZone, ...(current.sourceType !== "elk" ? { sshLogTimeOffset: sshOffsetForTimeZone(timeZone) } : {}) })} /><small>用于查询与显示时间。</small></label>
               {current.sourceType === "elk" ? <Fragment key="elk-fields">
                 <label className="is-wide"><span>Kibana 服务地址</span><input inputMode="url" value={current.kibanaUrl} onChange={(event) => update({ kibanaUrl: event.target.value })} placeholder="https://example.com/kibana" /></label>
                 <label><span>用户名</span><input autoComplete="off" value={current.username} onChange={(event) => update({ username: event.target.value })} /></label><div className="environment-secret-field"><label htmlFor="elk-environment-password">密码</label><PasswordInput id="elk-environment-password" key={selected} autoComplete="new-password" value={current.password} onChange={(event) => update({ password: event.target.value })} /></div>
@@ -418,13 +418,13 @@ export const EnvironmentConfigurationDialog = ({ environments, loading, saving, 
                 <label><span>应用服务日志索引</span><input value={current.applogIndex} onChange={(event) => update({ applogIndex: event.target.value })} /></label>
                 <label><span>APM 调用链索引</span><input value={current.apmIndex ?? "traces-apm*"} onChange={(event) => update({ apmIndex: event.target.value })} /></label>
               </Fragment> : <Fragment key="ssh-fields">
-                <label><span>连接超时（秒）</span><input type="number" min="3" max="60" value={current.sshConnectTimeoutSeconds ?? 10} onChange={(event) => update({ sshConnectTimeoutSeconds: Number(event.target.value) })} /></label>
-                <label><span>原始日志 UTC 偏移（回退值）</span><input value={current.sshLogTimeOffset ?? "+03:00"} onChange={(event) => update({ sshLogTimeOffset: event.target.value })} placeholder="+03:00" /><small>自动探测关闭或失败时使用。夏令时历史日志需核对偏移。</small>{current.sshLogTimeOffset !== sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") && <span className="environment-time-zone-warning">与所选时区当前偏移不一致。<button type="button" onClick={() => update({ sshLogTimeOffset: sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") })}>按时区同步偏移</button></span>}</label>
-                <div className="environment-time-zone-mode is-wide"><span><strong>服务器时区自动探测</strong><small>失败时使用配置的 UTC 偏移。</small></span><button type="button" className={current.sshAutoDetectTimeZone !== false ? "is-on" : undefined} aria-pressed={current.sshAutoDetectTimeZone !== false} onClick={() => update({ sshAutoDetectTimeZone: current.sshAutoDetectTimeZone === false })}><i /></button></div>
-                <SshServerList value={current.sshServers ?? []} timeout={current.sshConnectTimeoutSeconds} onChange={(sshServers) => update({ sshServers })} />
-                <SshApplicationList value={current.sshMonitoredApplications ?? []} onChange={(sshMonitoredApplications) => update({ sshMonitoredApplications })} />
+                {current.sourceType === "ssh" && <label><span>连接超时（秒）</span><input type="number" min="3" max="60" value={current.sshConnectTimeoutSeconds ?? 10} onChange={(event) => update({ sshConnectTimeoutSeconds: Number(event.target.value) })} /></label>}
+                <label><span>{current.sourceType === "local" ? "日志 UTC 偏移" : "原始日志 UTC 偏移（回退值）"}</span><input value={current.sshLogTimeOffset ?? "+03:00"} onChange={(event) => update({ sshLogTimeOffset: event.target.value })} placeholder="+03:00" /><small>{current.sourceType === "local" ? "按原始日志时间设置。" : "自动探测关闭或失败时使用。夏令时历史日志需核对偏移。"}</small>{current.sshLogTimeOffset !== sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") && <span className="environment-time-zone-warning">与所选时区当前偏移不一致。<button type="button" onClick={() => update({ sshLogTimeOffset: sshOffsetForTimeZone(current.timeZone || "Africa/Nairobi") })}>按时区同步偏移</button></span>}</label>
+                {current.sourceType === "ssh" && <div className="environment-time-zone-mode is-wide"><span><strong>服务器时区自动探测</strong><small>失败时使用配置的 UTC 偏移。</small></span><button type="button" className={current.sshAutoDetectTimeZone !== false ? "is-on" : undefined} aria-pressed={current.sshAutoDetectTimeZone !== false} onClick={() => update({ sshAutoDetectTimeZone: current.sshAutoDetectTimeZone === false })}><i /></button></div>}
+                {current.sourceType === "ssh" && <SshServerList value={current.sshServers ?? []} timeout={current.sshConnectTimeoutSeconds} onChange={(sshServers) => update({ sshServers })} />}
+                <SshApplicationList local={current.sourceType === "local"} value={current.sshMonitoredApplications ?? []} onChange={(sshMonitoredApplications) => update({ sshMonitoredApplications })} />
                 <SshAiConfigurationAnalysis environment={current} onPendingChange={handleAiPendingChange} onApply={(sshMonitoredApplications) => update({ sshMonitoredApplications })} onTrustServer={(sshServers) => update({ sshServers })} />
-                <div className="environment-config-ssh-note is-wide"><strong>检索范围</strong><span>仅检索应用根目录内的文件；服务器组结果合并显示。</span></div>
+                <div className="environment-config-ssh-note is-wide"><strong>检索范围</strong><span>{current.sourceType === "local" ? "APP 读取本机目录；Web 读取服务所在机器目录。" : "仅检索应用根目录内的文件；服务器组结果合并显示。"}</span></div>
               </Fragment>}
             </div>
             <div className="environment-remove-zone"><div><strong>删除环境</strong><span>保存配置后生效。</span></div>{confirmRemove ? <div className="environment-remove-confirm"><span>确认删除“{current.name || "未命名环境"}”？</span><button type="button" onClick={() => setConfirmRemove(false)}>取消</button><button type="button" className="danger" onClick={removeEnvironment}>确认删除</button></div> : <button type="button" disabled={drafts.length <= 1} onClick={() => setConfirmRemove(true)}><TrashIcon />删除环境</button>}</div>

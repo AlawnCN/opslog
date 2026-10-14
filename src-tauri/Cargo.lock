@@ -935,6 +935,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "998b056554fbe42e03ae0e152895cd1a7e1002aec800fdc6635d20270260c46f"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2529,17 +2540,19 @@ dependencies = [
 
 [[package]]
 name = "opslog"
-version = "3.1.17"
+version = "3.1.18"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
  "core-foundation 0.10.1",
  "dirs",
+ "fancy-regex",
  "futures-util",
  "getrandom 0.3.4",
  "local-ip-address",
  "log",
+ "regex",
  "reqwest 0.12.28",
  "semver",
  "serde",

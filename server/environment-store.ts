@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { sshLogSourceSchema } from "../shared/ssh-log-rules.js";
 import type { EnvironmentConfig, PublicEnvironment } from "./domain.js";
+import { validLocalDirectory } from "../shared/local-log-paths.js";
 
 const sshServerSchema = z.object({
   name: z.string().trim().min(1),
@@ -24,7 +25,7 @@ const sshApplicationSchema = z.object({
 
 const environmentSchema = z.object({
   name: z.string().trim().min(1),
-  sourceType: z.enum(["elk", "ssh"]).default("elk"),
+  sourceType: z.enum(["elk", "ssh", "local"]).default("elk"),
   kibanaUrl: z.string().default(""),
   username: z.string().default(""),
   password: z.string().default(""),
@@ -65,7 +66,7 @@ const environmentSchema = z.object({
   const servers = environment.sshServers?.length ? environment.sshServers : environment.sshHost ? [{ name: environment.sshHost, host: environment.sshHost, port: undefined, username: undefined, authentication: "ssh-config" as const, password: undefined, privateKeyPath: undefined }] : [];
   const applications = environment.sshMonitoredApplications?.length ? environment.sshMonitoredApplications : (environment.sshApplications ?? []).map((name) => ({ name, directory: `${(environment.sshBaseDirectory ?? "/home/coradm").replace(/\/+$/, "")}/${name}` }));
   if (environment.sourceType === "ssh" && !servers.length) context.addIssue({ code: "custom", path: ["sshServers"], message: "至少配置一台 SSH 服务器" });
-  if (environment.sourceType === "ssh" && !applications.length) context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "至少配置一个监控应用" });
+  if (environment.sourceType !== "elk" && !applications.length) context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "至少配置一个监控应用" });
   if (new Set(servers.map(({ name }) => name.toLocaleLowerCase())).size !== servers.length) context.addIssue({ code: "custom", path: ["sshServers"], message: "服务器名称不能重复" });
   if (new Set(applications.map(({ name }) => name.toLocaleLowerCase())).size !== applications.length) context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "监控应用简称不能重复" });
   for (const [index, server] of servers.entries()) {
@@ -73,8 +74,8 @@ const environmentSchema = z.object({
     if (server.authentication === "password" && (!server.username?.trim() || !server.password)) context.addIssue({ code: "custom", path: ["sshServers", index], message: "密码认证需要用户名和密码" });
     if (server.authentication === "private-key" && (!server.username?.trim() || !server.privateKeyPath?.trim())) context.addIssue({ code: "custom", path: ["sshServers", index], message: "密钥认证需要用户名和私钥路径" });
   }
-  if (applications.some((application) => !application.directory.startsWith("/") || application.directory.includes(".."))) {
-    context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "SSH 应用目录必须是安全的绝对路径" });
+  if (applications.some((application) => environment.sourceType === "local" ? !validLocalDirectory(application.directory) : !application.directory.startsWith("/") || application.directory.includes(".."))) {
+    context.addIssue({ code: "custom", path: ["sshMonitoredApplications"], message: "应用目录必须是安全的绝对路径" });
   }
   if (environment.sshBaseDirectory && !environment.sshBaseDirectory.startsWith("/")) {
     context.addIssue({ code: "custom", path: ["sshBaseDirectory"], message: "SSH 基础目录必须是绝对路径" });
@@ -85,6 +86,7 @@ const sourceSpecificEnvironmentSchema = z.preprocess((value) => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   const environment = value as Record<string, unknown>;
   if (environment.sourceType === "ssh") return value;
+  if (environment.sourceType === "local") return { ...environment, kibanaUrl: "", username: "", password: "", sshHost: undefined, sshBaseDirectory: undefined, sshApplications: [], sshServers: [], sshConnectTimeoutSeconds: undefined, sshAutoDetectTimeZone: false };
   return { ...environment, sshHost: undefined, sshBaseDirectory: undefined, sshApplications: [], sshServers: [], sshMonitoredApplications: [] };
 }, environmentSchema);
 

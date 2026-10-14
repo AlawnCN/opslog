@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 import type { Environment } from "../types";
 import { EnvironmentSourceBadge } from "./EnvironmentSourceBadge";
 
-const summary = (environment: Environment): string => environment.sourceType === "ssh"
-  ? `${environment.sshApplications.length} 个监控应用 · ${environment.timeZone}`
+const summary = (environment: Environment): string => environment.sourceType !== "elk"
+  ? `${environment.sourceType === "local" ? "本地 · " : ""}${environment.sshApplications.length} 个监控应用 · ${environment.timeZone}`
   : `${environment.kibanaUrl.replace(/^https?:\/\//, "").split("/")[0] || "未配置网关"} · ${environment.timeZone}`;
 const searchable = (value: string): string => value.toLocaleLowerCase().replace(/[\s_/-]+/g, "");
 

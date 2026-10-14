@@ -1,0 +1,9 @@
+{
+  "records": [
+    "2026-10-14 10:00:00,123 -> T.local-1|FT1|KE|cte.u_0_151|transflow|send|8|14 10:00:00,115|0123456789abcdef0123456789abcdef|{\"context\":\"a|b\"}|CMMP0448|The teller information does not exist||tlr.u_0_152|",
+    "2026-10-14 10:00:01.133 -> T.local-2|FT2|KE|cte.u_0_151|transflow|receive|22|14 10:00:01,111|||SCM00000|SUCCESS||cen.u_0_152|",
+    "2026-10-14 10:00:02.133 -> T.local-3|FT3|KE|cte.u_0_151|transflow|receive|32|14 10:00:02,111|||SCM60001|Failure [BSP|batch|default|service]||cte.u_0_151|"
+  ],
+  "start": "2026-10-14T09:59:00+08:00",
+  "end": "2026-10-14T10:01:00+08:00"
+}

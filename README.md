@@ -1,7 +1,7 @@
 # OpsLog
 
 <p align="center">
-  <strong>ELK / Kibana 日志检索、结构化阅读与 Trace 分析</strong>
+  <strong>ELK / SSH / Local 日志检索、结构化阅读与 Trace 分析</strong>
 </p>
 
 <p align="center">
@@ -24,9 +24,21 @@
   <img src="docs/images/opslog-overview.webp" alt="OpsLog 交易日志查询界面" width="100%">
 </p>
 
-OpsLog 直接连接现有 Kibana，查询、下载和导出均由本机完成，可沿用当前网络与 VPN。桌面端安装后不依赖 Java、Node.js 或独立查询服务。
+OpsLog 支持 Kibana、SSH 和本地文件日志源，查询、下载和导出均由本机完成，可沿用当前网络与 VPN。桌面端安装后不依赖 Java、Node.js 或独立查询服务。
 
 ## 核心功能
+
+### Local 本地日志源
+
+在“配置 → 添加环境”中选择 **Local**，添加应用简称及本地绝对路径。支持多个应用，各应用独立维护解析规则；无需 SSH 或服务器组。目录可包含空格和中文，支持 Windows、macOS 和 Linux 的原生路径。
+
+- APP 读取本机文件；本机 Web 和 LAN 页面读取服务端机器上的配置目录，不读取访问者浏览器所在电脑。
+- 沿用 SSH 的日志源、字段映射和 AI 分析流程。AI 根据本地样本生成候选参数，回放校验后预览、应用并保存；使用云端 AI 前仍需确认数据安全要求。
+- 交易列表按应用配置读取汇总；最新文件模式在全部匹配路径中按修改时间选择一个文件。分页会话冻结文件范围及长度，新查询获取最新内容。
+- 明细仅按完整日志 ID 精确查找 `trc/{day}/{日志ID}.trc`，未找到时提示缺失，不替换为其他日志片段。
+- 文件发现不跟随符号链接；明细读取也校验真实路径，不能越过应用根目录。
+
+Local 的应用映射与解析规则沿用现有配置字段 `sshMonitoredApplications`，日志时间偏移沿用 `sshLogTimeOffset`；导出不含 SSH 服务器或认证参数。
 
 ### 日志阅读
 

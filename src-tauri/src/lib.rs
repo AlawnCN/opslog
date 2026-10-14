@@ -8,6 +8,15 @@ mod environment_store;
 mod export_files;
 mod kibana_client;
 mod lan_server;
+mod local_file_reader;
+mod local_files;
+mod local_log_access;
+mod local_log_parser;
+mod local_log_rules;
+mod local_log_source;
+mod local_query_snapshot;
+#[cfg(test)]
+mod local_log_tests;
 mod query_builders;
 #[cfg(feature = "reader-app")]
 mod reader_association;

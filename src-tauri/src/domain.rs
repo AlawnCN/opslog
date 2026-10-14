@@ -35,6 +35,7 @@ pub enum EnvironmentSource {
     #[default]
     Elk,
     Ssh,
+    Local,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]

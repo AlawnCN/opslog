@@ -355,7 +355,7 @@ const cancellableDesktopInvoke = async <Result>(command: string, args: Record<st
 };
 export const sampleSshLogs = async (environment: EnvironmentConfiguration, signal?: AbortSignal): Promise<SshLogSample[]> => {
   if (desktopMode) return cancellableDesktopInvoke<SshLogSample[]>("sample_ssh_logs", { environment }, signal);
-  const response = await webFetch("/api/ssh/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment }), signal });
+  const response = await webFetch(environment.sourceType === "local" ? "/api/local/sample" : "/api/ssh/sample", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ environment }), signal });
   if (!response.ok) return parseError(response);
   return response.json();
 };

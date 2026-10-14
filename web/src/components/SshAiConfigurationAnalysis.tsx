@@ -52,7 +52,7 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply, onTrustServer
     if (invalid) { setError(invalid); setPhase("error"); setBusy(false); return; }
     controller.current?.abort(); const next = new AbortController(); controller.current = next;
     snapshot.current = JSON.stringify(target);
-    setBusy(true); setPhase("sampling"); setError(undefined); setProposal(undefined); setRawResponse(""); setSamples(undefined); setStatus("正在限量采样服务器日志…");
+    setBusy(true); setPhase("sampling"); setError(undefined); setProposal(undefined); setRawResponse(""); setSamples(undefined); setStatus(target.sourceType === "local" ? "正在采样本地日志…" : "正在限量采样服务器日志…");
     try {
       const result = await sampleSshLogs(target, next.signal);
       if (next.signal.aborted) return;
@@ -78,8 +78,9 @@ export const SshAiConfigurationAnalysis = ({ environment, onApply, onTrustServer
     if (!profile?.configured) throw new Error("请先配置 AI 服务");
     if (snapshot.current !== JSON.stringify(target)) throw new Error("环境配置已变更，请重新采样");
     const budget = Math.min(profile.maxLogCharacters, 120_000);
-    const context = prepareSshAiSamples(collected, budget - SSH_CONFIGURATION_PROMPT.length - 1000);
-    const buildPrompt = () => `${SSH_CONFIGURATION_PROMPT}\n用户已配置应用：${JSON.stringify(collected.map(({name})=>name))}\n以下是限量日志样本，可能截断、缺失或已脱敏：\n${JSON.stringify(context)}`;
+    const instructions = target.sourceType === "local" ? SSH_CONFIGURATION_PROMPT.replace("SSH 日志适配", "本地文件日志适配") + "\n当前为 Local 模式：样本来自配置的本地应用根目录，server=Local 仅为来源标签，不存在 SSH 或服务器组。遵循相同的汇总、字段和明细规范，不生成服务器或连接配置。" : SSH_CONFIGURATION_PROMPT;
+    const context = prepareSshAiSamples(collected, budget - instructions.length - 1000);
+    const buildPrompt = () => `${instructions}\n用户已配置应用：${JSON.stringify(collected.map(({name})=>name))}\n以下是限量日志样本，可能截断、缺失或已脱敏：\n${JSON.stringify(context)}`;
     if (buildPrompt().length > budget) throw new Error("当前模型输入上限不足，请提高日志输入上限或减少监控应用");
     const prompt = buildPrompt();
     setBusy(true); setPhase("analyzing"); setError(undefined); setProposal(undefined); setRawResponse(""); setStatus("正在分析日志样本并校验参数…");

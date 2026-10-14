@@ -11,6 +11,7 @@ import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
 import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs, probeSshServer } from "./ssh-log-source.js";
 import { closePasswordSshConnections } from "./ssh-password-transport.js";
 import { closeSshControlMasters } from "./ssh-control-master.js";
+import { searchLocalLogs, readLocalTransactionLog, sampleLocalLogs } from "./local-log-source.js";
 
 const optionalText = z.string().trim().max(500).optional();
 const dateTime = z.string().datetime({ offset: true });
@@ -258,13 +259,13 @@ apiRouter.post("/ssh/probe", asyncRoute(async (request, response) => {
   finally { response.off("close", abort); }
 }));
 
-apiRouter.post("/ssh/sample", asyncRoute(async (request, response) => {
+apiRouter.post(["/ssh/sample", "/local/sample"], asyncRoute(async (request, response) => {
   const environment = parseEnvironmentConfig(JSON.stringify([request.body.environment]))[0]!;
-  if (environment.sourceType !== "ssh") throw new Error("仅支持 SSH 环境");
+  if (environment.sourceType === "elk") throw new Error("仅支持文件日志源");
   const controller = new AbortController();
   const abort = () => controller.abort();
   response.once("close", abort);
-  try { response.json(await sampleSshLogs(environment, controller.signal)); }
+  try { response.json(await (environment.sourceType === "local" ? sampleLocalLogs : sampleSshLogs)(environment, controller.signal)); }
   catch (error) { if (!controller.signal.aborted) throw error; }
   finally { response.off("close", abort); }
 }));
@@ -281,7 +282,7 @@ apiRouter.post("/search", asyncRoute(async (request, response) => {
   const environment = await findEnvironment(input.environment);
   const result = environment.sourceType === "ssh"
     ? await searchSshLogs(environment, input, false, controller.signal)
-    : await searchElkLogs(environment, input, false, controller.signal);
+    : environment.sourceType === "local" ? await searchLocalLogs(environment, input, false, controller.signal) : await searchElkLogs(environment, input, false, controller.signal);
   if (controller.signal.aborted) return;
   const rows = pageRows(result.rows, input.page, input.pageSize);
   response.json({
@@ -290,7 +291,7 @@ apiRouter.post("/search", asyncRoute(async (request, response) => {
     warnings: result.warnings ?? [],
     page: input.page,
     pageSize: input.pageSize,
-    hasMore: input.page * input.pageSize < 10_000 && (environment.sourceType === "ssh"
+    hasMore: input.page * input.pageSize < 10_000 && (environment.sourceType !== "elk"
       ? result.rows.length > input.page * input.pageSize
       : result.rows.length >= input.page * input.pageSize),
     truncated: input.page * input.pageSize >= 10_000,
@@ -316,7 +317,7 @@ apiRouter.post("/export", asyncRoute(async (request, response) => {
   const environment = await findEnvironment(input.environment);
   const result = environment.sourceType === "ssh"
     ? await searchSshLogs(environment, input, true)
-    : await searchElkLogs(environment, input, true);
+    : environment.sourceType === "local" ? await searchLocalLogs(environment, input, true) : await searchElkLogs(environment, input, true);
   if (result.warnings?.length) throw new Error(`部分服务器查询失败，已取消导出以避免生成不完整文件：${result.warnings.join("；")}`);
   const columns = result.columns.length ? result.columns : DISPLAY_FIELDS[input.kind];
   response
@@ -330,8 +331,8 @@ apiRouter.post("/export", asyncRoute(async (request, response) => {
 apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
-  if (environment.sourceType === "ssh") {
-    const content = await readSshTransactionLog(environment, input.id, input.startTime, input.endTime, input.application);
+  if (environment.sourceType !== "elk") {
+    const content = await (environment.sourceType === "local" ? readLocalTransactionLog : readSshTransactionLog)(environment, input.id, input.startTime, input.endTime, input.application);
     response.status(200).setHeader("Content-Type", "text/plain; charset=utf-8").setHeader("Content-Disposition", `attachment; filename="${transactionLogFilename(input.id)}"`).send(content);
     return;
   }
@@ -346,8 +347,8 @@ apiRouter.post("/transaction-log", asyncRoute(async (request, response) => {
 apiRouter.post("/transaction-log/content", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
-  if (environment.sourceType === "ssh") {
-    const content = await readSshTransactionLog(environment, input.id, input.startTime, input.endTime, input.application);
+  if (environment.sourceType !== "elk") {
+    const content = await (environment.sourceType === "local" ? readLocalTransactionLog : readSshTransactionLog)(environment, input.id, input.startTime, input.endTime, input.application);
     response.json({ id: input.id, content });
     return;
   }
@@ -358,7 +359,7 @@ apiRouter.post("/transaction-log/content", asyncRoute(async (request, response) 
 apiRouter.post("/trace", asyncRoute(async (request, response) => {
   const input = downloadSchema.parse(request.body);
   const environment = await findEnvironment(input.environment);
-  if (environment.sourceType === "ssh") throw new Error("SSH 直连环境不提供 APM Trace 调用链");
+  if (environment.sourceType !== "elk") throw new Error("文件日志源不提供 APM Trace 调用链");
   const result = await runEsql(
     environment,
     buildTraceQuery(environment, input.id, input.startTime, input.endTime),

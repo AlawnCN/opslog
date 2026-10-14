@@ -51,6 +51,7 @@ export interface LogReaderWorkspaceProps {
   eyebrow?: string;
   title?: string;
   sourceLabel?: string;
+  localSource?: boolean;
   headerAction?: ReactNode;
 }
 
@@ -59,7 +60,7 @@ export interface TransactionLogDrawerHandle {
   focusSearch: () => void;
 }
 
-export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogReaderWorkspaceProps>(({ logId, content, loading, remoteDurationMs, cached, onClose, presentation = "drawer", eyebrow = "TRANSACTION LOG", title = "日志阅读器", sourceLabel, headerAction }, ref) => {
+export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogReaderWorkspaceProps>(({ logId, content, loading, remoteDurationMs, cached, onClose, presentation = "drawer", eyebrow = "TRANSACTION LOG", title = "日志阅读器", sourceLabel, localSource = false, headerAction }, ref) => {
   const [keyword, setKeyword] = useState("");
   const [activeMatch, setActiveMatch] = useState(0);
   const [readerPreferences, setReaderPreferences] = useState(readLogReaderPreferences);
@@ -298,7 +299,7 @@ export const LogReaderWorkspace = forwardRef<TransactionLogDrawerHandle, LogRead
       {!loading && content && <div className="log-reader-insights-shell" onPointerDown={(event) => event.stopPropagation()}>
         <div className="log-reader-insights" aria-label="日志分析摘要">
           <div className="built-in-marker-track">
-            <span className="reader-performance" title={sourceLabel ? "本地文件读取与正文解析耗时" : "远程时间包含 Kibana 查询、VPN 传输和正文接收"}>{sourceLabel ? <><b>{sourceLabel}</b> 本地</> : cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> 远程</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
+            <span className="reader-performance" title={sourceLabel || localSource ? "本地文件读取与正文解析耗时" : "读取时间包含日志查询、传输和正文接收"}>{sourceLabel ? <><b>{sourceLabel}</b> 本地</> : cached ? <><b>缓存</b> 即时加载</> : <><b>{((remoteDurationMs ?? 0) / 1000).toFixed(2)}s</b> {localSource ? "读取" : "远程"}</>} · <b>{analyzed.durationMs.toFixed(0)}ms</b> 解析</span>
             <span><b>{analysis.stats.lines.toLocaleString()}</b> 行</span>
             <button type="button" data-log-outline-trigger className={outlineCategory === "service" ? "is-active" : undefined} title="查看微服务入口 Outline" onClick={() => toggleOutline("service")}><b>{analysis.stats.services}</b> 微服务</button>
             <button type="button" data-log-outline-trigger className={outlineCategory === "call" ? "is-active" : undefined} title="查看调用标记 Outline" onClick={() => toggleOutline("call")}><b>{analysis.stats.calls}</b> 调用标记</button>

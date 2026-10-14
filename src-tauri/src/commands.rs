@@ -30,6 +30,7 @@ pub async fn probe_ssh_server(server: crate::domain::SshServerConfig, connect_ti
 
 #[tauri::command]
 pub async fn sample_ssh_logs(environment: EnvironmentConfig, request_id: Option<String>) -> Result<Value, String> {
+    if environment.source_type == EnvironmentSource::Local { return cancellable_task(request_id, crate::local_log_source::sample_logs(&environment)).await; }
     if environment.source_type != EnvironmentSource::Ssh { return Err("仅支持 SSH 环境".to_string()); }
     cancellable_task(request_id, ssh_log_source::sample_logs(&environment)).await
 }
@@ -182,6 +183,9 @@ pub(crate) async fn execute_source_search(
     export_all: bool,
     timeout_seconds: u64,
 ) -> Result<QueryResult, String> {
+    if environment.source_type == EnvironmentSource::Local {
+        return crate::local_log_source::search(environment, input, export_all).await;
+    }
     if environment.source_type == EnvironmentSource::Ssh {
         return ssh_log_source::search(environment, input, export_all).await;
     }
@@ -369,7 +373,7 @@ pub async fn search_logs(app: AppHandle, input: SearchInput) -> Result<SearchRes
     let columns = result.columns;
     let start = input.page.saturating_sub(1) * input.page_size;
     let requested_rows = input.page * input.page_size;
-    let has_more_by_source = if environment.source_type == EnvironmentSource::Ssh {
+    let has_more_by_source = if environment.source_type != EnvironmentSource::Elk {
         row_count > requested_rows
     } else {
         row_count >= requested_rows
@@ -413,6 +417,10 @@ pub async fn download_transaction_log(
 ) -> Result<DownloadResult, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
+    if environment.source_type == EnvironmentSource::Local {
+        let contents = crate::local_log_source::read_transaction(&environment, &input.id, &input.start_time, &input.end_time, input.application.as_deref()).await?;
+        return export_files::save_named(&input.id, "trc", contents.as_bytes()).await;
+    }
     if environment.source_type == EnvironmentSource::Ssh {
         let contents = ssh_log_source::read_transaction(
             &environment,
@@ -434,6 +442,9 @@ pub async fn download_transaction_log(
 pub async fn read_transaction_log(app: AppHandle, input: DownloadInput) -> Result<String, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
+    if environment.source_type == EnvironmentSource::Local {
+        return crate::local_log_source::read_transaction(&environment, &input.id, &input.start_time, &input.end_time, input.application.as_deref()).await;
+    }
     if environment.source_type == EnvironmentSource::Ssh {
         return ssh_log_source::read_transaction(
             &environment,
@@ -514,8 +525,8 @@ pub async fn load_trace(
 ) -> Result<Vec<Map<String, Value>>, String> {
     validate_download(&input)?;
     let environment = environment_store::find(&app, &input.environment).await?;
-    if environment.source_type == EnvironmentSource::Ssh {
-        return Err("SSH 直连环境不提供 APM Trace 调用链".to_string());
+    if environment.source_type != EnvironmentSource::Elk {
+        return Err("文件日志源不提供 APM Trace 调用链".to_string());
     }
     let query = build_trace_query(&environment, &input.id, &input.start_time, &input.end_time)?;
     Ok(run_esql(&environment, &query, 300).await?.rows)

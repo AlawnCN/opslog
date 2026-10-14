@@ -69,7 +69,7 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
         return Err("环境配置至少需要包含一个环境".to_string());
     }
     for environment in environments {
-        let required = if environment.source_type == EnvironmentSource::Ssh {
+        let required = if environment.source_type != EnvironmentSource::Elk {
             vec![(&environment.name, "name")]
         } else {
             vec![
@@ -96,8 +96,8 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
         {
             return Err(format!("环境 {} 的 kibanaUrl 不合法", environment.name));
         }
-        if environment.source_type == EnvironmentSource::Ssh {
-            if environment.ssh_servers.is_empty() {
+        if environment.source_type != EnvironmentSource::Elk {
+            if environment.source_type == EnvironmentSource::Ssh && environment.ssh_servers.is_empty() {
                 return Err(format!("环境 {} 至少需要配置一台 SSH 服务器", environment.name));
             }
             if environment.ssh_monitored_applications.is_empty() {
@@ -107,7 +107,7 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
                 ));
             }
             let mut server_names = std::collections::HashSet::new();
-            for server in &environment.ssh_servers {
+            for server in environment.ssh_servers.iter().filter(|_| environment.source_type == EnvironmentSource::Ssh) {
                 if server.name.trim().is_empty() || server.host.trim().is_empty() {
                     return Err(format!("环境 {} 的服务器名称和地址不能为空", environment.name));
                 }
@@ -136,7 +136,9 @@ fn validate(environments: &[EnvironmentConfig]) -> Result<(), String> {
             let mut application_names = std::collections::HashSet::new();
             for application in &environment.ssh_monitored_applications {
                 application.validate_log_sources()?;
-                if !application.directory.starts_with('/') || application.directory.contains("..") {
+                let directory = &application.directory;
+                let absolute = directory.starts_with('/') || directory.starts_with("\\\\") || directory.as_bytes().get(1..3).is_some_and(|bytes| bytes == b":\\" || bytes == b":/");
+                if directory.chars().any(|c| c.is_control()) || directory.split(['/', '\\']).any(|part|part=="..") || if environment.source_type == EnvironmentSource::Local { !absolute } else { !directory.starts_with('/') || directory.contains("..") } {
                     return Err(format!("环境 {} 的应用目录必须是安全的绝对路径", environment.name));
                 }
                 if !application_names.insert(application.name.to_lowercase()) {
@@ -153,6 +155,11 @@ fn parse(contents: &str) -> Result<Vec<EnvironmentConfig>, String> {
         serde_json::from_str(contents).map_err(|error| format!("环境配置 JSON 不合法：{error}"))?;
     for environment in &mut environments {
         environment.kibana_url = normalize_kibana_url(&environment.kibana_url);
+        if environment.source_type == EnvironmentSource::Local {
+            environment.ssh_servers.clear(); environment.ssh_host = None; environment.ssh_applications.clear(); environment.ssh_base_directory = None;
+            environment.ssh_connect_timeout_seconds = None; environment.ssh_auto_detect_time_zone = Some(false);
+            environment.kibana_url.clear(); environment.username.clear(); environment.password.clear();
+        }
         for server in &mut environment.ssh_servers {
             if matches!(server.authentication, SshAuthentication::SshConfig) {
                 server.port = None;
