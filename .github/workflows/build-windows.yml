@@ -190,7 +190,7 @@ jobs:
       - name: Build macOS application and disk image
         run: npm run desktop:macos -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
-      - name: Create macOS portable archive
+      - name: Create macOS DMG and updater packages
         shell: bash
         run: |
           package_version="$(node -p "require('./package.json').version")"
@@ -210,7 +210,6 @@ jobs:
           test -n "$updater_archive"
           test -f "$updater_archive.sig"
           cp "$dmg" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.dmg"
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}_portable.zip"
           cp "$updater_archive" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz"
           cp "$updater_archive.sig" "release/OpsLog_${package_version}_macos_${{ matrix.arch }}.app.tar.gz.sig"
 
@@ -221,7 +220,7 @@ jobs:
           CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target/reader
         run: npm run reader:macos -- --target ${{ matrix.target }} --config src-tauri/tauri.release.conf.json
 
-      - name: Create OpsLog Reader macOS portable archive
+      - name: Create OpsLog Reader macOS DMG and updater packages
         shell: bash
         run: |
           package_version="$(node -p "require('./package.json').version")"
@@ -240,7 +239,6 @@ jobs:
           test -n "$updater_archive"
           test -f "$updater_archive.sig"
           cp "$dmg" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.dmg"
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}_portable.zip"
           cp "$updater_archive" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.app.tar.gz"
           cp "$updater_archive.sig" "release/OpsLog_Reader_${package_version}_macos_${{ matrix.arch }}.app.tar.gz.sig"
 
@@ -250,7 +248,6 @@ jobs:
           name: OpsLog-macOS-${{ matrix.arch }}-${{ github.ref_name }}
           path: |
             release/*_macos_${{ matrix.arch }}.dmg
-            release/*_macos_${{ matrix.arch }}_portable.zip
             release/*_macos_${{ matrix.arch }}.app.tar.gz
             release/*_macos_${{ matrix.arch }}.app.tar.gz.sig
           if-no-files-found: error

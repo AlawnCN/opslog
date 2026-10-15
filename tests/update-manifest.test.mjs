@@ -20,6 +20,9 @@ test("generates separate signed updater manifests for OpsLog and OpsLog Reader",
     "macos_x64.app.tar.gz"
   ];
   for (const prefix of prefixes) {
+    for (const suffix of ["windows_x64_portable.zip", "macos_arm64.dmg", "macos_x64.dmg"]) {
+      await writeFile(join(assetDirectory, `${prefix}_${version}_${suffix}`), "manual-download");
+    }
     for (const suffix of suffixes) {
       const asset = join(assetDirectory, `${prefix}_${version}_${suffix}`);
       await writeFile(asset, "artifact");
@@ -70,5 +73,22 @@ test("generates separate signed updater manifests for OpsLog and OpsLog Reader",
   const giteaSums = await readFile(join(directory, "gitea/SHA256SUMS"), "utf8");
   assert.match(githubSums, /  latest\.json\n/);
   assert.match(githubSums, /  reader-latest\.json\n/);
+  assert.equal(githubSums.trim().split("\n").length, 20, "18 packages/signatures plus two manifests; SHA256SUMS is the 21st release asset");
+  assert.doesNotMatch(githubSums, /macos_\w+_portable\.zip/);
   assert.notEqual(githubSums, giteaSums, "mirror-specific manifests must have separate checksums");
+});
+
+test("release workflow keeps minimal manual packages and required signed updater artifacts", async () => {
+  const workflow = await readFile(".github/workflows/build-windows.yml", "utf8");
+  assert.doesNotMatch(workflow, /_macos_.*_portable\.zip/);
+  assert.doesNotMatch(workflow, /ditto -c -k/);
+  assert.match(workflow, /release\/\*_windows_x64_portable\.zip/);
+  assert.match(workflow, /release\/\*_windows_x64_setup\.exe\n/);
+  assert.match(workflow, /release\/\*_windows_x64_setup\.exe\.sig/);
+  assert.match(workflow, /release\/\*_macos_.*\.dmg/);
+  assert.match(workflow, /release\/\*_macos_.*\.app\.tar\.gz\n/);
+  assert.match(workflow, /release\/\*_macos_.*\.app\.tar\.gz\.sig/);
+  assert.match(workflow, /Create OpsLog Reader macOS DMG and updater packages/);
+  assert.match(workflow, /npm run desktop:windows:setup/);
+  assert.match(workflow, /npm run reader:windows:setup/);
 });

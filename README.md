@@ -201,7 +201,11 @@ npm run desktop:windows:setup
 npm run reader:windows:setup
 ```
 
-GitHub Actions 只构建一次，向 Gitea 与 GitHub 的 `opslog-release` 仓库同步发布 OpsLog 和 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG、便携 ZIP、更新包及签名。两个站点各自提供指向本站程序包的 `latest.json`、`reader-latest.json` 与 `SHA256SUMS`；两份清单的 Changelog 一致。`AlawnCN/opslog` 源码仓库支持公开或私有，由仓库所有者决定；两个公开发布仓库的 Git 跟踪文件白名单保持不变，不得提交应用源码。旧版客户端若仍指向原源码仓库的 Release，仓库转为私有后将无法继续通过该地址自动更新，需手动安装新版迁移到双镜像更新地址。
+GitHub Actions 只构建一次，向 Gitea 与 GitHub 的 `opslog-release` 仓库同步发布 OpsLog 和 OpsLog Reader。手动下载只推荐 Windows x64 绿色 ZIP、macOS Apple Silicon（ARM64）/ Intel（x64）DMG，不再生成重复的 macOS 便携 ZIP。
+
+自动更新仍保留必要的技术附件：Windows x64 Setup 及签名、macOS `.app.tar.gz` 更新包及签名。它们不能用绿色 ZIP 或 DMG 替代。每个应用有 3 个手动下载包和 6 个更新附件；加上 `latest.json`、`reader-latest.json` 与 `SHA256SUMS`，每站共 21 个附件（不计平台自动提供的仓库归档链接）。历史发布保持不变。
+
+两个站点各自提供指向本站程序包的更新清单与校验文件；两份清单的 Changelog 一致。`AlawnCN/opslog` 源码仓库支持公开或私有，由仓库所有者决定；两个公开发布仓库的 Git 跟踪文件白名单保持不变，不得提交应用源码。旧版客户端若仍指向原源码仓库的 Release，仓库转为私有后将无法继续通过该地址自动更新，需手动安装新版迁移到双镜像更新地址。
 
 </details>
 

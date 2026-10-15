@@ -42,4 +42,6 @@ test("toolbar CSS scopes presentation, shares control height and avoids clipping
   assert.match(css, /\.appearance-control[^{}]*\{[^{}]*box-shadow: var\(--control-shadow,none\)/);
   assert.doesNotMatch(css, /\.appearance-control[^{}]*\{[^{}]*overflow: hidden/);
   assert.match(css, /@media\(max-width:720px\)/);
+  assert.match(css, /:is\(\.lan-share-switch,\.lan-share-details,\.version-chip\)[^{}]*\{[^{}]*min-width: max-content;[^{}]*height: var\(--toolbar-height\)/);
+  assert.match(css, /\.version-chip\.is-interactive \{ padding-right: 24px/);
 });
