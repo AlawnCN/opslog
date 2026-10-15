@@ -78,15 +78,15 @@ test("generates separate signed updater manifests for OpsLog and OpsLog Reader",
   assert.notEqual(githubSums, giteaSums, "mirror-specific manifests must have separate checksums");
 });
 
-test("release workflow keeps minimal manual packages and required signed updater artifacts", async () => {
-  const workflow = await readFile(".github/workflows/build-windows.yml", "utf8");
+for (const newline of ["\n", "\r\n"]) test(`release workflow keeps minimal manual packages with ${newline === "\n" ? "LF" : "CRLF"} line endings`, async () => {
+  const workflow = (await readFile(".github/workflows/build-windows.yml", "utf8")).replace(/\r?\n/g, newline);
   assert.doesNotMatch(workflow, /_macos_.*_portable\.zip/);
   assert.doesNotMatch(workflow, /ditto -c -k/);
   assert.match(workflow, /release\/\*_windows_x64_portable\.zip/);
-  assert.match(workflow, /release\/\*_windows_x64_setup\.exe\n/);
+  assert.match(workflow, /release\/\*_windows_x64_setup\.exe\r?\n/);
   assert.match(workflow, /release\/\*_windows_x64_setup\.exe\.sig/);
   assert.match(workflow, /release\/\*_macos_.*\.dmg/);
-  assert.match(workflow, /release\/\*_macos_.*\.app\.tar\.gz\n/);
+  assert.match(workflow, /release\/\*_macos_.*\.app\.tar\.gz\r?\n/);
   assert.match(workflow, /release\/\*_macos_.*\.app\.tar\.gz\.sig/);
   assert.match(workflow, /Create OpsLog Reader macOS DMG and updater packages/);
   assert.match(workflow, /npm run desktop:windows:setup/);

@@ -55,8 +55,8 @@ export const Header = ({ environments, selected, onSelect, loading, environmentS
         <div className="appearance-control" role="group" aria-label="外观设置"><ThemePicker /><TypographySettings /></div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.21<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.1.21</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.22<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.22</div>}
         </div>
       </div>
     </header>
