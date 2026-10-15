@@ -5,6 +5,12 @@ use serde_json::{Map, Value};
 
 use crate::domain::DownloadResult;
 
+pub fn is_portable_html(contents: &str) -> bool {
+    contents.starts_with("<!doctype html>")
+        && (contents.contains("opslog-portable-reader")
+            || contents.contains("<meta name=\"generator\" content=\"opslog-trace-snapshot\">"))
+}
+
 fn cell(value: Option<&Value>) -> String {
     let text = match value {
         None | Some(Value::Null) => String::new(),
@@ -134,6 +140,14 @@ async fn available_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepts_trace_and_log_snapshots_only() {
+        assert!(is_portable_html("<!doctype html><html><meta name=\"generator\" content=\"opslog-trace-snapshot\"></html>"));
+        assert!(is_portable_html("<!doctype html><html>opslog-portable-reader</html>"));
+        assert!(!is_portable_html("<!doctype html><html>unknown</html>"));
+        assert!(!is_portable_html("<html>opslog-portable-reader</html>"));
+    }
 
     #[test]
     fn escapes_csv_values() {

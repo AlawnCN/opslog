@@ -1,10 +1,11 @@
 {
   "name": "opslog-web",
-  "version": "3.1.18",
+  "version": "3.1.19",
   "private": true,
   "type": "module",
   "scripts": {
     "test:local": "node --import tsx --test tests/local-log-source.test.ts",
+    "test:trace": "node --import tsx --test tests/trace-model.test.ts tests/trace-export.test.ts",
     "test:search-warnings": "node --import tsx --test tests/search-warnings.test.ts",
     "posttest": "node --import tsx --test tests/search-warnings.test.ts tests/ssh-password-transport.test.ts tests/ssh-control-master.test.ts tests/theme.test.ts tests/environment-startup.test.ts tests/ssh-server-probe.test.ts tests/ssh-server-probe-ui.test.ts tests/ssh-cursor-pagination.test.mjs tests/ssh-query-sessions.test.ts",
     "test:ssh-cursor": "node --import tsx --test tests/ssh-cursor-pagination.test.mjs tests/ssh-query-sessions.test.ts",
@@ -27,7 +28,7 @@
     "reader:windows": "tauri build --features reader-app --no-bundle --config src-tauri/tauri.reader.conf.json",
     "reader:windows:setup": "tauri build --features reader-app --bundles nsis --config src-tauri/tauri.reader.conf.json",
     "desktop:info": "tauri info",
-    "test": "npm run build && node --import tsx --test tests/ai-analysis-export.test.ts tests/ai-analysis-stream.test.ts tests/ai-log-analysis.test.ts tests/environment-credential-transfer.test.ts tests/environment-store.test.mjs tests/github-release-lookup.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/public-release-boundary.test.mjs tests/local-log-source.test.ts tests/query-builders.test.mjs tests/reader-app.test.ts tests/routes.test.mjs tests/ssh-transaction-summary.test.mjs tests/ssh-ai-result.test.ts tests/ssh-file-patterns.test.ts tests/ssh-log-defaults.test.ts tests/ssh-release-regression.test.mjs tests/trace-model.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-manifest.test.mjs tests/update-release-notes.test.ts",
+    "test": "npm run build && node --import tsx --test tests/ai-analysis-export.test.ts tests/ai-analysis-stream.test.ts tests/ai-log-analysis.test.ts tests/environment-credential-transfer.test.ts tests/environment-store.test.mjs tests/github-release-lookup.test.mjs tests/keyboard-shortcuts.test.ts tests/log-reader-preferences.test.ts tests/public-release-boundary.test.mjs tests/local-log-source.test.ts tests/query-builders.test.mjs tests/reader-app.test.ts tests/routes.test.mjs tests/ssh-transaction-summary.test.mjs tests/ssh-ai-result.test.ts tests/ssh-file-patterns.test.ts tests/ssh-log-defaults.test.ts tests/ssh-release-regression.test.mjs tests/trace-model.test.ts tests/trace-export.test.ts tests/transaction-log-analysis.test.ts tests/transaction-log-fetch.test.ts tests/update-manifest.test.mjs tests/update-release-notes.test.ts",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit"
   },
   "dependencies": {

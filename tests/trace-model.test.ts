@@ -80,4 +80,6 @@ test("Trace view exposes accessible column resize and keyword controls", () => {
   assert.match(html, /aria-label="Trace 关键字过滤"/);
   assert.match(html, /trace-waterfall-shell/);
   assert.match(html, /title="PaymentService#execute"/);
+  assert.match(html, />导出 HTML<\/button>/);
+  assert.match(html, /导出完整调用链，支持离线搜索和折叠/);
 });

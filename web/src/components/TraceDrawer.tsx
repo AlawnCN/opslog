@@ -4,6 +4,7 @@ import { DEFAULT_TIME_ZONE, displayTime } from "../time";
 import { CloseIcon, SearchIcon } from "./Icons";
 import { useTraceColumnWidth } from "./useTraceColumnWidth";
 import { useResizableDrawerWidth } from "./useResizableDrawerWidth";
+import { TraceExportAction } from "./TraceExportAction";
 
 const TRACE_WIDTH_KEY = "opslog.trace-reader.width-ratio.v1";
 const AXIS_STOPS = [0, .25, .5, .75, 1];
@@ -113,7 +114,7 @@ export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, 
   return <div className="drawer-backdrop" onMouseDown={onClose}>
     <aside className="drawer trace-drawer" style={{ width: `${drawerWidth.ratio * 100}vw`, "--trace-column-width": `${column.width}px` } as CSSProperties} onMouseDown={(event) => event.stopPropagation()}>
       <div className="trace-resize-handle" role="separator" aria-orientation="vertical" aria-label="调整 Trace 阅读器宽度" tabIndex={0} onPointerDown={drawerWidth.startResize} onKeyDown={drawerWidth.resizeWithKeyboard} />
-      <div className="drawer-heading trace-heading"><div><span className="eyebrow">DISTRIBUTED TRACE</span><h2>调用链路</h2><code>{traceId}</code></div><button title="关闭 Trace" aria-label="关闭 Trace" onClick={onClose}><CloseIcon /></button></div>
+      <div className="drawer-heading trace-heading"><div><span className="eyebrow">DISTRIBUTED TRACE</span><h2>调用链路</h2><code>{traceId}</code></div><div className="drawer-heading-actions"><TraceExportAction traceId={traceId} rows={rows} loading={loading} timeZone={timeZone} keyword={keyword} collapsed={collapsed} columnWidth={column.width} /><button className="drawer-close-action" title="关闭 Trace" aria-label="关闭 Trace" onClick={onClose}><CloseIcon /></button></div></div>
       <div className="trace-summary">
         <div><span>SPAN 数量</span><strong>{rows.length.toLocaleString()}</strong></div>
         <div><span>链路跨度</span><strong>{formatDuration(model.durationMs)}</strong></div>

@@ -7,6 +7,7 @@ import { FilterPanel, type FilterPanelHandle } from "./components/FilterPanel";
 import { Header } from "./components/Header";
 import { EnvironmentConfigurationDialog } from "./components/EnvironmentConfigurationDialog";
 import { Navigation } from "./components/Navigation";
+import { readNavigationCollapsed, storeNavigationCollapsed } from "./navigation-preferences";
 import { TraceDrawer } from "./components/TraceDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "./loading-feedback";
@@ -42,6 +43,12 @@ export default function App() {
     }
   }, [environmentName]);
   const [kind, setKind] = useState<LogKind>("transaction");
+  const [navigationCollapsed, setNavigationCollapsed] = useState(readNavigationCollapsed);
+  const toggleNavigation = () => {
+    const next = !navigationCollapsed;
+    setNavigationCollapsed(next);
+    storeNavigationCollapsed(next);
+  };
   const [filters, setFilters] = useState<SearchFilters>(initialFilters);
   const [selectedRangeDays, setSelectedRangeDays] = useState<number | null>(1);
   const [result, setResult] = useState<SearchResponse>();
@@ -379,9 +386,9 @@ export default function App() {
     catch (error) { setNotice({ tone: "error", text: errorMessage(error) }); }
     finally { setLoading(false); }
   };
-  return <div className="app-shell">
+  return <div className={`app-shell${navigationCollapsed ? " is-navigation-collapsed" : ""}`}>
     <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} environmentStatus={environmentsLoading ? "正在加载环境" : timeProfileLoading ? "正在确认日志时区" : !environment ? "尚未选择环境" : undefined} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
-    <Navigation active={kind} onChange={setKind} environment={environment} />
+    <Navigation active={kind} onChange={setKind} environment={environment} collapsed={navigationCollapsed} onToggle={toggleNavigation} />
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading || !environmentReady} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />
       {notice && <div className={`notice ${notice.tone}`}><i />{notice.text}<button onClick={() => setNotice(undefined)}>×</button></div>}

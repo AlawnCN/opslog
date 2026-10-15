@@ -496,9 +496,7 @@ pub async fn save_portable_log(input: SavePortableLogInput) -> Result<DownloadRe
     if input.contents.len() > MAX_PORTABLE_LOG_BYTES {
         return Err("离线阅读文件超过 192 MB 安全上限".to_string());
     }
-    if !input.contents.starts_with("<!doctype html>")
-        || !input.contents.contains("opslog-portable-reader")
-    {
+    if !export_files::is_portable_html(&input.contents) {
         return Err("离线阅读文件格式不合法".to_string());
     }
     export_files::save_named(&input.name, "html", input.contents.as_bytes()).await

@@ -124,6 +124,8 @@ export const flattenTraceTree = (roots: TraceNode[], collapsed: ReadonlySet<stri
   return visible;
 };
 
+export const traceNodeSearchText = (node: TraceNode): string => [node.name, node.service, node.id, node.parentId, node.detail, node.category, traceCategoryLabel[node.category], ...Object.values(node.row).filter((item) => typeof item === "string")].join("\n").toLocaleLowerCase();
+
 export const filterTraceTree = (roots: TraceNode[], collapsed: ReadonlySet<string>, keyword: string): { visible: VisibleTraceNode[]; matches: Set<string> } => {
   const terms = keyword.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return { visible: flattenTraceTree(roots, collapsed), matches: new Set() };
@@ -131,7 +133,7 @@ export const filterTraceTree = (roots: TraceNode[], collapsed: ReadonlySet<strin
   const parents = new Map<string, string>();
   for (const { node } of all) for (const child of node.children) parents.set(child.key, node.key);
   const matches = new Set(all.filter(({ node }) => {
-    const text = [node.name, node.service, node.id, node.parentId, node.detail, node.category, traceCategoryLabel[node.category], ...Object.values(node.row).filter((item) => typeof item === "string")].join("\n").toLocaleLowerCase();
+    const text = traceNodeSearchText(node);
     return terms.every((term) => text.includes(term));
   }).map(({ node }) => node.key));
   const retained = new Set<string>();

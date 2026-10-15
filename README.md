@@ -89,6 +89,7 @@ OpsLog 与 OpsLog Reader 共用 AI 配置。API Key 仅写入本机共享配置�
 
 - 耗时按等级着色，支持节点折叠和窗口宽度调整。
 - 悬停查看完整 SQL、服务、时间及 Span 上下文。
+- 支持导出独立 HTML，保留完整链路、当前主题及搜索/折叠状态；离线搜索调用名称、服务、SQL 和 Span ID，可展开 Span 详情与原始字段。
 
 <p align="center">
   <img src="docs/images/opslog-trace.webp" alt="OpsLog 分层 Trace 时间瀑布" width="100%">
