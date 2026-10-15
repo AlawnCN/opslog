@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import { useColumnPreferences } from "../column-preferences";
-import { MIN_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
+import { MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH, useColumnWidthPreferences } from "../column-width-preferences";
+import { measureTableColumnWidth } from "../table-auto-width";
 import { keepLoadingFeedbackVisible, MINIMUM_LOADING_FEEDBACK_MS } from "../loading-feedback";
 import { DEFAULT_TIME_ZONE, displayTime } from "../time";
 import { classifySearchWarnings } from "../search-warnings";
@@ -63,6 +64,7 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
   const [downloadingRows, setDownloadingRows] = useState<Set<string>>(() => new Set());
   const [draggingColumn, setDraggingColumn] = useState<{ column: string; width: number }>();
   const resizeSession = useRef<{ column: string; startX: number; startWidth: number; width: number } | undefined>(undefined);
+  const tableRef = useRef<HTMLTableElement>(null);
   const columns = result?.columns ?? [];
   const rows = result?.rows ?? [];
   const columnPreferences = useColumnPreferences(kind, columns);
@@ -78,19 +80,19 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
   };
 
   const startResize = (event: PointerEvent<HTMLButtonElement>, column: string) => {
-    event.preventDefault();
+    if (event.button !== 0) return;
     event.stopPropagation();
     const startWidth = columnWidths.widthOf(column);
     resizeSession.current = { column, startX: event.clientX, startWidth, width: startWidth };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    document.body.classList.add("is-resizing-columns");
-    setDraggingColumn({ column, width: startWidth });
   };
 
   const resize = (event: PointerEvent<HTMLButtonElement>) => {
     const session = resizeSession.current;
     if (!session) return;
-    const width = Math.max(MIN_COLUMN_WIDTH, Math.min(720, session.startWidth + event.clientX - session.startX));
+    if (Math.abs(event.clientX - session.startX) < 3 && !draggingColumn) return;
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.classList.add("is-resizing-columns");
+    const width = Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, session.startWidth + event.clientX - session.startX));
     session.width = width;
     setDraggingColumn({ column: session.column, width });
   };
@@ -98,10 +100,15 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
   const finishResize = () => {
     const session = resizeSession.current;
     if (!session) return;
-    columnWidths.setWidth(session.column, session.width);
+    if (session.width !== session.startWidth) columnWidths.setWidth(session.column, session.width);
     resizeSession.current = undefined;
     document.body.classList.remove("is-resizing-columns");
     setDraggingColumn(undefined);
+  };
+
+  const fitColumn = async (column: string) => {
+    await document.fonts?.ready;
+    if (tableRef.current) columnWidths.setWidth(column, measureTableColumnWidth(tableRef.current, visibleColumns.indexOf(column), MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH));
   };
 
   const downloadTransactionLog = async (row: Record<string, unknown>, key: string) => {
@@ -142,8 +149,8 @@ export const DataTable = ({ kind, result, loading, queryPerformance, onTransacti
       </div>
       <div className="table-shell" aria-busy={loading}>
         {loading && <div className="loading-line" />}
-        <table className={kind === "transaction" ? "has-row-actions" : undefined}>
-          <thead><tr>{visibleColumns.map((column) => <th key={column} className={draggingColumn?.column === column ? "is-resizing" : undefined} style={widthStyle(column)}><span className="column-label">{LABELS[column] ?? column}</span><button className="column-resizer" type="button" title="拖拽调整列宽；双击恢复默认宽度" aria-label={`调整 ${LABELS[column] ?? column} 列宽`} onPointerDown={(event) => startResize(event, column)} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onDoubleClick={() => columnWidths.resetWidth(column)} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); columnWidths.setWidth(column, columnWidths.widthOf(column) + (event.key === "ArrowLeft" ? -20 : 20)); } }} /></th>)}{kind === "transaction" && <th>快捷操作</th>}</tr></thead>
+        <table ref={tableRef} className={kind === "transaction" ? "has-row-actions" : undefined}>
+          <thead><tr>{visibleColumns.map((column) => <th key={column} className={draggingColumn?.column === column ? "is-resizing" : undefined} style={widthStyle(column)}><span className="column-label">{LABELS[column] ?? column}</span><button className="column-resizer" type="button" title="拖拽调整列宽；双击自适应内容" aria-label={`调整 ${LABELS[column] ?? column} 列宽`} onPointerDown={(event) => startResize(event, column)} onPointerMove={resize} onPointerUp={finishResize} onPointerCancel={finishResize} onDoubleClick={() => void fitColumn(column)} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); columnWidths.setWidth(column, columnWidths.widthOf(column) + (event.key === "ArrowLeft" ? -20 : 20)); } else if (event.key === "Enter") { event.preventDefault(); void fitColumn(column); } else if (event.key === "Home") { event.preventDefault(); columnWidths.resetWidth(column); } }} /></th>)}{kind === "transaction" && <th>快捷操作</th>}</tr></thead>
           <tbody>
             {rows.map((row, position) => {
               const rowKey = `${text(row["ecp.txn.id"])}-${position}`;

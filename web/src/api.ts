@@ -151,9 +151,9 @@ export const releaseSshConnections = async (environment: string): Promise<void> 
 };
 
 export const resolveEnvironmentTime = async (name: string): Promise<Environment> => {
-  if (desktopMode) return desktopInvoke<Environment>("resolve_environment_time", { name });
+  if (desktopMode) return desktopInvoke<Environment>("resolve_environment_time", { name, verifyConnection: true });
   const response = await webFetch("/api/environments/time-profile", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name })
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, verifyConnection: true })
   });
   if (!response.ok) return parseError(response);
   return response.json();

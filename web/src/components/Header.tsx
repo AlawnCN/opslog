@@ -4,8 +4,9 @@ import type { Environment } from "../types";
 import type { LanShareController } from "../use-lan-share";
 import { PulseIcon, SettingsIcon } from "./Icons";
 import { LanShareControl } from "./LanShareControl";
-import { EnvironmentPicker } from "./EnvironmentPicker";
+import { EnvironmentPicker, type EnvironmentStatusTone } from "./EnvironmentPicker";
 import { ThemePicker } from "./ThemePicker";
+import { TypographySettings } from "./TypographySettings";
 
 interface HeaderProps {
   environments: Environment[];
@@ -13,6 +14,7 @@ interface HeaderProps {
   onSelect: (name: string) => void;
   loading: boolean;
   environmentStatus?: string;
+  environmentStatusTone?: EnvironmentStatusTone;
   desktopMode: boolean;
   canImportConfig: boolean;
   lanShare: LanShareController;
@@ -22,9 +24,10 @@ interface HeaderProps {
   onCheckForUpdates: () => void;
 }
 
-export const Header = ({ environments, selected, onSelect, loading, environmentStatus, desktopMode, canImportConfig, lanShare, onConfigure, updateAvailable, updateBusy, onCheckForUpdates }: HeaderProps) => {
+export const Header = ({ environments, selected, onSelect, loading, environmentStatus, environmentStatusTone, desktopMode, canImportConfig, lanShare, onConfigure, updateAvailable, updateBusy, onCheckForUpdates }: HeaderProps) => {
   const environment = environments.find((item) => item.name === selected);
   const macDesktop = desktopMode && navigator.userAgent.includes("Macintosh");
+  const status = environmentStatus ?? (loading ? "正在查询" : !environment ? "未选择环境" : environment.sourceType === "local" ? "本地 · 就绪" : environment.sourceType === "ssh" ? "SSH · 就绪" : environment.insecureTls ? "TLS 兼容模式" : "网关 · 就绪");
 
   const startWindowDrag = (event: ReactPointerEvent<HTMLElement>) => {
     if (!macDesktop || event.button !== 0) return;
@@ -42,22 +45,19 @@ export const Header = ({ environments, selected, onSelect, loading, environmentS
         </div>
       </div>
       <div className="topbar-context">
-        <ThemePicker />
         <div className="environment-control">
-          <span>运行环境</span>
           <div className="environment-composite-control">
-            <EnvironmentPicker environments={environments} value={selected} onChange={onSelect} disabled={loading} />
-            {canImportConfig && <button className="environment-config-trigger" type="button" disabled={loading} title="管理运行环境" onClick={onConfigure}><SettingsIcon /><span>配置</span></button>}
+            <EnvironmentPicker environments={environments} value={selected} onChange={onSelect} disabled={loading} status={{ label: status, tone: environmentStatusTone ?? (loading ? "busy" : !environment ? "idle" : environment.insecureTls ? "warning" : "ready") }} />
+            {canImportConfig && <button className="environment-config-trigger" type="button" disabled={loading} title="环境配置" aria-label="环境配置" onClick={onConfigure}><SettingsIcon /></button>}
           </div>
         </div>
-        <div className={`connection-state ${environment?.insecureTls ? "warning" : ""}`}>
-          <i />
-          {environmentStatus ?? (loading ? "正在查询" : environment?.sourceType === "local" ? "本地日志源就绪" : environment?.sourceType === "ssh" ? "SSH 日志源就绪" : environment?.insecureTls ? "TLS 兼容模式" : "查询网关就绪")}
-        </div>
+        <div className="topbar-utilities">
+        <div className="appearance-control" role="group" aria-label="外观设置"><ThemePicker /><TypographySettings /></div>
         {desktopMode && <LanShareControl controller={lanShare} />}
         {desktopMode
-          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.19<span aria-hidden="true" /></button>
-          : <div className="version-chip">WEB · 3.1.19</div>}
+          ? <button className={`version-chip is-interactive${updateAvailable ? " has-update" : ""}`} disabled={updateBusy} title={updateAvailable ? "有新版本可安装" : "检查更新"} onClick={onCheckForUpdates}>APP · 3.1.20<span aria-hidden="true" /></button>
+          : <div className="version-chip">WEB · 3.1.20</div>}
+        </div>
       </div>
     </header>
   );

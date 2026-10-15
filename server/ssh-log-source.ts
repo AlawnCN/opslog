@@ -203,6 +203,11 @@ const runAcrossServers = async (
   return { outputs, warnings };
 };
 
+export const connectSshEnvironment = async (environment: EnvironmentConfig): Promise<void> => {
+  const group = await runAcrossServers(environment, TIME_PROFILE_SCRIPT, [], 10, undefined, true);
+  if (group.warnings.length) throw new Error(`部分服务器连接失败：${group.warnings.join("；")}`);
+};
+
 export const resolveSshTimeProfile = async (environment: EnvironmentConfig, signal?: AbortSignal): Promise<SshTimeProfile> => {
   signal?.throwIfAborted();
   const servers = configuredServers(environment);

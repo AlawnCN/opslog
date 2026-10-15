@@ -307,6 +307,14 @@ async fn run_across_servers(
     Ok(SshServerGroupResult { outputs, warnings })
 }
 
+pub async fn connect_environment(environment: &EnvironmentConfig) -> Result<(), String> {
+    let group = run_across_servers(environment, TIME_PROFILE_SCRIPT, &[], 10).await?;
+    if !group.warnings.is_empty() {
+        return Err(format!("部分服务器连接失败：{}", group.warnings.join("；")));
+    }
+    Ok(())
+}
+
 pub async fn resolve_time_profile(environment: &EnvironmentConfig) -> SshTimeProfile {
     let servers = configured_servers(environment);
     let cache_key = format!(

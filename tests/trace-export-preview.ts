@@ -27,12 +27,16 @@ app.use(async (request, response, next) => {
     import {createRoot} from 'react-dom/client';
     import {TraceDrawer} from '/src/components/TraceDrawer.tsx';
     import {ThemePicker} from '/src/components/ThemePicker.tsx';
+    import {TypographySettings} from '/src/components/TypographySettings.tsx';
+    import {SafeMarkdown} from '/src/components/SafeMarkdown.tsx';
+    import {initializeTypography} from '/src/typography-preferences.ts';
     import {setTheme} from '/src/theme.ts';
-    import '/src/styles.css'; import '/src/themes.css';
+    import '/src/styles.css'; import '/src/themes.css'; import '/src/typography.css';
+    initializeTypography();
     setTheme(${JSON.stringify(url.searchParams.get("theme") ?? "cyberpunk")});
     createRoot(document.getElementById('root')).render(React.createElement(React.Fragment,null,
-      React.createElement('div',{style:{position:'fixed',left:'12px',top:'12px',zIndex:100}},React.createElement(ThemePicker)),
-      React.createElement(TraceDrawer,{traceId:${JSON.stringify(traceId)},rows:${JSON.stringify(rows)},loading:false,onClose:()=>{},timeZone:'Asia/Shanghai'})));
+      React.createElement('div',{style:{position:'fixed',left:'12px',top:'12px',zIndex:100,display:'flex',gap:'8px'}},React.createElement(ThemePicker),React.createElement(TypographySettings)),
+      ${url.searchParams.has("markdown") ? `React.createElement('div',{className:'ai-analysis-markdown',style:{padding:'100px 40px'}},React.createElement(SafeMarkdown,{source:'| 日志 ID | 结果说明 |\\n|---|---|\\n| TXN-001 | 汇总日志解析正常，返回完整交易记录与错误信息 |'}))` : `React.createElement(TraceDrawer,{traceId:${JSON.stringify(traceId)},rows:${JSON.stringify(rows)},loading:false,onClose:()=>{},timeZone:'Asia/Shanghai'})`}));
   </script></body></html>`;
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.end(await server.transformIndexHtml(request.url!, html));

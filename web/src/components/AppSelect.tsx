@@ -51,7 +51,7 @@ export const AppSelect = ({ value, options, onChange, placeholder = "请选择",
         position: "fixed", left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width,
         top: openDown ? rect.bottom + 5 : Math.max(8, rect.top - maxHeight - 5), maxHeight,
         "--select-font-family": computed.fontFamily,
-        "--select-font-size": `${Math.max(9, Math.min(12, Number.parseFloat(computed.fontSize) * .86))}px`
+        "--select-font-size": `${Math.max(11, Math.min(20, Number.parseFloat(computed.fontSize)))}px`
       } as CSSProperties);
     };
     place();

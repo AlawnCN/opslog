@@ -5,6 +5,7 @@ import { CloseIcon, SearchIcon } from "./Icons";
 import { useTraceColumnWidth } from "./useTraceColumnWidth";
 import { useResizableDrawerWidth } from "./useResizableDrawerWidth";
 import { TraceExportAction } from "./TraceExportAction";
+import { measureContentWidth } from "../table-auto-width";
 
 const TRACE_WIDTH_KEY = "opslog.trace-reader.width-ratio.v1";
 const AXIS_STOPS = [0, .25, .5, .75, 1];
@@ -50,6 +51,7 @@ export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, 
   const tooltipShowTimer = useRef<number | undefined>(undefined);
   const tooltipFrame = useRef<number | undefined>(undefined);
   const model = useMemo(() => buildTraceModel(rows), [rows]);
+  const waterfallRef = useRef<HTMLDivElement>(null);
   const filtered = useMemo(() => filterTraceTree(model.roots, collapsed, keyword), [collapsed, model.roots, keyword]);
   const visibleNodes = filtered.visible;
   const drawerWidth = useResizableDrawerWidth({ storageKey: TRACE_WIDTH_KEY, defaultRatio: .72, minimumPixels: 680, bodyClassName: "is-resizing-trace-reader" });
@@ -91,6 +93,15 @@ export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, 
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
+  const fitOperationColumn = () => {
+    const operations = waterfallRef.current?.querySelectorAll<HTMLElement>(".trace-operation");
+    if (!operations) return;
+    column.fit(Math.max(280, ...Array.from(operations).map(operation => {
+      const style = getComputedStyle(operation);
+      return Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight) + 18 + 42 + 18
+        + measureContentWidth(operation.querySelector("strong")!) + measureContentWidth(operation.querySelector("small")!);
+    })));
+  };
   const showTooltip = (event: MouseEvent, node: TraceNode) => {
     cancelTooltipShow();
     cancelTooltipHide();
@@ -126,8 +137,8 @@ export const TraceDrawer = ({ traceId, rows, loading, remoteDurationMs, cached, 
       {!loading && rows.length > 0 && <>
         <div className="trace-filter-toolbar"><label className="trace-filter"><SearchIcon /><input value={keyword} onChange={(event) => { setKeyword(event.target.value); setTooltip(undefined); }} placeholder="过滤调用名称、服务、SQL 或 Span ID" aria-label="Trace 关键字过滤" />{keyword && <button type="button" aria-label="清除 Trace 过滤" onClick={() => setKeyword("")}><CloseIcon /></button>}</label><span role="status">{filtering ? `命中 ${filtered.matches.size} / ${model.nodes.length} · 保留父级路径` : `${visibleNodes.length} / ${model.nodes.length} 个 Span`}</span></div>
         <div className="trace-toolbar"><div className="trace-legend"><span className="fast">快速</span><i /><span className="warning">关注</span><i /><span className="critical">慢调用</span></div><div><button disabled={filtering} onClick={() => setCollapsed(new Set(model.nodes.filter(({ children }) => children.length).map(({ key }) => key)))}>全部折叠</button><button disabled={filtering} onClick={() => setCollapsed(new Set())}>全部展开</button></div></div>
-        <div className="trace-waterfall-shell" onScroll={resetTooltip}>
-        <div className="trace-waterfall-head"><span className="trace-column-heading">调用层级<div className="trace-column-resizer" role="separator" aria-label="调整调用层级列宽" aria-orientation="vertical" aria-valuemin={280} aria-valuemax={1400} aria-valuenow={column.width} tabIndex={0} title="拖动调整列宽；双击恢复默认；方向键微调" onPointerDown={column.start} onPointerMove={column.move} onPointerUp={column.stop} onPointerCancel={column.stop} onLostPointerCapture={column.stop} onDoubleClick={column.reset} onKeyDown={column.keyboard} /></span><div>{AXIS_STOPS.map((stop) => <i key={stop} style={{ left: `${stop * 100}%` }}>{formatDuration(model.durationMs * stop)}</i>)}</div></div>
+        <div ref={waterfallRef} className="trace-waterfall-shell" onScroll={resetTooltip}>
+        <div className="trace-waterfall-head"><span className="trace-column-heading">调用层级<div className="trace-column-resizer" role="separator" aria-label="调整调用层级列宽" aria-orientation="vertical" aria-valuemin={280} aria-valuemax={1400} aria-valuenow={column.width} tabIndex={0} title="拖动调整列宽；双击自适应内容；方向键微调" onPointerDown={column.start} onPointerMove={column.move} onPointerUp={column.stop} onPointerCancel={column.stop} onLostPointerCapture={column.stop} onDoubleClick={fitOperationColumn} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); fitOperationColumn(); } else column.keyboard(event); }} /></span><div>{AXIS_STOPS.map((stop) => <i key={stop} style={{ left: `${stop * 100}%` }}>{formatDuration(model.durationMs * stop)}</i>)}</div></div>
         <div className="trace-waterfall" onMouseLeave={scheduleTooltipHide}>
           {visibleNodes.map(({ node, depth }) => {
             const timing = traceNodeTiming(node, model);

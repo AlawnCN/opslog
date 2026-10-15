@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export const READER_SETTINGS_KEYS = [
   "opslog.appearance.theme.v1",
+  "opslog.appearance.typography.v1",
   "opslog.transaction-log.custom-markers.v1",
   "opslog.transaction-log-reader.preferences.v1",
   "opslog.transaction-log.custom-marker-width-ratio.v1",

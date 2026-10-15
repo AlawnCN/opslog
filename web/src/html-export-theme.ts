@@ -1,4 +1,6 @@
 import { normalizeTheme, THEMES } from "./theme";
+import { captureTypographyStyles } from "./typography-preferences";
+import { adaptTypographyCss } from "./typography-export";
 
 const tokens = [
   "canvas", "scene", "scene-size", "surface", "surface-solid", "surface-2", "text", "muted", "cyan", "accent-text",
@@ -13,14 +15,15 @@ export const captureHtmlExportTheme = (): { attributes: string; styles: string }
   const theme = normalizeTheme(typeof document === "undefined" ? undefined : document.documentElement.dataset.theme);
   const definition = THEMES.find((candidate) => candidate.value === theme) ?? THEMES[0];
   const attributes = `data-theme="${theme}" data-theme-ui="${theme === "cyberpunk" ? "classic" : "modern"}" data-theme-tone="${definition.tone}"`;
-  if (theme === "cyberpunk" || typeof getComputedStyle === "undefined") return { attributes, styles: "" };
+  const typography = captureTypographyStyles();
+  if (theme === "cyberpunk" || typeof getComputedStyle === "undefined") return { attributes, styles: typography };
   const computed = getComputedStyle(document.documentElement);
   const declarations = tokens.flatMap((token) => {
     const value = computed.getPropertyValue(`--${token}`).trim();
     // CSS values cannot close the style element or introduce additional declarations.
     return value && !/[<>{};]/.test(value) ? [`--${token}:${value}`] : [];
   }).join(";");
-  return { attributes, styles: `:root[data-theme-ui="modern"]{${declarations};color-scheme:${definition.tone}}\n${exportThemeStyles}` };
+  return { attributes, styles: `:root[data-theme-ui="modern"]{${declarations};color-scheme:${definition.tone}}\n${adaptTypographyCss(exportThemeStyles)}\n${typography}` };
 };
 
 const rule = (selectors: string, declarations: string) =>

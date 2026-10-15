@@ -8,7 +8,7 @@ import { buildSearchQuery, buildSearchQueryWithOmittedFields, buildTraceQuery, b
 import { analyzeLogSchema, analyzeLogWithAi, isAiStreamingEnabled } from "./ai-analysis.js";
 import { activateAiProfile, deleteAiProfile, loadAiConfiguration, saveAiProfile, saveAiProfileSchema } from "./ai-configuration.js";
 import { discoverAiModels, discoverAiModelsSchema } from "./ai-models.js";
-import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs, probeSshServer } from "./ssh-log-source.js";
+import { readSshTransactionLog, resolveSshTimeProfile, searchSshLogs, sampleSshLogs, probeSshServer, connectSshEnvironment } from "./ssh-log-source.js";
 import { closePasswordSshConnections } from "./ssh-password-transport.js";
 import { closeSshControlMasters } from "./ssh-control-master.js";
 import { searchLocalLogs, readLocalTransactionLog, sampleLocalLogs } from "./local-log-source.js";
@@ -166,9 +166,10 @@ apiRouter.get("/environments", asyncRoute(async (_request, response) => {
 }));
 
 apiRouter.post("/environments/time-profile", asyncRoute(async (request, response) => {
-  const { name } = z.object({ name: z.string().trim().min(1).max(100) }).parse(request.body);
+  const { name, verifyConnection } = z.object({ name: z.string().trim().min(1).max(100), verifyConnection: z.boolean().optional() }).parse(request.body);
   const environment = await findEnvironment(name);
   if (environment.sourceType !== "ssh") { response.json(toPublicEnvironment(environment)); return; }
+  if (verifyConnection) await connectSshEnvironment(environment);
   const profile = await resolveSshTimeProfile(environment);
   response.json(toPublicEnvironment(environment, {
     timeZone: profile.timeZone, timeZoneOffset: profile.offset, timeZoneSource: profile.timeZoneSource

@@ -17,20 +17,22 @@ export const useTraceColumnWidth = () => {
   const save = () => { try { localStorage.setItem(KEY, String(current.current)); } catch { /* Optional persistence. */ } };
   const start = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    event.preventDefault(); event.stopPropagation();
+    event.stopPropagation();
     drag.current = { id: event.pointerId, x: event.clientX, width: current.current };
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
   const move = (event: PointerEvent<HTMLDivElement>) => {
     if (!drag.current || drag.current.id !== event.pointerId) return;
+    if (Math.abs(event.clientX - drag.current.x) < 3) return;
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
     update(drag.current.width + event.clientX - drag.current.x);
   };
   const stop = () => { if (!drag.current) return; drag.current = undefined; save(); };
   const reset = () => { update(TRACE_COLUMN_DEFAULT); save(); };
+  const fit = (next: number) => { update(next); save(); };
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation();
     update(event.key === "Home" ? 280 : event.key === "End" ? 1400 : current.current + (event.key === "ArrowLeft" ? -24 : 24)); save();
   };
-  return { width, start, move, stop, reset, keyboard };
+  return { width, start, move, stop, reset, fit, keyboard };
 };

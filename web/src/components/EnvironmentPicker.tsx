@@ -8,7 +8,8 @@ const summary = (environment: Environment): string => environment.sourceType !==
   : `${environment.kibanaUrl.replace(/^https?:\/\//, "").split("/")[0] || "未配置网关"} · ${environment.timeZone}`;
 const searchable = (value: string): string => value.toLocaleLowerCase().replace(/[\s_/-]+/g, "");
 
-export const EnvironmentPicker = ({ environments, value, onChange, disabled = false }: { environments: Environment[]; value: string; onChange: (value: string) => void; disabled?: boolean }) => {
+export type EnvironmentStatusTone = "ready" | "busy" | "connecting" | "error" | "warning" | "idle";
+export const EnvironmentPicker = ({ environments, value, onChange, disabled = false, status }: { environments: Environment[]; value: string; onChange: (value: string) => void; disabled?: boolean; status?: { label: string; tone: EnvironmentStatusTone } }) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [style, setStyle] = useState<CSSProperties>();
@@ -39,9 +40,9 @@ export const EnvironmentPicker = ({ environments, value, onChange, disabled = fa
     return () => { document.removeEventListener("pointerdown", close); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [open]);
 
-  return <div ref={hostRef} className={`environment-picker${open ? " is-open" : ""}`}>
-    <button ref={triggerRef} type="button" aria-haspopup="dialog" aria-expanded={open} disabled={disabled || !environments.length} onClick={() => setOpen((current) => !current)}>
-      {selected && <EnvironmentSourceBadge source={selected.sourceType} trigger />}<span className="environment-picker-name">{selected?.name ?? "选择运行环境"}</span><i aria-hidden="true" />
+  return <div ref={hostRef} className={`environment-picker${open ? " is-open" : ""}${status?.tone === "connecting" ? " is-connecting" : ""}`} aria-busy={status?.tone === "connecting" || status?.tone === "busy"}>
+    <button ref={triggerRef} type="button" title={status ? `${selected?.name ?? "选择运行环境"} · ${status.label}` : undefined} aria-haspopup="dialog" aria-expanded={open} disabled={disabled || !environments.length} onClick={() => setOpen((current) => !current)}>
+      {selected && <EnvironmentSourceBadge source={selected.sourceType} trigger />}<span className="environment-picker-name">{selected?.name ?? "选择运行环境"}</span>{status && <span className={`environment-picker-status is-${status.tone}`} role="status" title={status.label}><b aria-hidden="true" /><span className="sr-only">{status.label}</span></span>}<i aria-hidden="true" />
     </button>
     {open && style && createPortal(<div ref={panelRef} className="environment-picker-panel" style={style} role="dialog" aria-label="选择运行环境">
       <div className="environment-picker-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg><input autoFocus value={query} placeholder="搜索环境名称、来源或地址" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }} /></div>

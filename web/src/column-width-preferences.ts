@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { LogKind } from "./types";
 
 export const MIN_COLUMN_WIDTH = 110;
-export const MAX_COLUMN_WIDTH = 720;
+export const MAX_COLUMN_WIDTH = 3000;
 
 const storageKey = (kind: LogKind): string => `opslog.column-widths.${kind}.v1`;
 

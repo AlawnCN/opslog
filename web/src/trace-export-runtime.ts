@@ -11,6 +11,31 @@ export const traceExportRuntime = String.raw`(() => {
   const collapsed = new Set(data.collapsed);
   const byKey = new Map(data.nodes.map(node => [node.key, node]));
   const toggleButtons = rows.map(row => row.querySelector('.fold-toggle'));
+  const columnHandle = document.getElementById('trace-column-fit');
+  if (columnHandle) {
+    const setWidth = width => document.body.style.setProperty('--column',Math.max(280,Math.min(1400,width))+'px');
+    let start;
+    columnHandle.onpointerdown = event => {
+      start={x:event.clientX,width:columnHandle.parentElement.getBoundingClientRect().width};
+    };
+    columnHandle.onpointermove = event => { if(start&&Math.abs(event.clientX-start.x)>=3){if(!columnHandle.hasPointerCapture(event.pointerId))columnHandle.setPointerCapture(event.pointerId);setWidth(start.width+event.clientX-start.x);} };
+    columnHandle.onpointerup = columnHandle.onpointercancel = () => { start=undefined; };
+    const fit = () => {
+      const context = document.createElement('canvas').getContext('2d'); if(!context) return;
+      let width=280;
+      for (const row of rows) {
+        const operation=row.querySelector('.operation'), style=getComputedStyle(operation);
+        let contentWidth=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)+96;
+        for (const element of operation.querySelectorAll('strong,small')) {
+          context.font=getComputedStyle(element).font; contentWidth+=context.measureText(element.textContent).width;
+        }
+        width=Math.max(width,contentWidth);
+      }
+      setWidth(Math.ceil(width));
+    };
+    columnHandle.ondblclick=fit;
+    columnHandle.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();fit();}};
+  }
 
   const render = () => {
     const terms = search.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);

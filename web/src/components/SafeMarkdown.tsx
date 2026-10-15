@@ -1,6 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ResizableMarkdownTable } from "./ResizableMarkdownTable";
 
 interface SafeMarkdownProps {
   source: string;
@@ -28,6 +29,6 @@ export const SafeMarkdown = ({ source, imageLabel = "图片" }: SafeMarkdownProp
         : <span>{children}</span>;
     },
     img: ({ alt }) => <span>{alt ? `[${imageLabel}：${alt}]` : `[${imageLabel}]`}</span>,
-    table: ({ children }) => <div className="markdown-table-scroll"><table>{children}</table></div>
+    table: ({ children }) => <ResizableMarkdownTable>{children}</ResizableMarkdownTable>
   }}
 >{source}</ReactMarkdown>;

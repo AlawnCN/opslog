@@ -2,9 +2,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { PointerEvent } from "react";
 import { desktopMode } from "../api";
 import { ThemePicker } from "./ThemePicker";
+import { TypographySettings } from "./TypographySettings";
 
 export const ReaderTitlebar = () => {
-  if (!desktopMode) return <div className="reader-web-theme"><ThemePicker /></div>;
+  if (!desktopMode) return <div className="reader-web-theme"><ThemePicker /><TypographySettings /></div>;
   const mac = navigator.userAgent.includes("Macintosh");
   const drag = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button, select, label")) return;
@@ -14,7 +15,7 @@ export const ReaderTitlebar = () => {
     if (!(event.target as HTMLElement).closest("button, select, label")) void getCurrentWindow().toggleMaximize().catch(()=>undefined);
   }}>
     <span>OPSLOG <b>READER</b></span>
-    <div className="reader-theme-control"><ThemePicker /></div>
+    <div className="reader-theme-control"><ThemePicker /><TypographySettings /></div>
     {!mac && <div className="reader-window-controls">
       <button type="button" aria-label="最小化" title="最小化" onClick={()=>void getCurrentWindow().minimize()}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
       <button type="button" aria-label="最大化或还原" title="最大化 / 还原" onClick={()=>void getCurrentWindow().toggleMaximize()}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3h10v10H3z"/></svg></button>

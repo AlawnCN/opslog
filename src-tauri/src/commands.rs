@@ -328,9 +328,10 @@ pub async fn load_environments(app: AppHandle) -> Result<Vec<PublicEnvironment>,
 }
 
 #[tauri::command]
-pub async fn resolve_environment_time(app: AppHandle, name: String) -> Result<PublicEnvironment, String> {
+pub async fn resolve_environment_time(app: AppHandle, name: String, verify_connection: Option<bool>) -> Result<PublicEnvironment, String> {
     let environment = environment_store::find(&app, &name).await?;
     let profile = if environment.source_type == EnvironmentSource::Ssh {
+        if verify_connection.unwrap_or(false) { ssh_log_source::connect_environment(&environment).await?; }
         Some(ssh_log_source::resolve_time_profile(&environment).await)
     } else { None };
     Ok(environment_store::to_public(environment, profile))

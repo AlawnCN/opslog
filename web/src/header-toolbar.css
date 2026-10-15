@@ -1,0 +1,37 @@
+/* One hierarchy across all materials: environment, status, then preferences. */
+.topbar { gap: 24px; min-width: 0; }
+.topbar .brand { flex-shrink: 0; }
+.topbar .topbar-context { --toolbar-height: max(34px,calc(32px * var(--type-ui-scale,1))); min-width: 0; gap: 16px; flex-wrap: wrap; justify-content: flex-end; padding-block: 10px; }
+.topbar .environment-control { min-width: 0; gap: 10px; }
+.topbar .environment-composite-control { min-width: 0; width: clamp(230px,22vw,340px); height: var(--toolbar-height); background: var(--control-surface,var(--surface)); border-radius: var(--radius); box-shadow: var(--control-shadow,none); }
+.topbar .environment-control .environment-picker { min-width: 0; }
+.topbar .environment-control .environment-picker>button { height: 100%; min-height: 0; font-size: calc(12px * var(--type-scale,1)); padding-inline: 10px; }
+.topbar .environment-source-badge.is-trigger { width: 24px; height: 24px; }
+.topbar .environment-config-trigger { min-width: var(--toolbar-height); width: var(--toolbar-height); padding: 0; flex: 0 0 var(--toolbar-height); background: transparent; color: var(--muted); }
+.topbar .environment-picker-status { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 14px; width: 14px; height: 20px; overflow: visible; }
+.topbar .environment-picker-status>b { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); transition: width .28s ease,height .28s ease,background-color .28s ease,box-shadow .28s ease; }
+.topbar .environment-picker-status.is-warning>b { background: var(--amber); }
+.topbar .environment-picker-status.is-idle>b { background: var(--muted); }
+.topbar .environment-picker-status.is-error>b { background: var(--red); }
+.topbar .environment-picker-status:is(.is-busy,.is-connecting)>b { width: 10px; height: 10px; background: transparent; border: 1.5px solid var(--line); border-top-color: var(--cyan); animation: environment-status-spin .8s linear infinite; }
+.topbar .environment-picker.is-connecting>button { position: relative; isolation: isolate; }
+.topbar .environment-picker.is-connecting>button::after { content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: linear-gradient(100deg,transparent 25%,color-mix(in srgb,var(--cyan) 12%,transparent) 50%,transparent 75%); background-size: 200% 100%; animation: environment-connect-sweep 1.8s ease-in-out infinite; }
+.topbar .environment-composite-control:has(.is-connecting) { border-color: var(--cyan); }
+@keyframes environment-connect-sweep { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes environment-status-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion:reduce){.topbar .environment-picker-status:is(.is-busy,.is-connecting)>b{animation:none;border-color:var(--cyan);border-style:dashed}.topbar .environment-picker.is-connecting>button::after{animation:none}.topbar .environment-picker-status>b{transition:none}}
+.topbar .topbar-utilities { min-width: 0; display: flex; align-items: center; gap: 12px; padding-left: 16px; border-left: 1px solid var(--line); }
+:root .topbar .appearance-control { display: flex; align-items: stretch; height: var(--toolbar-height); border: 1px solid var(--line); border-radius: var(--radius); background: var(--control-surface,var(--surface)); box-shadow: var(--control-shadow,none); }
+:root .topbar .appearance-control .theme-picker { width: 152px; height: 100%; }
+:root .topbar .appearance-control :is(.theme-picker.app-select>button,.typography-trigger) { height: 100%; min-height: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform: none; translate: none; color: var(--muted); font-size: calc(11px * var(--type-scale,1)); }
+:root .topbar .appearance-control .theme-picker.app-select>button { border-start-start-radius: var(--radius); border-end-start-radius: var(--radius); padding-inline: 10px; gap: 8px; }
+:root .topbar .appearance-control .typography-trigger { width: var(--toolbar-height); border-left: 1px solid var(--line); border-radius: 0 var(--radius) var(--radius) 0; }
+:root .topbar .appearance-control :is(.theme-picker.app-select>button,.typography-trigger):hover { background: var(--control-hover,var(--surface-2)); color: var(--accent-text,var(--cyan)); }
+:root .topbar .appearance-control :is(.theme-picker.app-select>button,.typography-trigger):focus-visible { outline: 2px solid var(--focus-color,var(--cyan)); outline-offset: 2px; }
+.topbar .version-chip { display: inline-flex; align-items: center; min-height: var(--toolbar-height); border: 0; padding: 0; background: transparent; color: var(--muted); box-shadow: none; border-radius: 0; font: calc(10px * var(--type-scale,1)) var(--type-font,var(--font-ui)); letter-spacing: .02em; white-space: nowrap; }
+.topbar .version-chip.is-interactive { padding-right: 12px; }
+.topbar .version-chip span { right: 0; top: calc(50% - 2px); }
+.topbar .version-chip.is-interactive:hover { background: transparent; box-shadow: none; color: var(--accent-text,var(--cyan)); }
+@media(max-width:1200px){.topbar .topbar-context{gap:12px}.topbar .topbar-utilities{gap:10px;padding-left:12px}}
+@media(max-width:960px){.topbar .brand>div:last-child>span{display:none}.topbar .environment-composite-control{width:220px}:root .topbar .appearance-control .theme-picker{width:140px}.topbar .version-chip:not(.has-update){display:none}}
+@media(max-width:720px){.topbar{flex-wrap:wrap;gap:0;padding-block:10px}.topbar .topbar-context{flex:1;gap:10px}.topbar .environment-composite-control{width:200px}.topbar .topbar-utilities{border-left:0;padding-left:0}:root .topbar .appearance-control .theme-picker{width:135px}}

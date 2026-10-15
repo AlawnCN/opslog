@@ -32,6 +32,7 @@ export default function App() {
   const [environmentsLoading, setEnvironmentsLoading] = useState(true);
   const [environmentRevision, setEnvironmentRevision] = useState(0);
   const [resolvedEnvironment, setResolvedEnvironment] = useState<{ name: string; revision: number }>();
+  const [connectionFailure, setConnectionFailure] = useState<{ name: string; revision: number; message: string }>();
   const connectionEnvironment = useRef("");
   useEffect(() => {
     const previous = connectionEnvironment.current;
@@ -58,7 +59,7 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [searchPerformance, setSearchPerformance] = useState<{ durationMs: number; cached: boolean }>();
   const [notice, setNotice] = useState<{ tone: "error" | "info"; text: string }>();
-  const [pendingHostKey, setPendingHostKey] = useState<(SshHostKeyChallenge & { page: number; pageSize: number; environment: string })>();
+  const [pendingHostKey, setPendingHostKey] = useState<(SshHostKeyChallenge & { page: number; pageSize: number; environment: string; initializing?: boolean })>();
   const [hostKeyBusy, setHostKeyBusy] = useState(false);
   const [canImportConfig, setCanImportConfig] = useState(desktopMode);
   const [environmentConfigOpen, setEnvironmentConfigOpen] = useState(false);
@@ -79,6 +80,7 @@ export default function App() {
   const environment = environments.find((item) => item.name === environmentName);
   const timeProfileLoading = environment?.sourceType === "ssh"
     && (resolvedEnvironment?.name !== environmentName || resolvedEnvironment.revision !== environmentRevision);
+  const connectionError = connectionFailure?.name === environmentName && connectionFailure.revision === environmentRevision ? connectionFailure.message : undefined;
   const environmentReady = !environmentsLoading && !!environment && !timeProfileLoading;
   const environmentTimeZone = environment?.timeZone || DEFAULT_TIME_ZONE;
   const notifyCurrentVersion = useCallback(() => {
@@ -113,13 +115,20 @@ export default function App() {
   useEffect(() => {
     if (environmentsLoading || !environmentName || environment?.sourceType !== "ssh") return;
     let active = true;
+    setConnectionFailure(undefined);
+    setNotice(current => current?.text.startsWith("SSH 初始化失败：") ? undefined : current);
     void resolveEnvironmentTime(environmentName).then((resolved) => {
       if (!active) return;
       setEnvironments((items) => items.map((item) => item.name === resolved.name ? resolved : item));
       setResolvedEnvironment({ name: environmentName, revision: environmentRevision });
     }).catch((error: unknown) => {
       if (!active) return;
-      setNotice({ tone: "error", text: `环境时区加载失败：${errorMessage(error)}；请重新选择环境重试` });
+      const message = errorMessage(error);
+      setConnectionFailure({ name: environmentName, revision: environmentRevision, message });
+      setResolvedEnvironment({ name: environmentName, revision: environmentRevision });
+      const challenge = parseSshHostKeyChallenge(message);
+      if (challenge) setPendingHostKey({ ...challenge, environment: environmentName, page: 1, pageSize, initializing: true });
+      else setNotice({ tone: "error", text: `SSH 初始化失败：${message}` });
     });
     return () => { active = false; };
   }, [environmentName, environmentRevision, environmentsLoading]);
@@ -354,7 +363,7 @@ export default function App() {
       await reloadEnvironments();
       setPendingHostKey(undefined);
       setNotice(undefined);
-      void runSearch(pending.page, pending.pageSize, true);
+      if (!pending.initializing) void runSearch(pending.page, pending.pageSize, true);
     } catch (error) {
       setNotice({ tone: "error", text: errorMessage(error) });
     } finally {
@@ -387,7 +396,7 @@ export default function App() {
     finally { setLoading(false); }
   };
   return <div className={`app-shell${navigationCollapsed ? " is-navigation-collapsed" : ""}`}>
-    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} environmentStatus={environmentsLoading ? "正在加载环境" : timeProfileLoading ? "正在确认日志时区" : !environment ? "尚未选择环境" : undefined} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
+    <Header environments={environments} selected={environmentName} onSelect={setEnvironmentName} loading={loading} environmentStatus={environmentsLoading ? "正在加载环境" : connectionError ? `连接失败：${connectionError}` : timeProfileLoading ? "正在连接 SSH 服务器" : !environment ? "尚未选择环境" : undefined} environmentStatusTone={environmentsLoading ? "busy" : connectionError ? "error" : timeProfileLoading ? "connecting" : undefined} desktopMode={desktopMode} canImportConfig={canImportConfig} lanShare={lanShare} onConfigure={() => void openEnvironmentConfiguration()} updateAvailable={appUpdater.state.phase === "available" || appUpdater.state.phase === "error"} updateBusy={appUpdater.state.phase === "checking" || appUpdater.state.phase === "downloading" || appUpdater.state.phase === "installing"} onCheckForUpdates={appUpdater.checkForUpdates} />
     <Navigation active={kind} onChange={setKind} environment={environment} collapsed={navigationCollapsed} onToggle={toggleNavigation} />
     <main>
       <FilterPanel ref={filterPanelRef} kind={kind} filters={filters} environment={environment} loading={loading || !environmentReady} searching={searching} onCancel={cancelSearch} selectedRangeDays={selectedRangeDays} onChange={updateFilter} onSearch={() => runSearch(1, pageSize, true, true)} onExport={exportCurrent} onRange={setRange} />

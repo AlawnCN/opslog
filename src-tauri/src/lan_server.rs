@@ -221,10 +221,11 @@ async fn environments(State(state): State<LanApiState>) -> Response {
 }
 
 #[derive(Deserialize)]
-struct EnvironmentTimeInput { name: String }
+#[serde(rename_all = "camelCase")]
+struct EnvironmentTimeInput { name: String, verify_connection: Option<bool> }
 
 async fn environment_time(State(state): State<LanApiState>, Json(input): Json<EnvironmentTimeInput>) -> Response {
-    match commands::resolve_environment_time(state.app, input.name).await {
+    match commands::resolve_environment_time(state.app, input.name, input.verify_connection).await {
         Ok(environment) => Json(environment).into_response(),
         Err(error) => api_error(error),
     }

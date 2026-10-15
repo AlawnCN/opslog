@@ -117,7 +117,7 @@ const foldedRangeOnLine = (view: EditorView, from: number, to: number): FoldRang
 
 const logTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-text, #b9ccda)" },
-  ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "11px", lineHeight: "1.72" },
+  ".cm-scroller": { fontFamily: "var(--type-log-font,var(--font-mono))", fontSize: "var(--type-log-size,11px)", lineHeight: "1.72" },
   ".cm-content": { padding: "12px 0", caretColor: "var(--cyan)" },
   ".cm-line": { padding: "0 14px 0 8px" },
   ".cm-gutters": { backgroundColor: "var(--editor-surface, #071827)", color: "var(--theme-muted, #486d84)", border: "0", borderRight: "1px solid var(--theme-line, #14364b)" },
@@ -136,6 +136,11 @@ export const StructuredLogViewer = forwardRef<StructuredLogViewerHandle, Structu
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const outlineTargetTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const measure = () => viewRef.current?.requestMeasure();
+    window.addEventListener("opslog-typography-change", measure);
+    return () => window.removeEventListener("opslog-typography-change", measure);
+  }, []);
 
   useImperativeHandle(forwardedRef, () => ({
     foldAll: () => { if (viewRef.current) foldAll(viewRef.current); },

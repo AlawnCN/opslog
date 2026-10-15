@@ -25,7 +25,7 @@ const unfoldedPreviewRanges = (effects: readonly StateEffect<unknown>[]): Array<
 
 const previewTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-text, #b9ccda)" },
-  ".cm-scroller": { fontFamily: "var(--font-mono)", fontSize: "11px", lineHeight: "1.72", overflow: "auto" },
+  ".cm-scroller": { fontFamily: "var(--type-log-font,var(--font-mono))", fontSize: "var(--type-log-size,11px)", lineHeight: "1.72", overflow: "auto" },
   ".cm-content": { padding: "16px 20px 36px 6px", caretColor: "transparent" },
   ".cm-line": { padding: "0 12px 0 4px" },
   ".cm-gutters": { backgroundColor: "var(--editor-surface, #061421)", color: "var(--theme-muted, #557f96)", border: "0", paddingLeft: "10px" },
@@ -39,6 +39,11 @@ export const StructuredLogPreviewEditor = forwardRef<StructuredLogPreviewEditorH
 }, forwardedRef) => {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  useEffect(() => {
+    const measure = () => viewRef.current?.requestMeasure();
+    window.addEventListener("opslog-typography-change", measure);
+    return () => window.removeEventListener("opslog-typography-change", measure);
+  }, []);
 
   useImperativeHandle(forwardedRef, () => ({
     foldLevel: () => {

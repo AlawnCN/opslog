@@ -140,13 +140,13 @@
 :root[data-theme="cyber-anime"] :is(.filter-panel, .results-panel, .drawer-heading, .reader-welcome-primary) { background: var(--hud-panel-background); }
 :root[data-theme="cyber-anime"] :is(.filter-panel h2, .drawer-heading h2, .reader-welcome-primary h1) { letter-spacing: .08em; text-transform: uppercase; }
 :root[data-theme="cyber-anime"] :is(.filter-heading, .results-heading) { background: linear-gradient(120deg, rgb(124 58 237 / 15%), transparent); }
-:root[data-theme="cyber-anime"] :is(.filter-panel input, .results-meta, .reader-stats) { font-family: var(--font-mono); }
+:root[data-theme="cyber-anime"] :is(.filter-panel input, .results-meta, .reader-stats) { font-family: var(--type-font,var(--font-mono)); }
 :root[data-theme="cyber-anime"] .brand-mark { border-color: var(--accent-text); }
 :root[data-theme="shoujo-manga"] :is(.filter-panel, .results-panel) { border-width: 2px; }
 :root[data-theme="shoujo-manga"] :is(.filter-panel h2, .drawer-heading h2, .reader-welcome-side h2, #ai-analysis-title)::after { content: " ❀"; color: #9c345b; font-weight: 400; pointer-events: none; }
 :root[data-theme="shoujo-manga"] :is(.filter-heading, .results-heading) { background: linear-gradient(110deg, rgb(255 183 197 / 20%), rgb(196 181 253 / 12%), transparent); }
 :root[data-theme="shoujo-manga"] :is(button, input, textarea, select, summary):focus-visible { outline-color: var(--accent-text); }
-:root[data-theme="natural-organic"] :is(h1, h2, h3, .reader-welcome-primary h1) { font-family: Georgia, "Songti SC", "SimSun", serif; }
+:root[data-theme="natural-organic"] :is(h1, h2, h3, .reader-welcome-primary h1) { font-family: var(--type-font,Georgia, "Songti SC", "SimSun", serif); }
 :root[data-theme="natural-organic"] :is(button, input, textarea, .theme-picker) { transition-property: background-color, color, border-color, border-radius, box-shadow, translate, scale; }
 :root[data-theme="natural-organic"] button:hover:not(:disabled) { border-radius: 16px 22px 15px 20px; }
 :root[data-theme="modern-gradient"] :is(.topbar, .sidebar, .filter-panel, .results-panel) { backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
