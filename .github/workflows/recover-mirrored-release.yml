@@ -35,7 +35,7 @@ jobs:
           git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}"
           test -s "docs/releases/$RELEASE_TAG.md"
 
-      - name: Verify private source and release-only public repositories
+      - name: Verify source and release-only public repositories
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/verify-public-release-boundary.mjs "$RELEASE_TAG"

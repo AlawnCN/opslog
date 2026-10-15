@@ -201,7 +201,7 @@ npm run desktop:windows:setup
 npm run reader:windows:setup
 ```
 
-GitHub Actions 只构建一次，向 Gitea 与 GitHub 的 `opslog-release` 仓库同步发布 OpsLog 和 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG、便携 ZIP、更新包及签名。两个站点各自提供指向本站程序包的 `latest.json`、`reader-latest.json` 与 `SHA256SUMS`；两份清单的 Changelog 一致。`AlawnCN/opslog` 源码仓库必须保持私有；公开发布仓库的 Git 跟踪文件只允许 README 与自动更新清单，不得提交应用源码。旧版客户端若仍指向原源码仓库的 Release，仓库转为私有后将无法继续通过该地址自动更新，需手动安装新版迁移到双镜像更新地址。
+GitHub Actions 只构建一次，向 Gitea 与 GitHub 的 `opslog-release` 仓库同步发布 OpsLog 和 OpsLog Reader 的 Windows x64 安装版、绿色 ZIP、macOS Apple Silicon / Intel DMG、便携 ZIP、更新包及签名。两个站点各自提供指向本站程序包的 `latest.json`、`reader-latest.json` 与 `SHA256SUMS`；两份清单的 Changelog 一致。`AlawnCN/opslog` 源码仓库支持公开或私有，由仓库所有者决定；两个公开发布仓库的 Git 跟踪文件白名单保持不变，不得提交应用源码。旧版客户端若仍指向原源码仓库的 Release，仓库转为私有后将无法继续通过该地址自动更新，需手动安装新版迁移到双镜像更新地址。
 
 </details>
 
@@ -230,7 +230,9 @@ xattr -dr com.apple.quarantine /Applications/OpsLog.app
 - `GH_RELEASE_TOKEN`：仅对 `AlawnCN/opslog-release` 具有 Contents 写权限的 GitHub 凭据。
 - `GITEA_RELEASE_TOKEN`：建议使用仅能写入 `Alawn/opslog-release` 的专用 Gitea 账号令牌。
 
-推送源码仓库的 `v*` tag 后，workflow 会先验证两个 Secret、源码仓库私有状态及两个公开发布仓库的文件白名单，再发布 Gitea、GitHub 镜像，最后提升 Gitea 更新清单。发布前须核对两个站点的资源及签名。私钥、口令和真实环境配置禁止提交到仓库。Tauri updater 签名不等同于 Apple Developer ID、公证或 Windows Authenticode。
+推送源码仓库的 `v*` tag 后，workflow 会先验证两个 Secret 及两个公开发布仓库的文件白名单，再发布 Gitea、GitHub 镜像，最后提升 Gitea 更新清单。发布前须核对两个站点的资源及签名。私钥、口令和真实环境配置禁止提交到仓库。Tauri updater 签名不等同于 Apple Developer ID、公证或 Windows Authenticode。
+
+若程序包已构建并上传，但发布阶段需要修复，可从 `main` 手动运行 `Build cross-platform release assets`，填写原 `release_tag` 与 `build_run_id`。该模式跳过重新编译，验证原构建提交、标签和 workflow 身份后复用产物；发布说明与日期仍取自原标签，不移动标签或替换已正式发布的包。
 
 </details>
 

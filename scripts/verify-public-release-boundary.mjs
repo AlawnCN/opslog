@@ -38,7 +38,9 @@ export const verifyPublicReleaseBoundary = async (tag, token, fetcher = fetch) =
     get(`${githubApi}/${GITHUB_RELEASE}`, githubHeaders),
     get(`${giteaApi}/${GITEA_RELEASE}`)
   ]);
-  if (source.private !== true) throw new Error(`${GITHUB_SOURCE} must remain private`);
+  // Source visibility is the owner's choice; distribution repositories remain
+  // public and release-only regardless of that choice.
+  if (typeof source.private !== "boolean") throw new Error(`${GITHUB_SOURCE}: invalid source repository metadata`);
   if (githubRelease.private !== false || giteaRelease.private !== false) {
     throw new Error("both release repositories must remain public for auto-update");
   }

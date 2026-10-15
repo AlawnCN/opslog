@@ -8,24 +8,24 @@ test("release-only repositories reject source files and directories", () => {
   assert.throws(() => assertAllowedFiles([{ name: "src", type: "dir" }], ["README.md"], "Gitea"), /unexpected public repository file/);
 });
 
-test("release boundary requires the source repository to remain private", async () => {
+test("release boundary rejects invalid source repository metadata", async () => {
   const fetcher = async (url) => ({
     ok: true,
     json: async () => url.includes("/AlawnCN/opslog-release")
       ? { private: false }
       : url.includes("/AlawnCN/opslog")
-        ? { private: false }
+        ? {}
         : { private: false }
   });
-  await assert.rejects(verifyPublicReleaseBoundary("v3.1.8", "test-token", fetcher), /must remain private/);
+  await assert.rejects(verifyPublicReleaseBoundary("v3.1.8", "test-token", fetcher), /invalid source repository metadata/);
 });
 
-test("release boundary accepts only release metadata at the main branch and tag", async () => {
+for (const privateSource of [true, false]) test(`release boundary accepts release-only mirrors with ${privateSource ? "private" : "public"} source`, async () => {
   const requested = [];
   const fetcher = async (url) => {
     requested.push(url);
     const body = url.endsWith("/AlawnCN/opslog")
-      ? { private: true }
+      ? { private: privateSource }
       : url.endsWith("/AlawnCN/opslog-release") || url.endsWith("/Alawn/opslog-release")
         ? { private: false }
         : url.includes("/git/trees/")
@@ -36,4 +36,18 @@ test("release boundary accepts only release metadata at the main branch and tag"
   await assert.doesNotReject(verifyPublicReleaseBoundary("v3.1.8", "test-token", fetcher));
   assert.equal(requested.length, 7);
   assert.ok(requested.some((url) => url.includes("ref=v3.1.8")));
+});
+
+test("public source does not relax mirror visibility or source-file checks", async () => {
+  for (const unsafe of ["private-mirror", "source-file"]) {
+    const fetcher = async (url) => ({ ok: true, json: async () =>
+      url.endsWith("/AlawnCN/opslog") ? { private: false }
+        : url.endsWith("/AlawnCN/opslog-release") ? { private: unsafe === "private-mirror" }
+          : url.endsWith("/Alawn/opslog-release") ? { private: false }
+            : url.includes("/git/trees/") ? { truncated: false, tree: [{ path: "src/main.rs", type: "blob" }] }
+              : [{ name: "README.md", type: "file" }]
+    });
+    await assert.rejects(verifyPublicReleaseBoundary("v3.1.19", "test-token", fetcher),
+      unsafe === "private-mirror" ? /must remain public/ : /unexpected public repository file/);
+  }
 });
